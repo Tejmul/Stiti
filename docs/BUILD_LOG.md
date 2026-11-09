@@ -66,3 +66,27 @@ Note: the Desktop is iCloud-synced — keep `.venv` (1.8 GB) out of iCloud or mo
   strict JSON), book outline from ingested chunks, voice commands ("ruko", "phir se", question), FSRS cards.
 - Constraint: lesson generation needs the cloud LLM (free key). Board, drawing engine, voice sync,
   interruptions and book ingestion can be built and tested without it.
+
+---
+
+## 2026-11-10 (night 2) — whiteboard tutor + web app
+
+### Whiteboard tutor (`src/stiti/tutor/`, D15) — paused here by Tejmul to focus on chat; resume tomorrow
+| Piece | What | Proof |
+|---|---|---|
+| Board | Excalidraw 0.18.1 page + runtime (sketch/grow/type/fade, camera, reset/replay), Starlette WS server (token + Host/Origin + CSP), presenter mode (F) for a big monitor | Playwright screenshots; WS security checks |
+| Skills | semantic ops → layout in Python (pages, regions, relative placement, graphs/trees, tables, formulas, stickies, highlights, Q&A side boards, parking lot) | demo layout 0 overlaps; tree centred |
+| Player | cue per sentence synced to Kokoro audio (prefetch 3), pause/continue/repeat/back/skip/slower/faster by voice or button, barge-in, questions answered on a side board, checks with hint ladder + confidence, hook revisited, resume cursor | scripted 24-cue lesson at 200× speed |
+| Content | hand-written demo "How a compiler works" (8 parts, 5 checks, 5 cards); LLM planner (outline + 1 call per idea, strict JSON) | planner unverified (no key) |
+| Books | printed-Contents parser + page offsets + heading fallback + extractive page-tagged sources | Aho: 654 headings, 2.7 s |
+| Memory | migration 006 (lessons, sessions, study_cards) + one episode per lesson; app voice loop quiet during lessons | tutor eval 27/27 |
+
+### Web app (`src/stiti/web/`, D16)
+- `uv run stiti web` → landing page + `/chat`. Chat = same Engine (fast paths ran in 80–560 ms on the test DB),
+  side panel with todos (tick to finish) + alarms/reminders, Stiti's breathing particle "mind", action chips with
+  the owner's pictograms. Web eval 12/12 (security + a real turn).
+- Landing page built in parallel by a sub-agent from the owner's motion spec; particles only in the hero (owner rule).
+
+### Not verified
+- Any LLM path (planner, live Q&A answers, chat replies via cloud). Real voice in a lesson (mic + AEC with the
+  board on a monitor). Excalidraw needs internet for the CDN (offline bundle is the next step).

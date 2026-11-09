@@ -119,6 +119,13 @@ AEC, fillers), emotion, proactivity + learned nudge gate, life OS, Mac actions, 
 menubar app, CI. **Not yet verified:** anything that needs a cloud LLM (conversation, tool calling, night
 extraction, reflections) and anything that needs Tejmul's real voice (Hinglish STT accuracy, false-wake rate).
 
+### Phase 8 — Whiteboard tutor (D14/D15) — ✅ board, skills, voice-first player, local grading, book outline, persistence
+LLM lesson planner written (strict JSON) but unverified until a key exists. Next: FSRS review sessions, offline
+Excalidraw bundle, word-timed TTS, real-voice test on the big monitor.
+
+### Phase 9 — Web app (D16) — ✅ `stiti web`: chat page over the Engine + landing page
+Next: voice in the browser (mic → local whisper), streaming replies once an LLM key exists.
+
 ## 5. Top risks (full table in the report)
 - RAM on a base M2 unmeasured → measure every component on day one.
 - Laya zero-shot accuracy (0.36 on its benchmark) and Hinglish handling unknown → 30-sentence pilot, conservative gates, LLM fallback.

@@ -266,6 +266,10 @@ uv run stiti onboard         # 3-minute intro so she knows who you are
 uv run stiti backup          # encrypted backup now (also runs nightly); --show-key to save the key
 uv run stiti install-app     # menubar app that starts at login (mic, Calendar, Reminders prompts say "Stiti")
 uv run stiti sleep --now     # run the night job now
+uv run stiti web             # Stiti in your browser: landing page + chat (127.0.0.1:7317)
+uv run stiti teach           # whiteboard lesson by voice (built-in "How a compiler works"; no key needed)
+uv run stiti teach book.pdf --chapter 3.1   # teach a book chapter (needs a free LLM key)
+uv run stiti book book.pdf   # show a book's outline (works on scanned PDFs via the printed Contents)
 ```
 
 Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.md`, `GRAPH_REPORT.md`), **never in git**.
@@ -286,6 +290,8 @@ Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.
 - [x] **Learning loops**: inferred lessons · lesson scoring + nightly curation · undo + "what did you mean?" · topic segments · reflections
 - [x] **App**: menubar (type-to-Stiti, quick todo, mood timeline, live status) · starts at login · health check · log rotation
 - [x] **Evals + CI**: dates 15/15 · recall 10/10 · LongMemEval-style 12/12 · sync · proactivity · learning — on every push
+- [x] **Whiteboard tutor**: voice lesson on a live Excalidraw board · draws while she talks · "ruko / phir se / peeche / skip" · questions on a side board · checks with hints · revision cards · resume later — tutor eval 27/27
+- [x] **Web app**: `stiti web` — chat with the same Stiti in the browser, todos + alarms panel, light theme — web eval 12/12
 - [ ] **Needs API keys to verify**: LLM conversation, tool calling, nightly fact extraction, reflections
 - [ ] **Needs your voice**: Hinglish STT A/B, wake-word false-wake rate, personal voice baseline
 - [ ] Later: Laya INT8 on the hot path · Google Workspace write actions · speaker verification · streaming LLM→TTS
