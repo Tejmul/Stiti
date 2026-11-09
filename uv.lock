@@ -3101,6 +3101,15 @@ wheels = [
 ]
 
 [[package]]
+name = "rumps"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pyobjc-framework-cocoa" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b2/e2/2e6a47951290bd1a2831dcc50aec4b25d104c0cf00e8b7868cbd29cf3bfe/rumps-0.4.0.tar.gz", hash = "sha256:17fb33c21b54b1e25db0d71d1d793dc19dc3c0b7d8c79dc6d833d0cffc8b1596", size = 39257, upload-time = "2022-10-15T05:15:10.386Z" }
+
+[[package]]
 name = "safetensors"
 version = "0.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -3435,6 +3444,7 @@ dependencies = [
     { name = "pyobjc-framework-eventkit" },
     { name = "python-dateutil" },
     { name = "python-dotenv" },
+    { name = "rumps" },
     { name = "sounddevice" },
     { name = "soundfile" },
     { name = "tokenizers" },
@@ -3459,6 +3469,7 @@ requires-dist = [
     { name = "pyobjc-framework-eventkit", specifier = ">=13.0" },
     { name = "python-dateutil", specifier = ">=4.0.0" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
+    { name = "rumps", specifier = ">=0.4.0" },
     { name = "sounddevice", specifier = ">=0.5.6" },
     { name = "soundfile", specifier = ">=0.14.0" },
     { name = "tokenizers", specifier = ">=0.23.3" },
