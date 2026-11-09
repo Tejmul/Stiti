@@ -14,6 +14,11 @@ export function wireScramble() {}
 export function wireNav({ onMenu } = {}) {
   const nav = document.querySelector(".nav");
   if (!nav) return;
+  nav.addEventListener("pointermove", (e) => {           // sheen follows the pointer across the glass
+    const r = nav.getBoundingClientRect();
+    nav.style.setProperty("--mx", `${e.clientX - r.left}px`);
+    nav.style.setProperty("--my", `${e.clientY - r.top}px`);
+  });
   let last = scrollY;
   addEventListener("scroll", () => {
     const y = scrollY;

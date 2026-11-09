@@ -41,7 +41,14 @@
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
-  margin: 0; background: var(--paper); color: var(--ink);
+  margin: 0; color: var(--ink);
+  background:
+    radial-gradient(20vw 5vw at 52% 0%, rgba(127, 178, 240, .55), transparent 70%),   /* colour under the glass */
+    radial-gradient(12vw 4.5vw at 43% 0%, rgba(70, 86, 214, .18), transparent 70%),
+    radial-gradient(55vw 38vw at 88% -12%, rgba(127, 178, 240, .30), transparent 62%),
+    radial-gradient(45vw 32vw at 4% -8%, rgba(70, 86, 214, .10), transparent 60%),
+    var(--paper);
+  background-repeat: no-repeat;          /* glow sits at the top of the page only, behind the glass nav */
   font: 400 var(--fs-body)/1.55 var(--display);
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
@@ -61,23 +68,44 @@ img { max-width: 100%; display: block; }
   padding: 10px 14px; border-radius: 10px; transition: top .2s; }
 .skip:focus { top: 16px; }
 
-/* ------------------------------------------------------------------ navbar: clear white glass pill */
+/* ------------------------------------------------------------------ navbar: liquid white glass pill */
 .nav {
   position: fixed; top: 18px; left: 50%; z-index: var(--z-nav);
   transform: translateX(-50%); transition: transform .5s var(--expo);
   display: flex; align-items: center; gap: 6px;
   color: var(--ink); border-radius: 999px; padding: 7px; max-width: calc(100vw - 24px);
-  /* frosted clear glass: white, bright, the page blurred behind it — never grey */
-  background: linear-gradient(180deg, rgba(255, 255, 255, .78) 0%, rgba(255, 255, 255, .52) 100%);
-  -webkit-backdrop-filter: blur(24px) saturate(185%) brightness(1.06);
-  backdrop-filter: blur(24px) saturate(185%) brightness(1.06);
-  border: 1px solid rgba(255, 255, 255, .9);
+  --mx: 30%; --my: 0%;
+  /* see-through white glass: the page behind is blurred, brightened and saturated */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, .42) 0%, rgba(255, 255, 255, .10) 55%, rgba(255, 255, 255, .22) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .07 0'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
+  -webkit-backdrop-filter: blur(14px) saturate(220%) brightness(1.05);
+  backdrop-filter: blur(14px) saturate(220%) brightness(1.05);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 1),             /* bright top edge */
-    inset 0 -1px 0 rgba(255, 255, 255, .5),
-    0 0 0 .5px rgba(38, 43, 87, .08),                  /* hairline so it reads on white too */
-    0 14px 40px -14px rgba(38, 43, 87, .22), 0 2px 6px rgba(38, 43, 87, .05);
+    inset 0 1.5px 1px rgba(255, 255, 255, 1),          /* bright lip along the top edge */
+    inset 0 -1.5px 1px rgba(38, 43, 87, .10),          /* the glass has thickness: darker bottom edge */
+    inset 0 0 14px rgba(38, 43, 87, .06),              /* edges refract a little darker than the middle */
+    inset 0 -12px 20px -14px rgba(255, 255, 255, .9),  /* light pooling inside the bottom */
+    0 1px 1px rgba(38, 43, 87, .04),
+    0 12px 32px -10px rgba(38, 43, 87, .18),
+    0 30px 60px -30px rgba(70, 86, 214, .25);           /* faint blue lift, like light through glass */
 }
+/* light-catching rim: bright at the top-left, fading, catching again bottom-right */
+.nav::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; padding: 1px; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 1) 0%, rgba(255, 255, 255, .25) 35%,
+                              rgba(38, 43, 87, .10) 60%, rgba(255, 255, 255, .8) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+}
+/* soft sheen that follows the pointer across the glass */
+.nav::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0;
+  background: radial-gradient(160px circle at var(--mx) var(--my), rgba(255, 255, 255, .7), transparent 70%);
+  mix-blend-mode: soft-light; transition: opacity .5s var(--out);
+}
+.nav:hover::after { opacity: 1; }
+.nav > * { position: relative; z-index: 1; }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .nav { background: rgba(255, 255, 255, .94); }
 }
@@ -96,8 +124,9 @@ img { max-width: 100%; display: block; }
   font-size: 16px; font-weight: 450; border-radius: 999px; white-space: nowrap; color: var(--ink);
   transition: background .3s var(--out);
 }
-.nav__link:hover { background: rgba(255, 255, 255, .85); }
-.nav__link[aria-current="page"] { background: rgba(255, 255, 255, .95); box-shadow: 0 1px 4px rgba(38, 43, 87, .1); }
+.nav__link:hover { background: rgba(255, 255, 255, .55); }
+.nav__link[aria-current="page"] { background: rgba(255, 255, 255, .8);
+  box-shadow: inset 0 1px 0 #fff, 0 1px 4px rgba(38, 43, 87, .1); }
 .nav__cta {
   position: relative; overflow: hidden; display: inline-flex; align-items: center; gap: 8px; height: 46px;
   padding: 0 22px; border-radius: 999px; background: var(--ink); color: var(--white); border: 0;
