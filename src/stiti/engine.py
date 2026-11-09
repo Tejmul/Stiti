@@ -17,6 +17,7 @@ from .db import one, q
 from .decide import decide
 from .fastpath import handlers
 from .life import brief as nudge, chunker, habits, planner
+from .connectors.mac import music_fastpath
 from .tools import registry
 
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
@@ -164,6 +165,8 @@ class Engine:
         elif CAL_RX.search(text):
             from .connectors import eventkit
             reply = eventkit.speak_events(eventkit.today_events())
+        elif (m := music_fastpath(text)) is not None:
+            reply = m
         elif MAIL_RX.search(text):
             from .connectors import mail
             reply = mail.speak_unread(mail.unread())

@@ -37,7 +37,8 @@ class Tool:
 
 
 def _obj(**props) -> dict:
-    return {"type": "object", "properties": props, "required": [k for k, v in props.items() if not v.get("optional")]}
+    clean = {k: {kk: vv for kk, vv in v.items() if kk != "optional"} for k, v in props.items()}
+    return {"type": "object", "properties": clean, "required": [k for k, v in props.items() if not v.get("optional")]}
 
 
 # ---------------- native tools ----------------
@@ -87,6 +88,30 @@ def _volume(level: int):
     return {"volume": lv}
 
 
+def _cal_add(title: str, start: str, minutes: int = 60):
+    from ..connectors import eventkit
+    from ..fastpath.dates import parse_when, readback
+    when = parse_when(start)
+    if not when:
+        return {"error": f"couldn't understand the time '{start}'"}
+    ident = eventkit.add_event(title, when, int(minutes))
+    return {"created": title, "when": readback(when)} if ident else {"error": "calendar not available"}
+
+
+def _cal_cancel(title: str, day: str = "today"):
+    from ..connectors import eventkit
+    from ..fastpath.dates import parse_when
+    when = parse_when(day) or datetime.now(CFG.tz)
+    return {"cancelled": eventkit.cancel_event(title, when)}
+
+
+def _mac(fn_name: str):
+    def call(**kw):
+        from ..connectors import mac
+        return getattr(mac, fn_name)(**kw)
+    return call
+
+
 NATIVE = [
     Tool("calendar_today", "List today's events from Tejmul's calendar (Apple/Google via macOS Calendar).",
          _obj(), lambda: _cal_today()),
@@ -100,6 +125,27 @@ NATIVE = [
          _obj(name={"type": "string"}), _open_app, risk="low"),
     Tool("mac_set_volume", "Set the Mac output volume 0-100.",
          _obj(level={"type": "integer"}), _volume, risk="low"),
+    Tool("calendar_create_event", "Create a calendar event. start is natural language like 'kal 5 baje' or 'friday 3 pm'.",
+         _obj(title={"type": "string"}, start={"type": "string"},
+              minutes={"type": "integer", "description": "duration, default 60", "optional": True}),
+         _cal_add, risk="write"),
+    Tool("calendar_cancel_event", "Delete calendar events matching a title on a day.",
+         _obj(title={"type": "string"}, day={"type": "string", "optional": True}), _cal_cancel, risk="irreversible"),
+    Tool("files_find", "Find files on the Mac by name or content (Spotlight). recent_days limits to recently modified.",
+         _obj(query={"type": "string"}, recent_days={"type": "integer", "optional": True}), _mac("find_files")),
+    Tool("file_open", "Open a file from the home folder with its default app.",
+         _obj(path={"type": "string"}), _mac("open_path"), risk="low"),
+    Tool("music_control", "Control Apple Music or Spotify: play, pause, next, previous.",
+         _obj(action={"type": "string", "enum": ["play", "pause", "next", "previous"]}), _mac("music"), risk="low"),
+    Tool("imessage_send", "Send an iMessage to a phone number or email.",
+         _obj(to={"type": "string"}, text={"type": "string"}), _mac("send_imessage"), risk="write"),
+    Tool("web_search", "Search the web (DuckDuckGo/Bing/Google mix). Returns titles, urls, snippets.",
+         _obj(query={"type": "string"}), _mac("web_search"), untrusted_output=True),
+    Tool("web_read", "Read the text of a web page by URL.",
+         _obj(url={"type": "string"}), _mac("web_read"), untrusted_output=True),
+    Tool("screen_now", "Which app and window Tejmul is looking at right now.", _obj(), _mac("screen_now")),
+    Tool("screen_read", "Read the text currently on Tejmul's screen (on-device OCR, nothing stored).",
+         _obj(), _mac("screen_read"), untrusted_output=True),
 ]
 
 
