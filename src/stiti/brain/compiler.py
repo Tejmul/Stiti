@@ -12,17 +12,16 @@ from ..config import CFG
 from ..db import one, q
 from . import psych
 
-DEFAULT_SOUL = """# SOUL — who Stiti is (Tejmul owns this file; edit freely)
-Stiti is Tejmul's close buddy, not a corporate assistant. Warm, sharp, a little playful, honest.
-Talks like a real friend: short, natural, Hinglish when he speaks Hinglish. Remembers what matters to him
+DEFAULT_SOUL = """# SOUL — who Stiti is (the owner owns this file; edit freely)
+Stiti is the owner's close buddy, not a corporate assistant. Warm, sharp, a little playful, honest.
+Talks like a real friend: short, natural, Hinglish when they speak Hinglish. Remembers what matters to them
 and brings it up naturally. Never preachy, never fake-cheerful. Admits when she doesn't know or remember.
-Respects his time: gets to the point, then stops.
+Respects their time: gets to the point, then stops.
 """
 
-DEFAULT_USER = """# USER — who Tejmul is and how to talk to him
-(Rendered from Postgres `user_directives` by the night job; Stiti fills this in as she learns.)
-- Name: Tejmul.
-- Speaks Hinglish and English; reply in the language mix he uses.
+DEFAULT_USER = """# USER — who you are and how Stiti should talk to you
+(Stiti fills this in from the "Key Things to Know" intro and keeps it in sync with her brain.)
+- Reply in the language mix they use.
 """
 
 
@@ -57,8 +56,10 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None) -> tuple[str, int]:
     soul = _short(_file("SOUL.md", DEFAULT_SOUL), 600)
     header = f"### STITI BRIEFING v0 · privacy=P{privacy} · {now.strftime('%a %Y-%m-%d %H:%M')} {CFG.tz.key}"
-    recent_lines = [f"{'He' if r['speaker'] == 'user' else 'You'}: {r['text'][:160]}" for r in recent[-6:]]
-    mem_lines = [f"[E{m['episode_id']} · {m['occurred_at'].astimezone(CFG.tz):%Y-%m-%d} · he said] "
+    from .. import profile
+    who = profile.call() if profile.get("name") else "They"
+    recent_lines = [f"{who if r['speaker'] == 'user' else 'You'}: {r['text'][:160]}" for r in recent[-6:]]
+    mem_lines = [f"[E{m['episode_id']} · {m['occurred_at'].astimezone(CFG.tz):%Y-%m-%d} · {profile.p('subj')} said] "
                  f"\"{m['text'][:220]}\"" for m in memories]
     fact_lines = [f"[F{f['fact_id']} · true since {f['valid'].lower:%Y-%m} · fact] {f['fact_text']}"
                   for f in facts if f.get("valid") is not None and f["valid"].lower]
@@ -68,12 +69,18 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
     how += [f"{'MUST NOT' if l['polarity'] == 'dont' else 'MUST'}: {l['guidance']} (lesson L{l['id']}, "
             f"{l['created_at']:%Y-%m-%d})" for l in lessons]
     if mvd:
-        how.append("He's low on energy: offer ONE small next step, say that's enough for today. No lists.")
+        how.append(f"{profile.p('subj').capitalize()} {profile.p('be')} low on energy: offer ONE small next step, "
+                   "say that's enough for today. No lists.")
+    try:
+        from .understanding import guide_lines
+        how += guide_lines()          # adaptations from the local psychology guide (tentative, correctable)
+    except Exception:
+        pass
 
     def assemble(mem: list[str], loops: str | None) -> str:
         parts = [header,
                  f"[WHO YOU ARE]\n{soul}",
-                 f"[WHO HE IS]\n{standing_profile()}",
+                 f"[WHO YOU'RE TALKING TO — {who}, {profile.p('subj')}/{profile.p('obj')}]\n{standing_profile()}",
                  f"[RIGHT NOW]\n{now:%A %I:%M %p} · {emotion_hint} · suggested tone: {tone}"]
         if recent_lines:
             parts.append("[RECENT CONVERSATION]\n" + "\n".join(recent_lines))

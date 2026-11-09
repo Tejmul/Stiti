@@ -56,7 +56,8 @@ def _directive(text: str, category: str, key: str) -> None:
 def _self_fact(key: str, text: str) -> None:
     """Functional self-fact keyed by `key`: re-onboarding closes the old value instead of duplicating."""
     from .sleep import resolve_entity
-    me = resolve_entity("Tejmul", "self")
+    from .. import profile
+    me = resolve_entity(profile.name(), "self")
     pred = f"about_{key}"
     old = one("""SELECT id FROM facts WHERE subj_id=%s AND predicate=%s AND upper_inf(recorded) AND valid @> now()""",
               (me, pred))
@@ -109,9 +110,11 @@ def _apply(key: str, ans: str) -> str | None:
     if key == "people":
         people = parse_people(a)
         for name, rel in people:
-            apply_fact({"subject": name, "predicate": f"{rel.replace(' ', '_')}_of", "object": "Tejmul",
-                        "fact_text": f"{name} is Tejmul's {rel}", "confidence": 0.95},
-                       [], {name.lower(): "person", "tejmul": "self"})
+            from .. import profile
+            owner = profile.name()
+            apply_fact({"subject": name, "predicate": f"{rel.replace(' ', '_')}_of", "object": owner,
+                        "fact_text": f"{name} is {owner}'s {rel}", "confidence": 0.95},
+                       [], {name.lower(): "person", owner.lower(): "self"})
         if not people:
             _self_fact("people", f"Important people: {a}")
         return f"{len(people)} people" if people else "your people"

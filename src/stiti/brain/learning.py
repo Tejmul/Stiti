@@ -177,7 +177,8 @@ def reflect(max_segments: int = 30) -> dict:
     body = "\n".join(f"[S{s['id']} · {s['started_at']:%a %d %b %H:%M} · mood {s['mood']}] {s['txt'][:400]}" for s in segs)
     try:
         r = router.complete([{"role": "user", "content":
-                              "These are snippets of Tejmul's conversations with his assistant this week. Write up to 3 "
+                              f"These are snippets of {__import__('stiti.profile', fromlist=['name']).name()}'s conversations "
+                              "with their assistant this week. Write up to 3 "
                               "short, kind, useful insights about his patterns (energy, stress triggers, what helps). "
                               "Only what the snippets support. Return JSON: {\"insights\":[{\"text\":\"\",\"evidence\":[segment ids]}]}"
                               "\n\n" + body}], route="background_smart", privacy=1, max_tokens=600, json_mode=True)

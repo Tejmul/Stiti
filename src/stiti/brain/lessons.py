@@ -44,7 +44,8 @@ def capture(text: str, *, mood: str | None, source_episode_ids: list[int]) -> tu
         trigger["time"] = "morning"
     polarity = "dont" if NEG.search(text) else "do"
     guidance = " ".join(text.strip().rstrip(".!").split()[:25])
-    situation = (f"Tejmul is {'/'.join(trigger['mood'])}" if "mood" in trigger else "Any situation") + \
+    from .. import profile
+    situation = (f"{profile.call()} is {'/'.join(trigger['mood'])}" if "mood" in trigger else "Any situation") + \
                 (f", {trigger['time']}" if "time" in trigger else "") + f" (mood at the time: {mood or 'unknown'})"
     vec = embed.embed_docs([f"{situation}. {guidance}"])[0]
 

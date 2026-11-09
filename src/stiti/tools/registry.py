@@ -113,13 +113,13 @@ def _mac(fn_name: str):
 
 
 NATIVE = [
-    Tool("calendar_today", "List today's events from Tejmul's calendar (Apple/Google via macOS Calendar).",
+    Tool("calendar_today", "List today's events from the user's calendar (Apple/Google via macOS Calendar).",
          _obj(), lambda: _cal_today()),
     Tool("calendar_upcoming", "List upcoming calendar events for the next N days.",
          _obj(days={"type": "integer", "description": "days ahead, 1-31"}), _cal_upcoming),
     Tool("mail_unread", "Count unread emails and list the latest senders and subjects (read-only).",
          _obj(), lambda: _mail_unread(), untrusted_output=True),
-    Tool("mail_search", "Search Tejmul's email by sender or subject words (read-only).",
+    Tool("mail_search", "Search the user's email by sender or subject words (read-only).",
          _obj(query={"type": "string"}), _mail_search, untrusted_output=True),
     Tool("mac_open_app", "Open an app on the Mac (allowlisted apps only).",
          _obj(name={"type": "string"}), _open_app, risk="low"),
@@ -143,8 +143,8 @@ NATIVE = [
          _obj(query={"type": "string"}), _mac("web_search"), untrusted_output=True),
     Tool("web_read", "Read the text of a web page by URL.",
          _obj(url={"type": "string"}), _mac("web_read"), untrusted_output=True),
-    Tool("screen_now", "Which app and window Tejmul is looking at right now.", _obj(), _mac("screen_now")),
-    Tool("screen_read", "Read the text currently on Tejmul's screen (on-device OCR, nothing stored).",
+    Tool("screen_now", "Which app and window the user is looking at right now.", _obj(), _mac("screen_now")),
+    Tool("screen_read", "Read the text currently on the user's screen (on-device OCR, nothing stored).",
          _obj(), _mac("screen_read"), untrusted_output=True),
 ]
 

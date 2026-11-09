@@ -49,7 +49,8 @@ def _remember(name: str, text: str) -> None:
 
 def _self_id() -> int:
     from .sleep import resolve_entity
-    return resolve_entity("Tejmul", "self")
+    from .. import profile
+    return resolve_entity(profile.name(), "self")
 
 
 # ---------------- render ----------------
@@ -60,7 +61,8 @@ def render_user() -> str:
                   WHERE e.kind<>'self' AND upper_inf(f.recorded) AND f.valid @> now() AND f.privacy <= 1
                   ORDER BY f.id LIMIT 60""")
     dirs = q("SELECT id, category, directive FROM user_directives WHERE status='active' ORDER BY category, id")
-    lines = ["# USER — who Tejmul is and how to talk to him", "",
+    from .. import profile
+    lines = [f"# USER — who {profile.call()} is and how to talk to {profile.p('obj')}", "",
              f"_Stiti keeps this file in sync with her brain ({datetime.now(CFG.tz):%Y-%m-%d %H:%M})._",
              "_Edit freely: change a line, delete a line, or add `- something` under any heading. "
              "Your edits always win. Keep the F/D number tag at the start of lines you change._", "",
@@ -81,7 +83,8 @@ def render_user() -> str:
 def render_lessons() -> str:
     rows = q("""SELECT id, situation, guidance, polarity, confidence, seen_count FROM lessons
                 WHERE status='active' ORDER BY id""")
-    lines = ["# LESSONS — how Stiti should talk to Tejmul", "",
+    from .. import profile
+    lines = [f"# LESSONS — how Stiti should talk to {profile.call()}", "",
              "_Edit a guidance line to change a rule, delete it to retire it, or add a new one like_",
              "_`- [MUST NOT] joke about deadlines` — your version always wins._", ""]
     for r in rows:

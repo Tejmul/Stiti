@@ -43,7 +43,7 @@ def render(open_browser: bool = True) -> str:
 <style>:root{{--bg:#fff;--fg:#1f2328}}@media (prefers-color-scheme:dark){{:root{{--bg:#0d1117;--fg:#e6edf3}}}}
 body{{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui}}#g{{height:100vh}}
 header{{position:fixed;top:12px;left:16px;z-index:2;font-size:14px;opacity:.85}}</style></head><body>
-<header><b>Stiti · Tejmul's life graph</b> — {len(ents)} entities · {len(facts)} facts (dashed = ended, kept forever)</header>
+<header><b>Stiti · {html.escape(__import__('stiti.profile', fromlist=['name']).name())}'s life graph</b> — {len(ents)} entities · {len(facts)} facts (dashed = ended, kept forever)</header>
 <div id="g"></div><script>
 const nodes=new vis.DataSet({json.dumps(nodes, default=str)});
 const edges=new vis.DataSet({json.dumps(edges, default=str)});

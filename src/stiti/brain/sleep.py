@@ -16,7 +16,7 @@ from ..config import CFG
 from ..db import one, q
 from . import lessons
 
-EXTRACT_PROMPT = """You extract durable memory for a personal assistant about its owner, Tejmul.
+EXTRACT_PROMPT = """You extract durable memory for a personal assistant about its owner, {owner}.
 From the owner's messages below, return ONLY JSON:
 {"entities":[{"name":"","kind":"self|person|project|place|org|event|feeling|topic|thing","aliases":[]}],
  "facts":[{"subject":"","predicate":"snake_case verb","object":"","object_is_entity":true,
@@ -25,7 +25,7 @@ From the owner's messages below, return ONLY JSON:
  "directives":[{"directive":"imperative rule for the assistant, e.g. 'Reply in Hinglish when I do'",
                 "category":"talk_style|routine|preference|boundary|goal","supersession_key":"snake_case",
                 "evidence_ids":[0]}]}
-Rules: Tejmul is the subject "Tejmul" (kind self). Only facts the owner states or clearly implies — no guesses.
+Rules: the owner is the subject "{owner}" (kind self). Only facts the owner states or clearly implies — no guesses.
 functional=true when a subject can only have one value at a time (lives_in, works_at, relationship_status).
 Skip commands (todos/alarms), small talk and questions. Use names as written (Hinglish is fine). Empty lists are fine.
 
@@ -59,11 +59,15 @@ def embed_backlog() -> int:
 # ---------- step 4 ----------
 def resolve_entity(name: str, kind: str, aliases: list[str] | None = None) -> int:
     name = name.strip()
-    if kind == "self" or name.lower() in ("tejmul", "me", "i", "main"):
+    from .. import profile
+    if kind == "self" or name.lower() in profile.self_aliases() + ["the owner"]:
         row = one("SELECT id FROM entities WHERE kind='self' AND merged_into IS NULL LIMIT 1")
         if row:
+            if profile.get("name"):
+                q("UPDATE entities SET name=%s WHERE id=%s AND name<>%s", (profile.name(), row["id"], profile.name()))
             return row["id"]
-        return one("INSERT INTO entities(kind, name, aliases) VALUES ('self','Tejmul','{me,main}') RETURNING id")["id"]
+        return one("INSERT INTO entities(kind, name, aliases) VALUES ('self',%s,'{me,main}') RETURNING id",
+                   (profile.name(),))["id"]
     row = one("""SELECT id FROM entities WHERE merged_into IS NULL AND
                    (lower(name)=lower(%(n)s) OR lower(%(n)s) = ANY(SELECT lower(a) FROM unnest(aliases) a))
                  LIMIT 1""", {"n": name})
@@ -155,7 +159,8 @@ def extract(verbose: bool = False) -> dict:
         for i in range(0, len(rows), 20):
             batch = rows[i:i + 20]
             msgs = "\n".join(f"[{r['id']}] ({r['occurred_at'].astimezone(CFG.tz):%Y-%m-%d}) {r['text']}" for r in batch)
-            res = router.complete([{"role": "user", "content": EXTRACT_PROMPT + msgs}], route="background_smart",
+            from .. import profile
+            res = router.complete([{"role": "user", "content": EXTRACT_PROMPT.replace("{owner}", profile.name()) + msgs}], route="background_smart",
                                   privacy=1, max_tokens=1500, temperature=0.1, json_mode=True)
             provider, tokens = res["provider"], tokens + res["tokens_in"] + res["tokens_out"]
             data = json.loads(res["text"][res["text"].find("{"):res["text"].rfind("}") + 1])
@@ -221,7 +226,8 @@ def render() -> None:
     cur = q("""SELECT f.fact_text FROM facts f WHERE upper_inf(f.recorded) AND f.valid @> now() ORDER BY f.id DESC LIMIT 40""")
     changed = q("""SELECT f.fact_text, upper(f.valid) ended FROM facts f WHERE NOT upper_inf(f.valid)
                    ORDER BY upper(f.valid) DESC LIMIT 10""")
-    g = ["# GRAPH_REPORT — Tejmul's life graph", f"_Built {datetime.now(CFG.tz):%Y-%m-%d %H:%M}_", "",
+    from .. import profile
+    g = [f"# GRAPH_REPORT — {profile.name()}'s life graph", f"_Built {datetime.now(CFG.tz):%Y-%m-%d %H:%M}_", "",
          "## Central nodes"] + [f"- **{r['name']}** ({r['kind']}) — {r['deg']} current facts" for r in gods]
     g += ["", "## Current facts"] + [f"- {r['fact_text']}" for r in cur]
     g += ["", "## Recently changed (kept, not deleted)"] + [f"- {r['fact_text']} — ended {r['ended']:%Y-%m-%d}"

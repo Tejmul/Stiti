@@ -40,9 +40,9 @@ class EmotionState:
         if self.voice_label:
             parts.append(f"voice: {self.voice_label} {self.voice_conf:.2f}")
         if self.baseline:
-            parts.append(f"his baseline: {self.baseline}")
+            parts.append(f"usual mood: {self.baseline}")
         if self.denial:
-            parts.append("he says he is NOT feeling that — believe him")
+            parts.append("they say they are NOT feeling that — believe them")
         return " · ".join(parts) + " (a hint; ask, don't declare)"
 
 
