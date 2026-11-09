@@ -57,9 +57,8 @@ function noise3(x, y, z) {
 
 // ------------------------------------------------------------------ state
 let cv, ctx, W = 0, H = 0, dpr = 1, mobile = false, N = 0;
-let px, py, vx, vy, ux, uy, uz, rr, rnd, size, near, links;
-let nn = 0;
-const LINK = 56, LINK_AREA = 210;   // nerves: link dots closer than LINK px, only within LINK_AREA of the cursor
+let px, py, vx, vy, ux, uy, uz, rr, rnd, size, zz, edges;
+const LINK_AREA = 230;   // the nerve web lights up within this many px of the cursor
 let bucket = [], bcount = new Int32Array(16);
 let frames = 0, t = 0, last = 0, raf = 0, liftS = 0, dimT = 1, dimV = 1, fadeV = 1, introT = 0, introX = 0, introY = 0;
 let bcx = 0, bcy = 0, R = 0, SZ = 1;
@@ -82,7 +81,7 @@ function alloc(n) {
   N = n;
   const F = () => new Float32Array(n);
   px = F(); py = F(); vx = F(); vy = F(); ux = F(); uy = F(); uz = F(); rr = F(); rnd = F(); size = F();
-  near = new Int32Array(n); links = new Uint8Array(n);
+  zz = new Float32Array(n);
   bucket = Array.from({ length: 16 }, () => new Int32Array(n));
   const ga = Math.PI * (3 - Math.sqrt(5));
   for (let i = 0; i < n; i++) {
@@ -93,6 +92,31 @@ function alloc(n) {
     rnd[i] = Math.random();
     px[i] = bcx + ux[i] * R; py[i] = bcy + uy[i] * R;
   }
+  wire();
+}
+
+// Fixed "neural" wiring: ~1 in 9 dots is a neuron, permanently linked to its 3 nearest neurons along the
+// sphere surface (3D distance on the unit sphere). Computed once, so the web never flickers; the cursor only
+// lights it up. Long links are dropped so it reads as a fine mesh, like nerves, not random scribbles.
+function wire() {
+  const ids = [];
+  for (let i = 0; i < N; i++) if (rnd[i] > .89) ids.push(i);
+  const m = ids.length, spacing = Math.sqrt(4 * Math.PI / Math.max(1, m)), maxD2 = (spacing * 1.8) ** 2;  // ≤1.8 spacings
+  const seen = new Set(), out = [];
+  for (let a = 0; a < m; a++) {
+    const i = ids[a], best = [[9, -1], [9, -1], [9, -1]];
+    for (let b = 0; b < m; b++) {
+      if (a === b) continue;
+      const j = ids[b], dx = ux[i] - ux[j], dy = uy[i] - uy[j], dz = uz[i] - uz[j], d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 < best[2][0]) { best[2] = [d2, j]; best.sort((p, q) => p[0] - q[0]); }
+    }
+    for (const [d2, j] of best) {
+      if (j < 0 || d2 > maxD2) continue;
+      const key = i < j ? i * 65536 + j : j * 65536 + i;
+      if (!seen.has(key)) { seen.add(key); out.push(i, j); }
+    }
+  }
+  edges = Int32Array.from(out);
 }
 
 function resize() { const n = layout(); if (n !== N) alloc(n); }
@@ -128,7 +152,6 @@ function frame(now) {
   const since = tn - introT;
   if (introT && since > 2500) introT = 0;
   bcount.fill(0);
-  nn = 0;
   const linkOn = mouse.on && !REDUCE;
 
   for (let i = 0; i < N; i++) {
@@ -146,6 +169,7 @@ function frame(now) {
     const ssx = cx0 + x1 * k, ssy = cy0 + y2 * k;
 
     // depth shading: rim and ridges read darker (royal), the facing centre lighter (sky)
+    zz[i] = z2;
     const rim = 1 - Math.abs(z2);
     let ci, a, s;
     if (z2 >= 0) {
@@ -185,10 +209,6 @@ function frame(now) {
     px[i] = x + vx[i] * dt; py[i] = y + vy[i] * dt;
 
     if (a < .06) continue;
-    if (linkOn && z2 >= 0 && a >= .3) {             // front dots near the cursor take part in the nerve web
-      const ddx = px[i] - mx, ddy = py[i] - my;
-      if (ddx * ddx + ddy * ddy < LINK_AREA * LINK_AREA) near[nn++] = i;
-    }
     const b = a < .3 ? 0 : a < .54 ? 1 : a < .78 ? 2 : 3;
     const qb = ci * 4 + b;
     bucket[qb][bcount[qb]++] = i;
@@ -203,7 +223,7 @@ function draw() {
   const G = dimV * fadeV;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  if (nn > 1) drawLinks(G);
+  if (mouse.on && !REDUCE && edges) drawLinks(G);
   let drawn = 0;
   for (let q = 0; q < 16; q++) {
     const c = bcount[q]; if (!c) continue;
@@ -222,37 +242,22 @@ function draw() {
   ctx.globalAlpha = 1;
 }
 
-// Neural "nerves": thin navy strings between neighbouring dots around the cursor.
-// Spatial hash (cell = LINK) so it's ~O(n) on the few hundred dots near the pointer; ≤4 links per dot.
-const cells = new Map(), lineB = [[], [], []];
+// Neural "nerves": draw the fixed wiring (front side only) where it is near the cursor, fading with distance.
+const lineB = [[], [], []];
 function drawLinks(G) {
-  cells.clear();
-  for (let k = 0; k < nn; k++) {
-    const i = near[k], key = ((px[i] / LINK) | 0) * 4096 + ((py[i] / LINK) | 0);
-    let c = cells.get(key); if (!c) cells.set(key, (c = [])); c.push(i); links[i] = 0;
-  }
   lineB[0].length = lineB[1].length = lineB[2].length = 0;
-  const L2 = LINK * LINK, A = LINK_AREA;
-  for (let k = 0; k < nn; k++) {
-    const i = near[k]; if (links[i] >= 4) continue;
-    const cx = (px[i] / LINK) | 0, cy = (py[i] / LINK) | 0;
-    for (let gx = cx - 1; gx <= cx + 1; gx++) for (let gy = cy - 1; gy <= cy + 1; gy++) {
-      const c = cells.get(gx * 4096 + gy); if (!c) continue;
-      for (const j of c) {
-        if (j <= i || links[j] >= 4 || links[i] >= 4) continue;
-        const dx = px[j] - px[i], dy = py[j] - py[i], d2 = dx * dx + dy * dy;
-        if (d2 > L2) continue;
-        const mxd = (px[i] + px[j]) / 2 - mouse.x, myd = (py[i] + py[j]) / 2 - mouse.y;
-        const fall = 1 - Math.sqrt(mxd * mxd + myd * myd) / A;
-        if (fall <= 0) continue;
-        const w = (1 - Math.sqrt(d2) / LINK) * fall;        // 0..1
-        lineB[w > .5 ? 2 : w > .25 ? 1 : 0].push(i, j);
-        links[i]++; links[j]++;
-      }
-    }
+  const A = LINK_AREA, mx = mouse.x, my = mouse.y;
+  for (let k = 0; k < edges.length; k += 2) {
+    const i = edges[k], j = edges[k + 1];
+    if (zz[i] < 0 || zz[j] < 0) continue;                       // back of the sphere: hidden
+    const dx = (px[i] + px[j]) / 2 - mx, dy = (py[i] + py[j]) / 2 - my;
+    const d = Math.sqrt(dx * dx + dy * dy);
+    if (d > A) continue;
+    const w = (1 - d / A) * Math.min(1, (zz[i] + zz[j]) * 1.5);  // fade toward the cursor's edge and the rim
+    lineB[w > .55 ? 2 : w > .28 ? 1 : 0].push(i, j);
   }
-  ctx.strokeStyle = COLORS[0]; ctx.lineWidth = .6;
-  const AL = [.10, .2, .32];
+  ctx.strokeStyle = COLORS[1]; ctx.lineWidth = .7; ctx.lineCap = "round";
+  const AL = [.14, .28, .46];
   for (let b = 0; b < 3; b++) {
     const L = lineB[b]; if (!L.length) continue;
     ctx.globalAlpha = AL[b] * G;
