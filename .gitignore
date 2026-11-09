@@ -7,3 +7,5 @@ __pycache__/
 graphify-out/
 .DS_Store
 !.env.example
+.playwright-mcp/
+/actions/
