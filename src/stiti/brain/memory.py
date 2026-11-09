@@ -24,6 +24,7 @@ some all just also very too more most much many there here up down out over agai
 hai hain ho hoon hu tha thi the kya kaun kab kahan kaise kyu kyun ka ki ke ko se me mein mai main
 mujhe mera meri mere tum tera teri tere aap apna apni apne woh wo yeh ye aur ya bhi to toh na nahi
 nahin haan ha ji acha accha bas wala wali wale raha rahi rahe kar karo karna kiya diya liya hua
+now currently recently still ever already abhi ab aajkal filhaal bhi abhi tak
 """.split())
 
 _WORD = re.compile(r"[a-z0-9ऀ-ॿ]+")
