@@ -27,6 +27,7 @@ CAT_TITLES = {"talk_style": "How to talk to me", "boundary": "Never do", "routin
               "preference": "Preferences", "goal": "Goals"}
 TITLE_CAT = {v.lower(): k for k, v in CAT_TITLES.items()}
 
+TRAIT_LINE = re.compile(r"^\s*[-*]\s*\[T:(?P<key>[\w]+)\]\s*(?P<text>.+?)\s*$")
 ID_LINE = re.compile(r"^\s*[-*]\s*\[(?P<kind>[FD])(?P<id>\d+)\]\s*(?P<text>.+?)\s*$")
 NEW_LINE = re.compile(r"^\s*[-*]\s+(?P<text>(?!\[[FD]\d+\]).+?)\s*$")
 LESSON_LINE = re.compile(r"^\s*[-*]\s*\*\*L(?P<id>\d+)\*\*\s*\[(?P<pol>MUST NOT|MUST)\]\s*(?P<text>.+?)\s*$")
@@ -70,6 +71,12 @@ def render_user() -> str:
     lines += [f"- [F{f['id']}] {f['fact_text']}" for f in facts] or ["- (nothing yet)"]
     lines += ["", "## People and things in my life"]
     lines += [f"- [F{f['id']}] {f['fact_text']}" for f in others] or ["- (nothing yet)"]
+    traits = q("SELECT key, label, confidence, source FROM traits WHERE label IS NOT NULL ORDER BY key")
+    lines += ["", "## How I understand you (tentative)",
+              "_My reading from what you've told me — not a diagnosis. Rewrite a line if I got you wrong, "
+              "or delete it._"]
+    lines += [f"- [T:{t['key']}] {t['label']}" + ("" if t["source"] == "owner_edit" else f" · {t['confidence']:.0%} sure")
+              for t in traits] or ["- (nothing yet — say “key things” for a 5-minute intro)"]
     for cat in CATS:
         lines += ["", f"## {CAT_TITLES[cat]}"]
         rows = [d for d in dirs if d["category"] == cat]
@@ -101,10 +108,21 @@ def _import_user(text: str) -> dict:
     stats = {"changed": 0, "removed": 0, "added": 0}
     seen_f, seen_d = set(), set()
     section = None
+    seen_t = set()
     for line in text.splitlines():
         h = re.match(r"^##\s+(.+?)\s*$", line)
         if h:
             section = h.group(1).strip().lower()
+            continue
+        tm = TRAIT_LINE.match(line)
+        if tm:
+            key, new = tm["key"], re.sub(r"\s*·\s*\d+% sure\s*$", "", tm["text"]).strip()
+            seen_t.add(key)
+            row = one("SELECT label FROM traits WHERE key=%s", (key,))
+            if row and (row["label"] or "").strip() != new:
+                q("""UPDATE traits SET label=%s, source='owner_edit', confidence=0.95, value=NULL, updated_at=now()
+                     WHERE key=%s""", (new, key))
+                stats["changed"] += 1
             continue
         m = ID_LINE.match(line)
         if m:
@@ -147,6 +165,8 @@ def _import_user(text: str) -> dict:
     for rid in _last_rendered_ids("D") - seen_d:
         stats["removed"] += len(q("""UPDATE user_directives SET status='superseded'
                                      WHERE id=%s AND status='active' RETURNING id""", (rid,)))
+    for key in set(_state().get("ids_T", [])) - seen_t:
+        stats["removed"] += len(q("DELETE FROM traits WHERE key=%s RETURNING key", (key,)))
     return stats
 
 
@@ -167,6 +187,7 @@ def _record_ids() -> None:
     ids = [ID_LINE.match(line) for line in txt.splitlines()]          # only real list lines count
     st["ids_F"] = sorted({int(m["id"]) for m in ids if m and m["kind"] == "F"})
     st["ids_D"] = sorted({int(m["id"]) for m in ids if m and m["kind"] == "D"})
+    st["ids_T"] = sorted({m["key"] for m in map(TRAIT_LINE.match, txt.splitlines()) if m})
     STATE.write_text(json.dumps(st))
 
 
