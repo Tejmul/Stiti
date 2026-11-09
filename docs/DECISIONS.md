@@ -104,4 +104,4 @@ Laya code stays (`stiti/decide.py`), off by default (`STITI_LAYA=off`).
 embedder 280 · whisper-small (MLX) 1,215 · Kokoro 172 · VAD + Smart Turn 148 · emotion2vec+ (funasr+torch) 1,553 · AEC 5.
 - **MLX cache capped at 64 MB:** whisper 1,213 → 326 MB, STT 283 → ~320 ms. Kept.
 - **emotion2vec+ off by default:** prosody-vs-baseline + text mood still run; menubar toggle loads it on demand.
-- Target after both: ~1.0–1.2 GB for the whole app.
+- **Measured after both: 1,254 MB** for the whole running app (was 2,759 MB).

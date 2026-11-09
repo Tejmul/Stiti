@@ -19,7 +19,7 @@
 ![Local LLM](https://img.shields.io/badge/local%20LLM-none%20(by%20design)-lightgrey)
 ![Runs on](https://img.shields.io/badge/runs%20on-M2%20·%208%20GB-black?logo=apple)
 ![Hinglish](https://img.shields.io/badge/speaks-Hinglish%20%2B%20English-FF9933)
-![Status](https://img.shields.io/badge/engine%20%2B%20voice%20%2B%20life%20OS-working-success)
+![Status](https://img.shields.io/badge/engine%20%2B%20voice%20%2B%20life%20OS-working-success) ![evals](https://github.com/Tejmul/Stiti/actions/workflows/ci.yml/badge.svg)
 
 *"Hey Stiti" · "Wake up baby girl" — and she remembers everything.*
 
@@ -71,6 +71,11 @@ No fine-tuning. No vendor memory. No GPU. No bill.
 | 📬 | **Mail (read-only)** | Gmail via IMAP app password: "koi mail aaya?" Mail content is treated as untrusted: it can never make Stiti act. |
 | 📱 | **Telegram** | Chat with Stiti from your phone; alarms get pushed there too. Owner-locked with a pairing code. |
 | 🔌 | **Any MCP tool** | Plug in MCP servers; only the 5 most relevant tools are shown per request, write actions need your "haan", and a server whose tools change is disabled until you re-approve it. |
+| 🤫 | **Knows when to shut up** | "shut up", "okay", "chalo", "bye", "bas" → she stops mid-sentence and stays silent (nudges too) until "Hi Stiti". |
+| 👂 | **Lets you finish** | Smart Turn v3.2 tells a pause from a finished thought (6/6 in tests, ~30 ms); "haan/hmm" while she talks doesn't stop her. |
+| 🔔 | **Speaks first — rarely** | Meeting in 10 min, a deadline, 3 h without a break, "how did the interview go?" — budgeted, quiet at night, and it learns which nudges you like. |
+| 🖱️ | **Does things on your Mac** | Calendar events, Spotlight file search, music, iMessage (only after your "haan"), web search, "what's on my screen". |
+| 📈 | **Gets better every day** | "nahi, galat" undoes and learns; "short mein" twice becomes a rule; lessons that keep failing retire themselves. |
 | 🖥️ | **Lives in your menubar** | `stiti install-app` → signed Stiti.app, starts at login: ○ listening · ◉ awake · ⏸ muted. |
 | 💾 | **Never loses her mind** | Nightly AES-256 encrypted backup of the whole brain (key in your Keychain); restores go into a separate database, never over the live one. |
 | 👋 | **Gets to know you** | "intro shuru karo" → a 10-question interview that writes your people, routine, goals and how to talk to you straight into her brain. |
@@ -184,6 +189,9 @@ Real numbers from this repo's evals, not marketing:
 | Whole voice stack + brain resident memory | **~954 MB** (+~800 MB with emotion2vec+), budget 3 GB |
 | Echo: mic hearing her own voice as speech (laptop speakers) | **84% → 0%** with AEC |
 | Document search (hybrid, chunks) | **~12 ms** |
+| Memory eval (LongMemEval-style: extraction, multi-session, temporal, updates, abstention) | **12/12** |
+| Smart Turn end-of-turn (finished vs. unfinished) | **6/6**, ~30 ms |
+| Whole menubar app, measured with `footprint` | 2.76 GB → **1.25 GB** after capping MLX's cache (emotion2vec+ optional, +1.5 GB) |
 | CP-SAT day plan, 8 tasks with deadlines | **45–64 ms**, all scheduled |
 | Day scheduling, OR-Tools CP-SAT (researched) | 12 tasks solved optimally in 10–60 ms; 100 tasks ≈ 113 MB |
 
@@ -267,21 +275,20 @@ Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.
 
 ## 🗺️ Roadmap
 
-- [x] **Phase 0: Research**: 6 domains, ≥10 sources each, rea reverse-engineering
-- [x] **Phase 1: Engine v0**: Postgres brain, recall, decisions, fast path, router, lessons, psychology, emotion fusion, sleep job
-- [x] **Phase 2: Voice v1**: wake phrases **"Stiti" / "Hey Stiti" / "Wake up baby girl"** · Silero VAD · whisper-small (Hinglish prompt) · Kokoro · sleep/awake loop · headphone barge-in
-- [x] **Phase 2.1: Echo cancellation**: WebRTC AEC3 full-duplex, barge-in on laptop speakers
-- [ ] Phase 2.2: Smart Turn v3, Hinglish STT A/B on Tejmul's real voice
-- [x] **Phase 3a: Voice emotion v1**: prosody (loudness, pitch, pace) vs. your own baseline, fused with text mood
-- [x] **Phase 3b: emotion2vec+ base**, background thread, fused with prosody + text
-- [x] **Phase 4a: Graph viewer**: `stiti graph` → interactive `graph.html` (ended facts kept as dashed edges)
-- [x] **Phase 4b: document ingestion** (MarkItDown, heading-aware chunks, hybrid recall)
-- [ ] Phase 4c: private LongMemEval-style eval, OCR for scans
-- [x] **Phase 5: Life OS**: CP-SAT day planner · Socratic goal chunker · forgiving habits · morning brief · Nudge Gate
-- [x] **Phase 6: Connectors**: EventKit calendar + Reminders mirror, Gmail (read-only), Telegram, LLM tool loop, MCP bus with tool-RAG + pin-and-diff + taint
-- [ ] Phase 6.1: SearXNG web search, Google Workspace write actions behind confirmation
-- [x] **Phase 7: Always-on**: menubar Stiti.app, starts at login, nightly sleep at 03:00
-- [ ] Phase 7.1: Laya INT8 back on the hot path
+- [x] **Research**: 6 domains, ≥10 papers/architectures per feature, rea reverse-engineering
+- [x] **Brain**: Postgres memory (episodes ∞, bitemporal facts, lessons, directives), hybrid recall, context compiler, free-cloud router, privacy tiers
+- [x] **Knows you**: onboarding interview · editable `USER.md` / `LESSONS.md` (your edits win) · encrypted nightly backups
+- [x] **Voice**: wake phrases · stop words ("shut up", "okay", "chalo", "bye") · Smart Turn end-of-turn · WebRTC echo cancellation + barge-in · "hmm…" filler · resumes after "haan"
+- [x] **Emotion**: prosody vs. your baseline + text mood (+ optional emotion2vec+)
+- [x] **Proactive**: meeting heads-ups · deadlines · break nudges · evening wrap-up · follow-ups ("how did the interview go?") · learned nudge gate
+- [x] **Life OS**: CP-SAT day planner · Socratic goal chunker · forgiving habits · morning brief
+- [x] **Mac actions**: Calendar read/write · Reminders two-way · Spotlight files · music · iMessage (with confirmation) · web search/read · screen awareness · OCR
+- [x] **Learning loops**: inferred lessons · lesson scoring + nightly curation · undo + "what did you mean?" · topic segments · reflections
+- [x] **App**: menubar (type-to-Stiti, quick todo, mood timeline, live status) · starts at login · health check · log rotation
+- [x] **Evals + CI**: dates 15/15 · recall 10/10 · LongMemEval-style 12/12 · sync · proactivity · learning — on every push
+- [ ] **Needs API keys to verify**: LLM conversation, tool calling, nightly fact extraction, reflections
+- [ ] **Needs your voice**: Hinglish STT A/B, wake-word false-wake rate, personal voice baseline
+- [ ] Later: Laya INT8 on the hot path · Google Workspace write actions · speaker verification · streaming LLM→TTS
 
 ---
 
