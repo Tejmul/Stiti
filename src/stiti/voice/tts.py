@@ -68,11 +68,16 @@ class TTS:
         self._stop.set()
 
 
-def chime(up: bool = True, sr: int = 24000) -> None:
+def chime_audio(up: bool = True, sr: int = 24000) -> tuple[np.ndarray, int]:
     """Short two-tone chime: rising = awake, falling = going to sleep."""
     f1, f2 = (660, 990) if up else (990, 660)
     t = np.linspace(0, 0.09, int(sr * 0.09), endpoint=False)
     tone = np.concatenate([np.sin(2 * np.pi * f1 * t), np.sin(2 * np.pi * f2 * t)]) * 0.25
     fade = np.minimum(1, np.minimum(np.arange(len(tone)), np.arange(len(tone))[::-1]) / 300)
-    sd.play((tone * fade).astype(np.float32), sr)
+    return (tone * fade).astype(np.float32), sr
+
+
+def chime(up: bool = True) -> None:
+    a, sr = chime_audio(up)
+    sd.play(a, sr)
     sd.wait()
