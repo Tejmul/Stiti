@@ -108,10 +108,13 @@ def main() -> None:
         chat(debug="--debug" in args)
     elif cmd == "voice":
         voice(headphones="--headphones" in args, debug="--debug" in args)
+    elif cmd == "graph":
+        from .brain.graphview import render
+        print(f"Life graph → {render(open_browser='--no-open' not in args)}")
     elif cmd == "doctor":
         doctor()
     elif cmd == "sleep":
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | voice [--headphones] [--debug] | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | voice [--headphones] [--debug] | graph | doctor | sleep --now]")

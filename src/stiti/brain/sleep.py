@@ -238,6 +238,8 @@ def render() -> None:
     g += ["", "## Recently changed (kept, not deleted)"] + [f"- {r['fact_text']} — ended {r['ended']:%Y-%m-%d}"
                                                            for r in changed]
     (home / "GRAPH_REPORT.md").write_text("\n".join(g) + "\n")
+    from .graphview import render as render_graph
+    render_graph(open_browser=False)
 
 
 def run(verbose: bool = False) -> dict:
