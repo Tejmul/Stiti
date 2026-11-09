@@ -5,7 +5,7 @@ on:
   pull_request:
 jobs:
   evals:
-    runs-on: macos-14          # Apple Silicon, like Tejmul's M2
+    runs-on: macos-latest      # Apple Silicon, like Tejmul's M2
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
