@@ -64,6 +64,14 @@ No fine-tuning. No vendor memory. No GPU. No bill.
 | 🌱 | **Habits without guilt** | Strength that grows and dents, never resets. Reminders fade as the habit sticks. |
 | 🪜 | **Breaks big goals down** | "break down: launch Stiti" → Socratic questions → one 25-minute step with an if-then plan. |
 | 🕸️ | **See your life graph** | `stiti graph` opens an interactive map of your people, projects and places. |
+| 🔇 | **Talks over you? Never.** | WebRTC AEC3 echo cancellation: on laptop speakers the mic heard her own voice as speech 84% of the time, now 0%. Interrupt her anytime, no headphones. |
+| 🎭 | **Hears how you feel** | emotion2vec+ base (70–165 ms, in the background) + pitch/loudness/pace vs. *your* normal voice + your words. |
+| 📚 | **Reads your docs** | `stiti ingest ~/Notes` → PDFs, Word, slides, sheets and Markdown become searchable memory (~12 ms). Bank/medical folders stay P2. |
+| 📆 | **Calendar & Reminders** | Apple Calendar (incl. Google calendars added to macOS) for "what's on today" and planning; every alarm is mirrored to Reminders so **it rings on your iPhone** even if the Mac is off. |
+| 📬 | **Mail (read-only)** | Gmail via IMAP app password: "koi mail aaya?" Mail content is treated as untrusted: it can never make Stiti act. |
+| 📱 | **Telegram** | Chat with Stiti from your phone; alarms get pushed there too. Owner-locked with a pairing code. |
+| 🔌 | **Any MCP tool** | Plug in MCP servers; only the 5 most relevant tools are shown per request, write actions need your "haan", and a server whose tools change is disabled until you re-approve it. |
+| 🖥️ | **Lives in your menubar** | `stiti install-app` → signed Stiti.app, starts at login: ○ listening · ◉ awake · ⏸ muted. |
 | 🛟 | **Works offline** | No API keys or rate-limited? Todos, alarms, memory and lessons still work. Only deep conversation pauses. |
 
 ---
@@ -170,7 +178,9 @@ Real numbers from this repo's evals, not marketing:
 | Hinglish time parsing | **15/15** checks, including the 1 AM "kal" trap |
 | Speech-to-text (whisper-small 4-bit) vs large-v3-turbo | **283 ms** vs 1,064 ms per utterance, ~same Hinglish accuracy |
 | Your last word → Stiti's first audio (voice e2e, fast path) | **~0.7–1.8 s** |
-| Whole voice stack + brain resident memory | **~954 MB** (budget 3 GB) |
+| Whole voice stack + brain resident memory | **~954 MB** (+~800 MB with emotion2vec+), budget 3 GB |
+| Echo: mic hearing her own voice as speech (laptop speakers) | **84% → 0%** with AEC |
+| Document search (hybrid, chunks) | **~12 ms** |
 | CP-SAT day plan, 8 tasks with deadlines | **45–64 ms**, all scheduled |
 | Day scheduling, OR-Tools CP-SAT (researched) | 12 tasks solved optimally in 10–60 ms; 100 tasks ≈ 113 MB |
 
@@ -239,8 +249,9 @@ cp .env.example .env   # paste keys
 uv run stiti doctor          # checks Postgres, embedder, keys, LLM
 uv run stiti chat --debug    # chat; /debug shows route, mood, latency
 uv run stiti voice           # always-on voice: "Hey Stiti" / "Wake up baby girl"
-uv run stiti voice --headphones   # lets you interrupt her mid-sentence
 uv run stiti graph           # open your life graph
+uv run stiti ingest ~/Notes  # make your notes/PDFs/docs searchable memory
+uv run stiti install-app     # menubar app that starts at login (mic, Calendar, Reminders prompts say "Stiti")
 uv run stiti sleep --now     # run the night job now
 ```
 
@@ -254,14 +265,18 @@ Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.
 - [x] **Phase 0: Research**: 6 domains, ≥10 sources each, rea reverse-engineering
 - [x] **Phase 1: Engine v0**: Postgres brain, recall, decisions, fast path, router, lessons, psychology, emotion fusion, sleep job
 - [x] **Phase 2: Voice v1**: wake phrases **"Stiti" / "Hey Stiti" / "Wake up baby girl"** · Silero VAD · whisper-small (Hinglish prompt) · Kokoro · sleep/awake loop · headphone barge-in
-- [ ] Phase 2.1: Pipecat + echo cancellation, Smart Turn v3, Hinglish STT A/B on Tejmul's real voice
+- [x] **Phase 2.1: Echo cancellation**: WebRTC AEC3 full-duplex, barge-in on laptop speakers
+- [ ] Phase 2.2: Smart Turn v3, Hinglish STT A/B on Tejmul's real voice
 - [x] **Phase 3a: Voice emotion v1**: prosody (loudness, pitch, pace) vs. your own baseline, fused with text mood
-- [ ] Phase 3b: emotion2vec+ base
+- [x] **Phase 3b: emotion2vec+ base**, background thread, fused with prosody + text
 - [x] **Phase 4a: Graph viewer**: `stiti graph` → interactive `graph.html` (ended facts kept as dashed edges)
-- [ ] Phase 4b: document ingestion, private LongMemEval-style eval
+- [x] **Phase 4b: document ingestion** (MarkItDown, heading-aware chunks, hybrid recall)
+- [ ] Phase 4c: private LongMemEval-style eval, OCR for scans
 - [x] **Phase 5: Life OS**: CP-SAT day planner · Socratic goal chunker · forgiving habits · morning brief · Nudge Gate
-- [ ] **Phase 6: Connectors**: MCP bus with tool-RAG, Google Workspace, Apple EventKit, Telegram, SearXNG, Playwright, pin-and-diff security
-- [ ] **Phase 7: Always-on**: signed menubar app, Login Item, Laya INT8 back on the hot path
+- [x] **Phase 6: Connectors**: EventKit calendar + Reminders mirror, Gmail (read-only), Telegram, LLM tool loop, MCP bus with tool-RAG + pin-and-diff + taint
+- [ ] Phase 6.1: SearXNG web search, Google Workspace write actions behind confirmation
+- [x] **Phase 7: Always-on**: menubar Stiti.app, starts at login, nightly sleep at 03:00
+- [ ] Phase 7.1: Laya INT8 back on the hot path
 
 ---
 
@@ -293,7 +308,10 @@ src/stiti/
 │   └── sleep.py       # nightly consolidation → facts, USER.md, GRAPH_REPORT.md
 ├── fastpath/          # todos, alarms, reminders, timers, Hinglish dates
 ├── life/              # CP-SAT planner, habits, Socratic chunker, morning brief + Nudge Gate
-└── voice/             # VAD, whisper STT, Kokoro TTS, wake phrases, prosody, always-on loop
+├── voice/             # AEC duplex audio, VAD, whisper, Kokoro, wake phrases, prosody, emotion2vec+
+├── connectors/        # EventKit (calendar, reminders), IMAP mail, Telegram
+├── tools/             # tool registry (risk tiers, taint), MCP bus (pin-and-diff)
+├── app.py             # menubar app · install_app.py builds Stiti.app + login agent
 db/schema.sql          # 14 tables + recall() + current_facts()
 docs/ · reports/ · research_notes/ · tests/
 ```
