@@ -39,7 +39,14 @@ CHAINS = {
                    ("openrouter", "openai/gpt-oss-20b:free"), ("mistral", "mistral-small-latest")],
     "background_smart": [("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b"),
                          ("groq", "openai/gpt-oss-120b"), ("mistral", "mistral-small-latest")],
+    # whiteboard tutor: lesson writing (strict JSON) — big free models first, Groq TPD is precious
+    "tutor_plan": [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("groq", "openai/gpt-oss-20b"),
+                   ("cerebras", "qwen-3.8-27b"), ("openrouter", "openai/gpt-oss-20b:free"),
+                   ("mistral", "mistral-small-latest")],
 }
+# providers/models with strict json_schema (constrained decoding); others get json_object + validation
+STRICT_SCHEMA = {("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
+                 ("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b")}
 P0_EXTRA = [("gemini", "gemini-flash-lite-latest")]
 
 
@@ -113,7 +120,8 @@ def _record(p: str, model: str, tin: int, tout: int, err: str | None = None, coo
 
 def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1,
              max_tokens: int = 400, temperature: float = 0.6, json_mode: bool = False,
-             tools: list[dict] | None = None) -> dict:
+             tools: list[dict] | None = None, schema: dict | None = None, schema_name: str = "out",
+             reasoning: str = "low") -> dict:
     """Returns {text, provider, model, ms, tokens_in, tokens_out}. Raises NoProvider if all fail."""
     if privacy >= 2:
         raise NoProvider("P2: sensitive content never leaves the Mac")
@@ -132,8 +140,11 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             continue
         kwargs = dict(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
         if "gpt-oss" in model and p in ("groq", "cerebras", "openrouter"):
-            kwargs["extra_body"] = {"reasoning_effort": "low"}  # fast voice turns; avoid empty content
-        if json_mode:
+            kwargs["extra_body"] = {"reasoning_effort": reasoning}  # "low" for voice turns; avoid empty content
+        if schema is not None and (p, model) in STRICT_SCHEMA:
+            kwargs["response_format"] = {"type": "json_schema",
+                                         "json_schema": {"name": schema_name, "strict": True, "schema": schema}}
+        elif json_mode or schema is not None:
             kwargs["response_format"] = {"type": "json_object"}
         if tools:
             kwargs["tools"], kwargs["tool_choice"] = tools, "auto"
