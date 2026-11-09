@@ -98,3 +98,10 @@ Laya code stays (`stiti/decide.py`), off by default (`STITI_LAYA=off`).
   strings → no prompt). `Stiti.app` (ad-hoc signed, usage strings, LaunchAgent → `open -a`) got both granted.
 - **Mail:** read-only IMAP with an app password; content tagged untrusted; no send.
 - **Tools:** native + MCP behind tool-RAG (top-5), risk tiers, taint, pin-and-diff approval.
+
+## D12: Real RAM budget, measured on the running app (2026-11-10)
+`footprint` of the full menubar app was **2,759 MB** — at the 3 GB limit. Per component:
+embedder 280 · whisper-small (MLX) 1,215 · Kokoro 172 · VAD + Smart Turn 148 · emotion2vec+ (funasr+torch) 1,553 · AEC 5.
+- **MLX cache capped at 64 MB:** whisper 1,213 → 326 MB, STT 283 → ~320 ms. Kept.
+- **emotion2vec+ off by default:** prosody-vs-baseline + text mood still run; menubar toggle loads it on demand.
+- Target after both: ~1.0–1.2 GB for the whole app.
