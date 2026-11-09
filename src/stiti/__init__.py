@@ -111,6 +111,20 @@ def main() -> None:
         chat(debug="--debug" in args)
     elif cmd == "voice":
         voice(aec="--no-aec" not in args, debug="--debug" in args)
+    elif cmd == "app":
+        from .app import run
+        run()
+    elif cmd == "install-app":
+        from .install_app import install
+        print(install(start_now="--no-start" not in args))
+    elif cmd == "uninstall-app":
+        from .install_app import uninstall
+        print(uninstall())
+    elif cmd == "mcp":
+        from .tools import mcp_bus
+        if len(args) >= 3 and args[1] == "approve":
+            mcp_bus.start(approve=args[2])
+        print(mcp_bus.status() or "No MCP servers configured (~/.stiti/mcp.json).")
     elif cmd == "ingest":
         from .brain.ingest import ingest
         if len(args) < 2:
@@ -126,4 +140,4 @@ def main() -> None:
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | voice [--no-aec] [--debug] | ingest <path> | graph | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | voice [--no-aec] [--debug] | ingest <path> | graph | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
