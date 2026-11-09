@@ -51,6 +51,7 @@ class Engine:
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
+        self.onboarding = None                    # active onboarding interview
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
@@ -88,7 +89,11 @@ class Engine:
         return info.get("text") or "Done.", info
 
     def greet(self) -> str:
-        """Called when woken with no command: the morning brief once a day, else a short hello."""
+        """Called when woken with no command: offer the intro if she knows nothing yet; else the brief."""
+        from .brain import onboarding
+        if not onboarding.done() and not q("SELECT 1 FROM user_directives WHERE status='active' LIMIT 1"):
+            return ("Haan! I don't know much about you yet — want a 3-minute intro? "
+                    "Say “intro shuru karo”.")
         return nudge.morning_brief() or "Haan, bolo?"
 
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None) -> str:
@@ -116,7 +121,15 @@ class Engine:
 
         # ---- fast paths (no LLM) ----
         low = psych.minimum_viable_day(emo.label)
-        if self.pending is not None:
+        from .brain import onboarding
+        if self.onboarding is not None:
+            reply, finished = self.onboarding.answer(text, user_ep)
+            if finished:
+                self.onboarding = None
+        elif onboarding.START_RX.search(text):
+            self.onboarding = onboarding.Onboarding()
+            reply = self.onboarding.start()
+        elif self.pending is not None:
             tool, args = self.pending
             self.pending = None
             if YES_RX.search(text):

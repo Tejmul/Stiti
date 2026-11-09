@@ -19,7 +19,7 @@ def _scheduler(stop: threading.Event):
         stop.wait(5)
 
 
-def chat(debug: bool = False):
+def chat(debug: bool = False, first: str | None = None):
     from .engine import Engine
     print("Stiti is waking up… (loading memory + embedder)")
     from . import embed, intent
@@ -28,11 +28,12 @@ def chat(debug: bool = False):
     eng = Engine("text")
     stop = threading.Event()
     threading.Thread(target=_scheduler, args=(stop,), daemon=True).start()
-    print("Stiti: Haan, bolo! (type 'exit' to quit, '/debug' to toggle details)\n")
+    print(f"Stiti: {eng.greet()} (type 'exit' to quit, '/debug' to toggle details)\n")
+    pending_first = first
     try:
         while True:
             try:
-                text = input("> ").strip()
+                text, pending_first = (pending_first, None) if pending_first else (input("> ").strip(), None)
             except EOFError:
                 break
             if not text:
@@ -109,6 +110,8 @@ def main() -> None:
     cmd = args[0] if args else "chat"
     if cmd == "chat":
         chat(debug="--debug" in args)
+    elif cmd == "onboard":
+        chat(first="intro shuru karo")
     elif cmd == "voice":
         voice(aec="--no-aec" not in args, debug="--debug" in args)
     elif cmd == "app":
@@ -140,4 +143,4 @@ def main() -> None:
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | voice [--no-aec] [--debug] | ingest <path> | graph | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | ingest <path> | graph | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
