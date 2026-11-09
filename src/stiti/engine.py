@@ -52,6 +52,7 @@ class Engine:
         self.chunker: chunker.Chunker | None = None
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
+        self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
@@ -122,7 +123,16 @@ class Engine:
         # ---- fast paths (no LLM) ----
         low = psych.minimum_viable_day(emo.label)
         from .brain import onboarding
-        if self.onboarding is not None:
+        from .life import proactive
+        if self.last_nudge and time.time() - self.last_nudge[1] < 180:      # his reaction to her nudge
+            proactive.feedback(self.last_nudge[0], "dismissed" if proactive.DISMISS_RX.match(text) else "accepted")
+            self.last_nudge = None
+        disabled_kind = proactive.disable_from_text(text)
+        if domain in ("chat", "memory") and privacy < 2:
+            proactive.maybe_followup(text)
+        if disabled_kind:
+            reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
+        elif self.onboarding is not None:
             reply, finished = self.onboarding.answer(text, user_ep)
             if finished:
                 self.onboarding = None
