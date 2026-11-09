@@ -139,3 +139,49 @@ def speak_events(evts: list[dict], label: str = "today") -> str:
     items = [("all day: " if e["all_day"] else f"{e['start']:%I:%M %p} ").lstrip("0") + e["title"] for e in evts[:3]]
     more = f" …and {len(evts) - 3} more." if len(evts) > 3 else ""
     return f"{len(evts)} on your calendar {label}: " + "; ".join(items) + "." + more
+
+
+# ---------------- calendar (write — only after his "haan") ----------------
+def add_event(title: str, start: datetime, minutes: int = 60, notes: str | None = None) -> str | None:
+    if not _request("events"):
+        return None
+    EK = _ek()
+    s = store()
+    e = EK.EKEvent.eventWithEventStore_(s)
+    e.setTitle_(title)
+    e.setStartDate_(_nsdate(start))
+    e.setEndDate_(_nsdate(start + timedelta(minutes=minutes)))
+    if notes:
+        e.setNotes_(notes)
+    e.setCalendar_(s.defaultCalendarForNewEvents())
+    ok, err = s.saveEvent_span_commit_error_(e, EK.EKSpanThisEvent, True, None)
+    return e.eventIdentifier() if ok else None
+
+
+def cancel_event(title: str, day: datetime) -> int:
+    """Delete events on that day whose title contains `title` (case-insensitive). Returns count."""
+    if not _request("events"):
+        return 0
+    EK = _ek()
+    s = store()
+    start = day.replace(hour=0, minute=0, second=0, microsecond=0)
+    pred = s.predicateForEventsWithStartDate_endDate_calendars_(_nsdate(start), _nsdate(start + timedelta(days=1)), None)
+    n = 0
+    for e in s.eventsMatchingPredicate_(pred) or []:
+        if title.lower() in str(e.title() or "").lower():
+            ok, _ = s.removeEvent_span_commit_error_(e, EK.EKSpanThisEvent, True, None)
+            n += bool(ok)
+    return n
+
+
+# ---------------- reminders (two-way: ticked on iPhone → done in Stiti) ----------------
+def completed_ids(identifiers: list[str]) -> list[str]:
+    if not identifiers or not _request("reminders"):
+        return []
+    s = store()
+    done = []
+    for ident in identifiers:
+        item = s.calendarItemWithIdentifier_(ident)
+        if item is not None and item.isCompleted():
+            done.append(ident)
+    return done

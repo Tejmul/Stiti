@@ -95,6 +95,16 @@ class StitiApp(rumps.App):
             return "telegram"
         return "notification" if present else None
 
+    def _sync_reminders(self):
+        """Ticked off in Reminders (iPhone/Watch/Mac) → done in Stiti too."""
+        from .connectors import eventkit
+        from .db import q
+        rows = q("SELECT id, ek_identifier FROM intents WHERE ek_identifier IS NOT NULL AND state IN ('pending','armed','fired')")
+        done = set(eventkit.completed_ids([r["ek_identifier"] for r in rows]))
+        for r in rows:
+            if r["ek_identifier"] in done:
+                q("UPDATE intents SET state='done' WHERE id=%s", (r["id"],))
+
     def _scheduler(self):
         from .connectors import telegram
         from .fastpath.handlers import fire_due
@@ -111,6 +121,7 @@ class StitiApp(rumps.App):
                 fire_due(notify=notify)
                 if time.time() - last_pro >= 60:
                     last_pro = time.time()
+                    self._sync_reminders()
                     pres = tracker.sample()
                     busy = self.loop is not None and (self.loop.awake or (self.loop.duplex and self.loop.duplex.playing))
                     for nid, kind, text in proactive.tick(pres, self._deliver, busy=bool(busy)):
