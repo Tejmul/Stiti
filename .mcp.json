@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "@playwright/mcp@latest"
+      ],
+      "env": {}
+    },
+    "rea": {
+      "type": "stdio",
+      "command": "npx",
+      "args": [
+        "-y",
+        "rea-agents@6.8.0",
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}
