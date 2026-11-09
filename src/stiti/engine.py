@@ -11,7 +11,7 @@ import time
 from datetime import datetime
 
 from . import embed, router
-from .brain import compiler, emotion, lessons, memory, psych
+from .brain import compiler, emotion, ingest, lessons, memory, psych
 from .config import CFG
 from .db import one, q
 from .decide import decide
@@ -123,6 +123,7 @@ class Engine:
             seeds = memory.seed_entities(text, [m["episode_id"] for m in mems])
             facts = memory.current_facts(seeds, max_privacy=min(privacy, 1))
             les = lessons.match(qvec, mood=emo.label, bucket=lessons.time_bucket(now))
+            docs = ingest.recall(text, qvec, max_privacy=min(privacy, 1) if privacy < 2 else 2)
             lat["recall"] = (time.perf_counter() - t) * 1000
             recalled_ids = [m["episode_id"] for m in mems]
             lesson_ids = [l["id"] for l in les]
@@ -134,7 +135,7 @@ class Engine:
             brief, brief_tokens = compiler.build(
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=memory.recent_turns(self.session)[:-1], memories=mems, facts=facts, lessons=les,
-                open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label))
+                open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs)
             try:
                 info = router.complete([{"role": "system", "content": brief},
                                         {"role": "user", "content": text}], privacy=privacy)
@@ -146,7 +147,10 @@ class Engine:
                     reply = "That sounds private, so I'm keeping it on this Mac. "
                 else:
                     reply = "My thinking brain (cloud LLM) is offline right now. "
-                if mems and mems[0]["sim"] >= 0.4:
+                if docs and (not mems or docs[0]["sim"] > mems[0]["sim"]) and docs[0]["sim"] >= 0.4:
+                    d0 = docs[0]
+                    reply += f"From your doc “{d0['title']}”: {d0['text'][:300]}"
+                elif mems and mems[0]["sim"] >= 0.4:
                     m = mems[0]
                     reply += f"Here's what I remember from {m['occurred_at'].astimezone(CFG.tz):%d %b}: “{m['text']}”"
                 else:
