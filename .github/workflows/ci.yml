@@ -1,0 +1,30 @@
+name: evals
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  evals:
+    runs-on: macos-14          # Apple Silicon, like Tejmul's M2
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Postgres 18 + pgvector
+        run: |
+          brew install postgresql@18 pgvector
+          brew services start postgresql@18
+          for i in $(seq 1 30); do /opt/homebrew/opt/postgresql@18/bin/pg_isready && break; sleep 1; done
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - name: Cache local models (embedder)
+        uses: actions/cache@v4
+        with:
+          path: ~/.stiti-ci/models
+          key: stiti-models-v1
+      - name: Install
+        run: uv sync --frozen
+      - name: Run evals
+        env:
+          STITI_TEST_HOME: /Users/runner/.stiti-ci
+        run: tests/run_all.sh
