@@ -6,6 +6,7 @@ Each handler returns a reply string, or None if it can't confidently handle the 
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 
@@ -95,6 +96,9 @@ def timeish(text: str) -> str | None:
     dbkind = "alarm" if kind in ("alarm", "timer") else "reminder"
     row = one("""INSERT INTO intents(kind, fire_at, payload, user_set) VALUES (%s,%s,%s,true) RETURNING id""",
               (dbkind, when, json.dumps(payload)))
+    if kind != "timer" and os.getenv("STITI_EVENTKIT", "on") != "off":
+        from ..connectors import eventkit
+        eventkit.mirror_intent_async(row["id"])     # rings on iPhone/Watch even if Stiti is off
     label = {"timer": "Timer", "alarm": "Alarm", "reminder": "Reminder"}[kind]
     about = f" — “{what}”" if what else ""
     return f"{label} set for {readback(when)}{about}. (#{row['id']})"
@@ -123,7 +127,10 @@ def list_intents(limit: int = 3) -> str:
 def _cancel_next() -> str:
     row = one("""UPDATE intents SET state='cancelled' WHERE id = (
                    SELECT id FROM intents WHERE state IN ('pending','armed') AND fire_at > now()
-                   ORDER BY fire_at LIMIT 1) RETURNING kind, fire_at""")
+                   ORDER BY fire_at LIMIT 1) RETURNING kind, fire_at, ek_identifier""")
+    if row and row.get("ek_identifier"):
+        from ..connectors import eventkit
+        eventkit.remove_reminder(row["ek_identifier"])
     return f"Cancelled the {row['kind']} for {readback(row['fire_at'])}." if row else "Nothing to cancel."
 
 
