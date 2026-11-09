@@ -141,6 +141,8 @@ class Engine:
         disabled_kind = proactive.disable_from_text(text)
         if domain in ("chat", "memory") and privacy < 2:
             proactive.maybe_followup(text)
+        from .brain import keythings
+        learned = keythings.capture(text, user_ep) if domain not in ("todo", "time", "control") else []
         from .brain import learning
         from .voice.wake import is_stop
         undo = bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None
@@ -213,6 +215,8 @@ class Engine:
         elif domain == "feedback" and d.is_("is_correction", 0.6):
             _, reply = lessons.capture(text, mood=self.last_mood,
                                        source_episode_ids=[i for i in (self.last_reply_ep, user_ep) if i])
+        elif learned and len(text.split()) <= 14 and self.onboarding is None:
+            reply = "Noted 👍 — " + ", ".join(learned) + "."
         elif REMEMBER_RX.search(text) and not text.rstrip().endswith("?") and domain in ("memory", "chat"):
             reply = "Yaad rakh liya. 👍" if re.search(r"\b(yaad|rakhna|mat|hai)\b", text, re.I) else "Noted — I'll remember that."
         elif domain == "control":
