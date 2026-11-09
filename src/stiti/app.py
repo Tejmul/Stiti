@@ -8,6 +8,7 @@ Menubar icon: ◉ awake · ○ listening for the wake phrase · ⏸ muted · …
 """
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -80,9 +81,23 @@ class StitiApp(rumps.App):
         except Exception as e:
             print(f"[app] eventkit check failed: {e}", flush=True)
 
+    def _deliver(self, text: str, kind: str, present: bool) -> str | None:
+        """Where a proactive nudge goes: voice if he's here, Telegram if away (important ones), else nowhere."""
+        from .connectors import telegram
+        subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(text)} with title "Stiti"'])
+        if present and self.loop is not None and not self.loop.paused.is_set():
+            threading.Thread(target=self.loop.say, args=(text,), daemon=True).start()
+            return "voice"
+        if telegram.token() and telegram.owner() and kind in ("meeting_soon", "deadline", "followup"):
+            telegram.send(text)
+            return "telegram"
+        return "notification" if present else None
+
     def _scheduler(self):
         from .connectors import telegram
         from .fastpath.handlers import fire_due
+        from .life import proactive
+        tracker, last_pro = proactive.PresenceTracker(), 0.0
 
         def notify(msg: str):
             print(msg, flush=True)
@@ -92,6 +107,14 @@ class StitiApp(rumps.App):
         while not self.stop.is_set():
             try:
                 fire_due(notify=notify)
+                if time.time() - last_pro >= 60:
+                    last_pro = time.time()
+                    pres = tracker.sample()
+                    busy = self.loop is not None and (self.loop.awake or (self.loop.duplex and self.loop.duplex.playing))
+                    for nid, kind, text in proactive.tick(pres, self._deliver, busy=bool(busy)):
+                        print(f"[proactive] {kind}: {text}", flush=True)
+                        if self.loop is not None:
+                            self.loop.engine.last_nudge = (nid, time.time())
                 now = datetime.now(CFG.tz)
                 if now.hour == 3 and self.last_sleep_day != now.date():   # nightly consolidation at 03:00
                     self.last_sleep_day = now.date()
