@@ -80,8 +80,11 @@ def ingest_file(path: Path, privacy: int | None = None) -> str:
     if prev and prev["sha256"] == sha:
         return "unchanged"
     md = to_markdown(path)
+    if len(md.strip()) < 20 and kind == "pdf":          # scanned PDF → on-device Vision OCR
+        from ..connectors.ocr import ocr_pdf
+        md = ocr_pdf(path)
     if len(md.strip()) < 20:
-        return "skip (no text — scanned? OCR comes later)"
+        return "skip (no text found, even with OCR)"
     priv = privacy if privacy is not None else (2 if P2_PATH.search(str(path)) else 1)
     mtime = datetime.fromtimestamp(path.stat().st_mtime, CFG.tz)
     title = path.stem.replace("_", " ").replace("-", " ")
