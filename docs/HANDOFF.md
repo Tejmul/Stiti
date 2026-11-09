@@ -69,44 +69,52 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Web app (`src/stiti/web/`) | 🟢 `stiti web`: chat + landing — see §6b | DECISIONS D16 |
 | Anything needing a cloud LLM | ⛔ unverified (no API key) | — |
 
-## 6. Whiteboard tutor — current state
-- Run: `uv run stiti teach` (voice, demo "How a compiler works") · `--type` (speakers+keyboard) · `--silent` ·
-  `--no-board` (voice only) · `teach "<topic>"` / `teach book.pdf --chapter 3.1` (need LLM key) · `--resume` ·
-  `stiti book <pdf>` (outline). Voice: "Stiti, teach me X" / "X padhao" / "continue my lesson" launches it.
-- Files: `lesson.py` (format, sanitiser, strict schemas, `resolve_at`), `skills.py` (layout + whiteboard skills,
-  Board snapshot/restore), `web/` (Excalidraw page + `board.js` runtime), `server.py` (WS, security), `player.py`
-  (orchestrator), `audio.py` (silent/speaker/voice), `commands.py` (Hinglish controls), `grade.py` (local grading),
-  `planner.py` (LLM, unverified), `book.py` (contents parser), `store.py` (migration 006), `demos/compiler.json`.
-- Verified: tutor eval 27/27 (scripted full lesson, security, layout, grading); board rendered in Chrome via
-  Playwright (boxes, arrows, tree, stickies, camera, reconnect replay).
-- NOT verified: a real spoken lesson with mic + AEC; LLM planner/Q&A; FSRS review sessions (cards are saved,
-  scheduler not built); offline Excalidraw bundle (needs internet for esm.sh today).
-- Next when resumed: real voice test with board on the monitor → FSRS "revise my cards" → offline bundle →
-  planner test once GROQ key exists.
+## 6. Whiteboard tutor (`src/stiti/tutor/`) — backend design
+- **Pattern: the brain decides, the LLM fills slots.** Code owns lesson shape (warm-up → hook → map → teach ×3 →
+  quiz → wrap), timing, resume and grading; the LLM only writes teaching segments as strict JSON
+  (`router.complete(schema=…)`, constrained decoding on Groq/Cerebras, `tutor_plan` chain) in a background thread.
+- **Lesson format** (`lesson.py`): segment → cues (one spoken sentence + flat, all-nullable board ops) + optional
+  check. Same format for hand-written demos and LLM output; `sanitize_*` is the trust boundary.
+- **Layout in code** (`skills.py` Board): semantic ops (region / right_of / below / graph nodes+edges) → coordinates;
+  deterministic, unit-tested; `snapshot()/restore()` per cue gives exact repeat/back/resume.
+- **Sync:** audio synthesised 3 cues ahead; each cue's ops scheduled at real offsets (`resolve_at`: word bookmark →
+  proportional time, since Kokoro int8 has no word timings).
+- **Event loop** (`player.py`): one queue merges browser controls, typed text and voice transcripts; `commands.py`
+  classifies Hinglish controls locally before anything else; questions → LLM answer or local lookup (embedder).
+- **Grading** (`grade.py`): local (MCQ parsing, expectation coverage via keywords + embedder, partial credit,
+  ≤2 hints) — the LLM never judges right/wrong.
+- **Books** (`book.py`): structure from the file (TOC → printed Contents parser with page offset → heading regex),
+  page-tagged extractive sources; the LLM never sees the whole book; citations checked against source pages.
+- **Persistence** (`store.py`, migration 006): `tutor_lessons`, `tutor_sessions` (resume cursor, results),
+  `study_cards` (FSRS fields), plus one memory episode per lesson. `~/.stiti/tutor.lock` makes the always-on
+  voice loop yield the mic. Server: same localhost security model as the web app (§6b).
+- Run: `stiti teach [demo|topic|book.pdf --chapter N] [--type|--silent|--no-board] [--resume]`, `stiti book <pdf>`.
+- Verified: `tests/tutor_eval.py` 27/27. NOT verified: real spoken lesson (mic + AEC), LLM planner/Q&A, FSRS scheduler
+  (cards saved, scheduler not built), offline board bundle. Status: ⏸ paused by Tejmul (chat first).
 
-## 6b. Web app — current state
-- Run: `uv run stiti web` (prints `http://127.0.0.1:7317/#t=<token>`; first visit stores the token). Pages:
-  `/` landing (sub-agent built from Tejmul's motion spec; particles ONLY in the hero — Tejmul's rule), `/chat`.
-- Files: `web/server.py` (Starlette; Host/Origin/token checks; `/ws` chat over `Engine("text")`, `/api/state`,
-  `/api/todo/{id}/done`, `/icons/<n>.png` → `public/actions/asset <n>.png`), `static/css/base.css` (tokens + navbar),
-  `static/js/common.js` (scramble, nav), `chat.html/css/js`, `js/mind.js` (breathing particle sphere), landing files.
-- Theme: paper #ecebf2, ink #262b57, blue #4656d6/#7fb2f0, Hanken Grotesk 200/600 + Martian Mono; dark-pill navbar.
-- Verified: web eval 12/12; chat turns via WS on stiti_test. NOT verified: LLM replies in chat; browser voice.
-- Icons in `public/actions` look like Streamline pictograms — check their licence/attribution before release.
-- Next: browser mic → local whisper, streaming replies, more chat features (memory search view, mood, settings).
+## 6b. Web app (`src/stiti/web/`) — backend design
+- **Same brain, new channel:** `/ws` runs each message through `Engine("text").turn()` (one Engine per connection,
+  turns serialised with a lock) → identical memory, fast paths, lessons as voice/terminal. Reply carries route,
+  domain, provider, latency, last fast-path action; a `state` push (open todos + upcoming intents) follows each turn.
+- **Localhost security model** (shared with the tutor board): bind 127.0.0.1; Host header check on every request
+  (DNS rebinding); Origin + per-install token (`~/.stiti/web_token`, given once in the URL fragment) on WS and API.
+- Endpoints: `/` `/chat` (static), `/ws`, `GET /api/state`, `POST /api/todo/{id}/done`, `/icons/<n>.png`.
+- Static frontend, no build step (ES modules + pinned CDNs). UI conventions live in Claude memory, not here.
+- Verified: `tests/web_eval.py` 12/12. NOT verified: LLM replies in chat (no key); browser voice input.
+- Next: browser mic → local whisper; streaming replies; memory search / mood / settings views.
 
 ## 7. Tejmul's pending actions
 1. Symlink command (§1). 2. `uv run stiti backup --show-key` → save the key. 3. Add `GROQ_API_KEY` (+ optional others)
 to `.env`, restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
-6. Try `uv run stiti web` and `uv run stiti teach` (board on the big monitor, press F). 7. Confirm the
-`public/actions` icon licence (looks like Streamline) before the repo is promoted.
+6. Try `uv run stiti web` and `uv run stiti teach`. 7. Confirm the `public/actions` icon licence (looks like
+Streamline) before the repo is promoted.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-10 — whiteboard tutor + web app:** created this HANDOFF + session protocol in CLAUDE.md. Built the
   tutor (§6, D15) then Tejmul switched priority to "normal chat features" → built `stiti web` (§6b, D16) with a
   sub-agent doing the landing page. New: migration 006 (applied to stiti + stiti_test), router `schema=` strict
   JSON + `tutor_plan` chain, engine fast path for tutor phrases, voice loop quiet during lessons, tests
-  `tutor_eval.py` 27/27 + `web_eval.py` 12/12. Tejmul feedback: frontend must be clean — motion only in the hero.
+  `tutor_eval.py` 27/27 + `web_eval.py` 12/12; full suite 8/8 green.
   Test tip: isolate with `STITI_DB=postgresql:///stiti_test STITI_HOME=<tmp>` + symlink `<tmp>/models → ~/.stiti/models`.
   Gotcha: the Playwright MCP browser is shared with sub-agents (one "current tab") — don't drive it in parallel.
 
