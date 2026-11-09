@@ -105,3 +105,21 @@ embedder 280 · whisper-small (MLX) 1,215 · Kokoro 172 · VAD + Smart Turn 148 
 - **MLX cache capped at 64 MB:** whisper 1,213 → 326 MB, STT 283 → ~320 ms. Kept.
 - **emotion2vec+ off by default:** prosody-vs-baseline + text mood still run; menubar toggle loads it on demand.
 - **Measured after both: 1,254 MB** for the whole running app (was 2,759 MB).
+
+## D13: "Key Things to Know" intake — licence-safe, any owner (2026-11-10)
+Research: `research_notes/Key things to know intake/intake_research.md` (8 features, 12–18 sources each).
+- **Ship verbatim only free instruments:** IPIP / Mini-IPIP (public domain), TIPI + TIVI/TwIVI (free for any use),
+  VADER / Empath / AFINN for text. **Do not ship item wording** of BFI-2/-S/-XS, BFI-10, HEXACO, PVQ/SVS, BPNSFS,
+  PSS, MEQ/rMEQ/MCTQ, NRC EmoLex, LIWC (non-commercial / permission / proprietary). Constructs aren't copyrighted
+  → Stiti asks its own plainly worded questions, labelled "Stiti-original, unvalidated" (e.g., sleep times →
+  MCTQ-style mid-sleep and social jetlag computed, not their questionnaire).
+- **Design:** ~20 turns (~6 min est.): consent → name/pronouns → people → sleep times → peak hours → likes/peeves →
+  5 Mini-IPIP items (spoken 5-point) → 2 values this-or-thats → goal → gain vs avoid → reply style + aap/tum →
+  check-in frequency → consent gate → rough-day signs / what helps / own coping → boundaries → role → read-back.
+  Remaining Mini-IPIP/TIVI items spread over 2–3 weeks, ≤1 question/day, opt-in.
+- **Evidence limits:** don't infer personality from text (r ≈ .3–.4 at best); use explicit statements + behaviour
+  counts. Tailoring effects are small (r ≈ .07) → adaptations serve the owner's own goals, logged, switchable off.
+- **Ethics:** consent twice, no clinical words, "leans …" labels with source + confidence, "What do you know about
+  me?" + correction; stress/coping answers are P2 (never leave the Mac); never infer religion, caste, orientation,
+  politics, health; self-harm → stop + configurable helpline list.
+- **Open item:** add a LICENSE file (MIT/Apache) — consistent with only shipping free instruments.
