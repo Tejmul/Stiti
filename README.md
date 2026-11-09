@@ -72,6 +72,9 @@ No fine-tuning. No vendor memory. No GPU. No bill.
 | 📱 | **Telegram** | Chat with Stiti from your phone; alarms get pushed there too. Owner-locked with a pairing code. |
 | 🔌 | **Any MCP tool** | Plug in MCP servers; only the 5 most relevant tools are shown per request, write actions need your "haan", and a server whose tools change is disabled until you re-approve it. |
 | 🖥️ | **Lives in your menubar** | `stiti install-app` → signed Stiti.app, starts at login: ○ listening · ◉ awake · ⏸ muted. |
+| 💾 | **Never loses her mind** | Nightly AES-256 encrypted backup of the whole brain (key in your Keychain); restores go into a separate database, never over the live one. |
+| 👋 | **Gets to know you** | "intro shuru karo" → a 10-question interview that writes your people, routine, goals and how to talk to you straight into her brain. |
+| ✍️ | **You can edit her mind** | Change, delete or add lines in `USER.md` / `LESSONS.md`; your edits flow back into Postgres and always win. |
 | 🛟 | **Works offline** | No API keys or rate-limited? Todos, alarms, memory and lessons still work. Only deep conversation pauses. |
 
 ---
@@ -251,6 +254,8 @@ uv run stiti chat --debug    # chat; /debug shows route, mood, latency
 uv run stiti voice           # always-on voice: "Hey Stiti" / "Wake up baby girl"
 uv run stiti graph           # open your life graph
 uv run stiti ingest ~/Notes  # make your notes/PDFs/docs searchable memory
+uv run stiti onboard         # 3-minute intro so she knows who you are
+uv run stiti backup          # encrypted backup now (also runs nightly); --show-key to save the key
 uv run stiti install-app     # menubar app that starts at login (mic, Calendar, Reminders prompts say "Stiti")
 uv run stiti sleep --now     # run the night job now
 ```
