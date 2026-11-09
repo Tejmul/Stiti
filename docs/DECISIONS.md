@@ -148,3 +148,39 @@ Research: `research_notes/Whiteboard tutor/whiteboard_tech.md` (tested on this M
   explain, resume stack + bridge sentence. Code owns time, resume stack and repairs; the model only fills slots.
 - **Prior art to study:** ChalkTalk (Excalidraw + Kokoro + raise-hand), OpenMAIC (MIT, action engine/resume),
   official excalidraw-mcp (prompt cheat sheet, camera ops).
+
+## D15: Whiteboard tutor — what was actually built (2026-11-10)
+Refines D14 after building + testing on this Mac (`src/stiti/tutor/`, `tests/tutor_eval.py` 27/27).
+- **Layout in Python, not dagre.** `skills.py` owns every pixel: pages per segment (1600×900, side by side),
+  regions (title/main/side/parking/goal/notes), relative placement (right_of/below/…), collision push-down,
+  and a tiny Sugiyama for graphs (longest-path ranks, barycentre order, children centred under parents,
+  wrapped LR rows for long chains). Deterministic and unit-testable; one less CDN dependency.
+- **Whiteboard skills:** title, text, bullet, box (rect/ellipse/diamond), arrow, graph, table, formula, sticky,
+  highlight (underline/circle/marker/color/tick/cross/pointer; old pointers fade), strike, erase, focus,
+  new_page, Q&A side boards, parking lot. Animations in the browser: sketch (outline drawn on), grow, type, fade.
+- **Browser gotchas fixed:** load Excalifont/Comic Shanns via `document.fonts.load()` before the first draw
+  (`fonts.check()` lies for unloaded faces → clipped text); camera computed in JS from a scene rect (no
+  `scrollToContent` zoom bug); `[hidden]` must beat component `display`.
+- **Checks graded locally** (`grade.py`): MCQ letter/word/ordinal, expectation coverage by keywords + the local
+  embedder, partial credit, "pata nahi" → hint ladder (≤2) → kind reveal; confidence 1–5 on quiz items.
+  The LLM never decides right/wrong (principle 1).
+- **Voice-first:** every control works by voice (Hinglish), MCQ options are read aloud, `--no-board` runs a
+  lesson with no screen. Backchannels ("haan") are ignored only while she narrates — never during prompts.
+- **Questions without an LLM:** answered from the lesson itself (local embedder) on a side board, or parked.
+- **LLM only fills slots:** code builds warm-up/hook/3-box map/quiz/wrap; 1 outline + 1 call per idea (strict
+  json_schema on Groq/Cerebras via router `schema=`), written in a background thread while earlier parts play.
+- **Books:** printed "Contents" pages are the best structure source for scanned PDFs (Aho: 654 headings in
+  2.7 s); page labels = PDF index − median running-head offset; heading regex fallback; extractive sources.
+- **Persistence:** migration 006 (`tutor_lessons`, `tutor_sessions` with resume cursor, `study_cards` with FSRS
+  fields) + one memory episode per lesson. The always-on voice loop goes quiet while `~/.stiti/tutor.lock` exists.
+
+## D16: Local web app — landing + chat (2026-11-10)
+- `stiti web` serves `src/stiti/web/static` with Starlette on 127.0.0.1:7317 (STITI_WEB_PORT). Same safety model
+  as the board: Host check on every request, Origin + per-install token (`~/.stiti/web_token`, handed over in the
+  URL fragment, kept in localStorage) on the WebSocket and API.
+- Chat goes through the normal `Engine("text")` → the web chat is the same Stiti (memory, fast paths, lessons).
+  Side panel shows open todos (tick to finish) and upcoming alarms/reminders, refreshed after every turn.
+- Look: owner's reference (light lavender paper, deep navy, blue particle sphere, light/bold Hanken Grotesk,
+  Martian Mono labels), white glass navbar; particle motion only in the hero (+ the small "mind" in chat).
+- No build step: plain ES modules; GSAP + Lenis from pinned CDNs (free). Icons: owner-supplied pictograms
+  (`public/actions`, served at `/icons/<n>.png`).
