@@ -8,6 +8,7 @@ if "stiti_test" not in os.getenv("STITI_DB", ""):
 from stiti.config import CFG
 from stiti.db import q, one
 from stiti.life import proactive as P
+random.seed(7)   # the nudge gate samples (Thompson); fix the seed so the test is deterministic
 
 q("TRUNCATE tasks, intents, nudges, nudge_arms RESTART IDENTITY CASCADE")
 now = datetime.now(CFG.tz).replace(hour=15, minute=0, second=0, microsecond=0)
