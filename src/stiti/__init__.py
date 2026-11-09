@@ -172,10 +172,19 @@ def main() -> None:
     elif cmd == "graph":
         from .brain.graphview import render
         print(f"Life graph → {render(open_browser='--no-open' not in args)}")
+    elif cmd == "web":
+        from .web.server import run as run_web
+        run_web(open_browser="--no-open" not in args)
+    elif cmd == "teach":
+        from .tutor import teach
+        teach(args[1:])
+    elif cmd == "book":
+        from .tutor import book_cmd
+        book_cmd(args)
     elif cmd == "doctor":
         doctor()
     elif cmd == "sleep":
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open]]")
