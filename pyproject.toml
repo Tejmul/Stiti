@@ -1,0 +1,28 @@
+[project]
+name = "stiti"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "Tejmul Movin", email = "tejmulmovin@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "huggingface-hub>=2.4.0",
+    "laya>=0.4.30",
+    "numpy>=2.5.4",
+    "onnxruntime>=1.31.1",
+    "openai>=1.50",
+    "pgvector>=0.4",
+    "psycopg[binary]>=3.2",
+    "python-dateutil>=4.0.0",
+    "python-dotenv>=1.2.4",
+    "tokenizers>=0.23.3",
+]
+
+[project.scripts]
+stiti = "stiti:main"
+
+[build-system]
+requires = ["uv_build>=0.12.17,<0.13.0"]
+build-backend = "uv_build"
