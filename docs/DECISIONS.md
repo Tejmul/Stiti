@@ -123,3 +123,28 @@ Research: `research_notes/Key things to know intake/intake_research.md` (8 featu
   me?" + correction; stress/coping answers are P2 (never leave the Mac); never infer religion, caste, orientation,
   politics, health; self-harm → stop + configurable helpline list.
 - **Open item:** add a LICENSE file (MIT/Apache) — consistent with only shipping free instruments.
+
+## D14: Whiteboard tutor — stack and pedagogy (2026-11-10)
+Research: `research_notes/Whiteboard tutor/whiteboard_tech.md` (tested on this Mac) and `tutoring_pedagogy.md`.
+- **Board:** Excalidraw `@excalidraw/excalidraw@0.18.1` (MIT) + React 19.2.0 via esm.sh import map; API:
+  `convertToExcalidrawElements`, `updateScene({captureUpdate: NEVER})`, `newElementWith`, `scrollToContent`.
+  Wait for `appState.isLoading=false` before the first update; frame whole sections (not single tiny elements);
+  laser tool doesn't work in view mode. Offline bundle option (8.1 MB + 13 MB fonts). **tldraw rejected** (licence).
+- **LLM output:** lesson JSON with board *regions*, never pixels; strict `json_schema` (Groq gpt-oss/Qwen; flat
+  nullable schema for Cerebras); graphs as nodes/edges laid out by `@dagrejs/dagre@3.1.3`; Mermaid optional
+  (mermaid-to-excalidraw pinned 2.3.0). Strict mode can't stream → generate the next segment while one plays.
+- **Server:** Starlette WebSocket on uvicorn (already in uv.lock, ~38 MB), 127.0.0.1 random port, token in URL
+  fragment, Host/Origin checks.
+- **Sync:** one cue per spoken sentence carrying its board ops (offsets start/end/fraction/word), ops keyed by id
+  (replay-safe), pause/resume-from-sentence, rewind via snapshots, voice barge-in.
+- **Book → lesson:** structure from the file (pypdfium2 TOC/page labels; pdfplumber font-size headings fallback;
+  MarkItDown for EPUB; avoid AGPL PyMuPDF/EbookLib), compress chapters locally (~3K tokens each, page tags),
+  1 LLM call per chapter + 1 for the 30-min plan; citations = chunk ids checked in code; ~50–60K tokens/lesson.
+- **Pedagogy:** ~26 min content + ~4 min slack: warm-up → "guess first" → 3-box map → 3×(5–6 min segment + real
+  check) → teach-back/apply → 3-question no-notes quiz with confidence → learner-first recap + 5–8 FSRS cards;
+  15-min low-energy variant. ≤60–90 s of tutor talk per turn; draw each item in the sentence that names it;
+  never reveal a check's answer before the attempt, never accept "samjha?" as evidence (Bastani 2025: answer-
+  giving AI → −17% exam; Kestin 2025: scaffolded tutor ≥ active learning). 8 interruption types, ≤2 hints then
+  explain, resume stack + bridge sentence. Code owns time, resume stack and repairs; the model only fills slots.
+- **Prior art to study:** ChalkTalk (Excalidraw + Kokoro + raise-hand), OpenMAIC (MIT, action engine/resume),
+  official excalidraw-mcp (prompt cheat sheet, camera ops).

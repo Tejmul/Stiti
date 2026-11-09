@@ -47,10 +47,10 @@ Note: the Desktop is iCloud-synced — keep `.venv` (1.8 GB) out of iCloud or mo
 - Built: interview engine `brain/intake.py` (sections, progress, skip/pause/resume, "why?", spoken 1–5 scale
   parser), owner profile (`profile.py`, migration 005), tentative traits in USER.md (editable, owner wins),
   passive key-things capture (`brain/keythings.py`).
-- Waiting on research → `research_notes/Key things to know intake/intake_research.md`:
-  free-to-use instruments (IPIP etc.), 16–20 spoken questions (English + Hinglish), local psychology guide
-  (signal → interpretation → adaptation → evidence → confidence), ethics.
-- Next: `brain/guide.py` (questions + `label_for` + `CHOICE_VALUES` + rules), `brain/understanding.py`
+- ✅ Research done → `research_notes/Key things to know intake/intake_research.md` (decision D13): 20-turn intake
+  (~6 min est.) from licence-safe instruments only (IPIP/Mini-IPIP, TIPI/TIVI; Stiti-original wording for the rest),
+  31-row psychology guide, ethics rules (consent ×2, P2 for stress answers, no sensitive inferences).
+- Next (with the research in hand): `brain/guide.py` (questions + `label_for` + `CHOICE_VALUES` + rules), `brain/understanding.py`
   (`guide_lines()` used by the compiler; adaptations: chronotype → quiet hours, social energy → nudge budget,
   support style → stress replies), trigger phrase "key things", full scripted test, push.
 
@@ -58,9 +58,11 @@ Note: the Desktop is iCloud-synced — keep `.venv` (1.8 GB) out of iCloud or mo
 - Idea: Stiti opens a local whiteboard (Excalidraw-like) in the browser, draws diagrams while she talks,
   checks understanding, and the learner can interrupt with questions; book → outline via RAG over ingested
   chunks (cites pages).
-- Waiting on research → `research_notes/Whiteboard tutor/whiteboard_tech.md` (board library + license,
-  programmatic API, diagram representation for free LLMs, Python↔browser server, narration↔drawing cue
-  timeline, book→outline) and `tutoring_pedagogy.md` (30-min session template, tutor do/don't rules,
-  question handling, lesson-plan JSON schema, system prompt).
+- ✅ Research done (decision D14) → `research_notes/Whiteboard tutor/whiteboard_tech.md` (Excalidraw 0.18.1 + esm.sh,
+  Starlette WebSocket, sentence-level cues, dagre layout, book→outline pipeline; tested on this Mac) and
+  `tutoring_pedagogy.md` (26+4 min session template, tutor rules, 8 interruption types, lesson JSON schema,
+  ~330-word system prompt).
+- Next: `tutor/` package — board server + Excalidraw page, cue player synced to Kokoro, lesson planner (cloud LLM,
+  strict JSON), book outline from ingested chunks, voice commands ("ruko", "phir se", question), FSRS cards.
 - Constraint: lesson generation needs the cloud LLM (free key). Board, drawing engine, voice sync,
   interruptions and book ingestion can be built and tested without it.
