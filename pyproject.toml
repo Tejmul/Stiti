@@ -8,9 +8,12 @@ authors = [
 ]
 requires-python = ">=3.12"
 dependencies = [
+    "funasr>=1.4.24",
     "huggingface-hub>=2.4.0",
     "kokoro-onnx>=0.6.1",
     "laya>=0.4.30",
+    "livekit>=1.2.1",
+    "markitdown[docx,pdf,pptx,xlsx]>=0.1.9",
     "mlx-whisper>=0.4.3",
     "numpy>=2.5.4",
     "onnxruntime>=1.31.1",
