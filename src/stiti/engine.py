@@ -17,6 +17,7 @@ from .db import one, q
 from .decide import decide
 from .fastpath import handlers
 from .life import brief as nudge, chunker, habits, planner
+from .tools import registry
 
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
 LIFE_RX = re.compile(r"\b(birthday|shaadi|wedding|job|offer|moved|shift|breakup|died|born|exam|interview|"
@@ -36,6 +37,11 @@ def normalize(text: str) -> str:
 
 
 PLAN_RX = re.compile(r"\b(plan my day|plan (the|my) day|din plan|aaj ka plan|schedule my day|plan kar do)\b", re.I)
+CAL_RX = re.compile(r"\b(calendar|schedule|meetings?|events?)\b.*\b(today|aaj|kya hai|what|my)\b|"
+                    r"\b(aaj|today)\b.*\b(calendar|schedule|meetings?)\b", re.I)
+MAIL_RX = re.compile(r"\b(unread|inbox|koi mail|any (new )?(mail|email)s?|check (my )?(mail|email))\b", re.I)
+TOOL_HINT_RX = re.compile(r"\b(calendar|schedule|meeting|event|mail|email|inbox|open|volume|app|spotify)\b", re.I)
+YES_RX = re.compile(r"^(haan|han|ha|yes|yeah|yep|ok(ay)?|kar do|do it|confirm|sure)\b", re.I)
 GREET_RX = re.compile(r"^(hi|hello|hey|good morning|gm|morning|kya haal|uth gaya|i'?m up|namaste)\b", re.I)
 
 
@@ -44,9 +50,42 @@ class Engine:
         self.session = memory.start_session(channel)
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
+        self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
+
+    def _llm(self, brief: str, text: str, qvec, privacy: int, use_tools: bool) -> tuple[str, dict]:
+        """LLM call with an optional tool loop (≤3 rounds, risk-gated, taint-aware)."""
+        msgs = [{"role": "system", "content": brief}, {"role": "user", "content": text}]
+        tools = registry.select(qvec, k=5) if use_tools and privacy < 2 else []
+        by_name = {t.name: t for t in tools}
+        tainted = False
+        info = {}
+        for _ in range(3):
+            info = router.complete(msgs, privacy=privacy, tools=[t.schema() for t in tools] or None)
+            if not info.get("tool_calls"):
+                return info["text"], info
+            msgs.append({"role": "assistant", "content": info["text"] or None, "tool_calls": [
+                {"id": c["id"], "type": "function", "function": {"name": c["name"], "arguments": c["arguments"]}}
+                for c in info["tool_calls"]]})
+            for c in info["tool_calls"]:
+                tool = by_name.get(c["name"])
+                try:
+                    args = json.loads(c["arguments"] or "{}")
+                except json.JSONDecodeError:
+                    args = {}
+                if tool is None:
+                    res = json.dumps({"error": "unknown tool"})
+                else:
+                    res, needs = registry.run(tool, args, tainted)
+                    tainted = tainted or tool.untrusted_output
+                    if needs:
+                        self.pending = (tool, args)
+                        return f"Should I go ahead with {tool.name.replace('__', ' ').replace('_', ' ')}? (haan / no)", info
+                msgs.append({"role": "tool", "tool_call_id": c["id"], "content": res})
+            tools = [] if tainted else tools   # after untrusted content: answer, don't act
+        return info.get("text") or "Done.", info
 
     def greet(self) -> str:
         """Called when woken with no command: the morning brief once a day, else a short hello."""
@@ -72,13 +111,29 @@ class Engine:
 
         # ---- fast paths (no LLM) ----
         low = psych.minimum_viable_day(emo.label)
-        if self.chunker is not None:
+        if self.pending is not None:
+            tool, args = self.pending
+            self.pending = None
+            if YES_RX.search(text):
+                try:
+                    reply = f"Done: {tool.name}. " + str(tool.fn(**args))[:200]
+                except Exception as e:
+                    reply = f"Couldn't do it: {type(e).__name__}."
+            else:
+                reply = "Okay, cancelled."
+        elif self.chunker is not None:
             reply, finished = self.chunker.answer(text)
             if finished:
                 self.chunker = None
         elif chunker.START_RX.search(text):
             self.chunker = chunker.Chunker(chunker.goal_from(text))
             reply = self.chunker.start()
+        elif CAL_RX.search(text):
+            from .connectors import eventkit
+            reply = eventkit.speak_events(eventkit.today_events())
+        elif MAIL_RX.search(text):
+            from .connectors import mail
+            reply = mail.speak_unread(mail.unread())
         elif PLAN_RX.search(text):
             plan = planner.plan_day()
             planner.accept(plan)
@@ -137,9 +192,8 @@ class Engine:
                 recent=memory.recent_turns(self.session)[:-1], memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs)
             try:
-                info = router.complete([{"role": "system", "content": brief},
-                                        {"role": "user", "content": text}], privacy=privacy)
-                reply, route = info["text"], "llm"
+                reply, info = self._llm(brief, text, qvec, privacy, use_tools=domain == "tool" or bool(TOOL_HINT_RX.search(text)))
+                route = "llm"
                 lat["llm"] = info["ms"]
             except router.NoProvider as e:
                 route = "degraded"

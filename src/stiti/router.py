@@ -112,12 +112,13 @@ def _record(p: str, model: str, tin: int, tout: int, err: str | None = None, coo
 
 
 def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1,
-             max_tokens: int = 400, temperature: float = 0.6, json_mode: bool = False) -> dict:
+             max_tokens: int = 400, temperature: float = 0.6, json_mode: bool = False,
+             tools: list[dict] | None = None) -> dict:
     """Returns {text, provider, model, ms, tokens_in, tokens_out}. Raises NoProvider if all fail."""
     if privacy >= 2:
         raise NoProvider("P2: sensitive content never leaves the Mac")
     chain = list(CHAINS[route]) + (P0_EXTRA if privacy == 0 else [])
-    est = sum(len(m["content"]) for m in messages) // 4 + max_tokens
+    est = sum(len(str(m.get("content") or "")) for m in messages) // 4 + max_tokens + (300 if tools else 0)
     errors = []
     for p, model in chain:
         cli = _client(p)
@@ -134,6 +135,8 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             kwargs["extra_body"] = {"reasoning_effort": "low"}  # fast voice turns; avoid empty content
         if json_mode:
             kwargs["response_format"] = {"type": "json_object"}
+        if tools:
+            kwargs["tools"], kwargs["tool_choice"] = tools, "auto"
         t = time.perf_counter()
         try:
             r = cli.chat.completions.create(**kwargs)
@@ -149,15 +152,18 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             _record(p, model, 0, 0, f"{status}: {str(e)[:200]}", cooldown_s=retry if status == 429 else 0)
             errors.append(f"{p}/{model}: {status or type(e).__name__}")
             continue
-        text = (r.choices[0].message.content or "").strip()
+        msg = r.choices[0].message
+        text = (msg.content or "").strip()
+        calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments or "{}"}
+                 for c in (msg.tool_calls or [])]
         u = r.usage
         tin, tout = (u.prompt_tokens, u.completion_tokens) if u else (est, len(text) // 4)
         _record(p, model, tin, tout)
-        if not text:
+        if not text and not calls:
             errors.append(f"{p}/{model}: empty")
             continue
-        return {"text": text, "provider": p, "model": model, "ms": (time.perf_counter() - t) * 1000,
-                "tokens_in": tin, "tokens_out": tout}
+        return {"text": text, "tool_calls": calls, "provider": p, "model": model,
+                "ms": (time.perf_counter() - t) * 1000, "tokens_in": tin, "tokens_out": tout}
     raise NoProvider("; ".join(errors) or "no API keys configured (.env)")
 
 
