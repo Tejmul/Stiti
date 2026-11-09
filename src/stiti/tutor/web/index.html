@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stiti Whiteboard</title>
+<link rel="stylesheet" href="https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/index.css">
+<script type="importmap">
+{ "imports": {
+  "react": "https://esm.sh/react@19.2.0",
+  "react/jsx-runtime": "https://esm.sh/react@19.2.0/jsx-runtime",
+  "react-dom": "https://esm.sh/react-dom@19.2.0",
+  "react-dom/client": "https://esm.sh/react-dom@19.2.0/client"
+} }
+</script>
+<link rel="stylesheet" href="/static/board.css">
+</head>
+<body>
+<div id="shell">
+  <div id="board"><div id="loading">Stiti is getting the whiteboard ready…</div></div>
+  <div id="check" hidden>
+    <div id="check-kind">Your turn</div>
+    <div id="check-prompt"></div>
+    <div id="check-options"></div>
+  </div>
+  <div id="bar">
+    <div id="top-row">
+      <span id="status" class="pill">connecting</span>
+      <span id="progress"></span>
+      <span id="ask-chip" hidden></span>
+    </div>
+    <div id="caption"></div>
+    <div id="controls">
+      <button data-cmd="back" title="Go back (←)">⏮</button>
+      <button id="pp" data-cmd="pause" title="Pause / play (space)">⏸</button>
+      <button data-cmd="repeat" title="Repeat (R)">🔁</button>
+      <button data-cmd="next" title="Skip to next part (→)">⏭</button>
+      <button data-cmd="slower" title="Slower">🐢</button>
+      <button data-cmd="faster" title="Faster">🐇</button>
+      <button id="fs" title="Presenter mode for a big screen (F)">⛶</button>
+      <form id="ask"><input id="q" autocomplete="off" placeholder="✋ Ask a question or type your answer…  (H)"><button>Send</button></form>
+    </div>
+  </div>
+</div>
+<script type="module" src="/static/board.js"></script>
+</body>
+</html>

@@ -1,0 +1,45 @@
+:root {
+  --paper: #fffdf7; --ink: #1e1e1e; --muted: #6b6b6b; --bar: #ffffff; --line: #e6e1d6;
+  --accent: #e03131; --violet: #6741d9; --ok: #2f9e44; --chip: #f3f0ff;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
+  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+#shell { display: flex; flex-direction: column; height: 100%; }
+#board { flex: 1; position: relative; min-height: 0; }
+#loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 18px; }
+#bar { border-top: 1px solid var(--line); background: var(--bar); padding: 10px 16px 12px; }
+#top-row { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--muted); min-height: 22px; }
+.pill { padding: 2px 10px; border-radius: 999px; background: #f1f3f5; font-weight: 600; text-transform: lowercase; }
+.pill.playing { background: #d3f9d8; color: #2b8a3e; }
+.pill.paused { background: #fff3bf; color: #e67700; }
+.pill.waiting { background: #e5dbff; color: var(--violet); }
+.pill.thinking { background: #d0ebff; color: #1971c2; }
+.pill.offline { background: #ffe3e3; color: var(--accent); }
+#ask-chip { margin-left: auto; cursor: pointer; background: var(--chip); color: var(--violet); padding: 2px 10px;
+  border-radius: 999px; font-weight: 600; }
+#caption { font-size: 20px; min-height: 30px; margin: 6px 0 8px; }
+#controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+#controls > button, #ask button { border: 1px solid var(--line); background: #fff; border-radius: 10px; height: 36px;
+  min-width: 40px; font-size: 16px; cursor: pointer; }
+#controls > button:hover, #ask button:hover { background: #f8f9fa; }
+#ask { flex: 1; display: flex; gap: 6px; min-width: 220px; }
+#ask input { flex: 1; height: 36px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; font-size: 15px; }
+#ask button { padding: 0 14px; font-size: 14px; font-weight: 600; }
+#check { position: absolute; right: 16px; bottom: 150px; width: min(420px, calc(100% - 32px)); background: #fff;
+  border: 2px solid var(--violet); border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.12); z-index: 5; }
+#check-kind { font-size: 12px; font-weight: 700; color: var(--violet); text-transform: uppercase; letter-spacing: .05em; }
+#check-prompt { font-size: 17px; margin: 6px 0 10px; }
+#check-options { display: flex; flex-direction: column; gap: 6px; }
+#check-options button { text-align: left; border: 1px solid var(--line); background: #faf9ff; border-radius: 10px;
+  padding: 8px 12px; font-size: 15px; cursor: pointer; }
+#check-options button:hover { border-color: var(--violet); }
+@media (max-width: 640px) { #caption { font-size: 17px; } #check { bottom: 190px; } }
+
+/* presenter mode (F): for a monitor across the room */
+.presenting .excalidraw .layer-ui__wrapper { visibility: hidden; }
+.presenting #caption { font-size: 30px; min-height: 42px; }
+.presenting #controls { display: none; }
+.presenting #check-prompt { font-size: 24px; }
+.presenting #check-options button { font-size: 21px; padding: 10px 14px; }
+.presenting #check { width: min(560px, calc(100% - 32px)); bottom: 120px; }
