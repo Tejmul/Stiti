@@ -28,7 +28,14 @@ class StitiApp(rumps.App):
         self.status_item = rumps.MenuItem("Starting up…")
         self.listen_item = rumps.MenuItem("Listening", callback=self.toggle_listen)
         self.listen_item.state = 1
-        self.menu = [self.status_item, None, self.listen_item,
+        self.thinking_item = rumps.MenuItem("—")
+        self.emotion_item = rumps.MenuItem("Deep voice emotion", callback=self.toggle_emotion)
+        self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "emotion2vec") != "off")
+        self.menu = [self.status_item, self.thinking_item, None,
+                     rumps.MenuItem("Type to Stiti…", callback=self.type_to_stiti),
+                     rumps.MenuItem("Quick add todo…", callback=self.quick_todo), None,
+                     self.listen_item, self.emotion_item,
+                     rumps.MenuItem("Open mood timeline", callback=lambda _: self._bg(self._mood)),
                      rumps.MenuItem("Open life graph", callback=lambda _: self._bg(self._graph)),
                      rumps.MenuItem("Run sleep job now", callback=lambda _: self._bg(self._sleep)),
                      rumps.MenuItem("Open USER.md", callback=lambda _: subprocess.run(["open", str(CFG.home / "USER.md")])),
@@ -38,6 +45,8 @@ class StitiApp(rumps.App):
                      None, rumps.MenuItem("Quit Stiti", callback=self.quit)]
         self.stop = threading.Event()
         self.loop = None
+        self._voice_alive = False
+        self.healthy = True
         self.last_sleep_day = None
         threading.Thread(target=self._boot, daemon=True).start()
         rumps.Timer(self._tick, 2).start()
@@ -65,11 +74,14 @@ class StitiApp(rumps.App):
             threading.Thread(target=telegram.TelegramBot(Engine).run, args=(self.stop,), daemon=True).start()
         self.loop = VoiceLoop(Engine("voice"), aec=os.getenv("STITI_AEC", "on") != "off")
         self._set_status("Say “Hey Stiti” or “Wake up baby girl”")
+        self._voice_alive = True
         try:
             self.loop.run(self.stop)
         except Exception as e:
             self._set_status(f"Voice stopped: {type(e).__name__}")
             print(f"[app] voice loop error: {e}", flush=True)
+        finally:
+            self._voice_alive = False
 
     def _permissions_check(self):
         """Inside Stiti.app the Calendar/Reminders prompts can appear (they can't from a terminal)."""
@@ -121,7 +133,9 @@ class StitiApp(rumps.App):
                 fire_due(notify=notify)
                 if time.time() - last_pro >= 60:
                     last_pro = time.time()
+                    self._health()
                     self._sync_reminders()
+                    rotate_logs()
                     pres = tracker.sample()
                     busy = self.loop is not None and (self.loop.awake or (self.loop.duplex and self.loop.duplex.playing))
                     for nid, kind, text in proactive.tick(pres, self._deliver, busy=bool(busy)):
@@ -148,6 +162,47 @@ class StitiApp(rumps.App):
         from .brain.sleep import run
         print(f"[sleep] {run(verbose=False).get('extract')}", flush=True)
 
+    def _ask(self, title: str, prompt: str) -> str | None:
+        w = rumps.Window(message=prompt, title=title, default_text="", ok="Send", cancel="Cancel",
+                         dimensions=(320, 60))
+        r = w.run()
+        return r.text.strip() if r.clicked and r.text.strip() else None
+
+    def type_to_stiti(self, _):
+        text = self._ask("Stiti", "Type to Stiti (same brain as voice):")
+        if text and self.loop is not None:
+            reply = self.loop.engine.turn(text)
+            rumps.alert(title="Stiti", message=reply)
+
+    def quick_todo(self, _):
+        text = self._ask("Quick add todo", "What do you need to do? (you can add a time: “kal 5 baje”)")
+        if text:
+            from .fastpath.handlers import todo
+            rumps.notification("Stiti", "", todo(f"add todo {text}") or "Couldn't add that.")
+
+    def toggle_emotion(self, item):
+        item.state = 0 if item.state else 1
+        os.environ["STITI_VOICE_EMOTION"] = "emotion2vec" if item.state else "off"
+
+    def _mood(self):
+        from .brain.moodview import render
+        render(open_browser=True)
+
+    def _health(self):
+        """Heartbeat for `stiti doctor` + a ⚠ in the menubar when something is wrong."""
+        h = {"ts": datetime.now(CFG.tz).isoformat(timespec="seconds"), "pid": os.getpid()}
+        try:
+            from .db import one
+            one("SELECT 1 AS ok")
+            h["db"] = "ok"
+        except Exception as e:
+            h["db"] = f"DOWN: {str(e)[:80]}"
+        h["voice"] = "listening" if self.loop is not None and self._voice_alive else "down"
+        h["awake"] = bool(self.loop and self.loop.awake)
+        h["silenced"] = bool(self.loop and self.loop.silenced)
+        self.healthy = h["db"] == "ok" and h["voice"] == "listening"
+        (CFG.home / "health.json").write_text(json.dumps(h))
+
     def toggle_listen(self, item):
         if self.loop is None:
             return
@@ -158,10 +213,17 @@ class StitiApp(rumps.App):
         self.status_item.title = text
 
     def _tick(self, _):
-        if self.loop is None:
+        if self.loop is not None and getattr(self.loop.engine, "last_debug", None):
+            d = self.loop.engine.last_debug
+            self.thinking_item.title = f"Last: {d.get('route')} · mood {d.get('mood')} · {d.get('latency_ms', {}).get('total', '?')} ms"
+        if not self.healthy:
+            self.title = "⚠"
+        elif self.loop is None:
             self.title = "…"
         elif self.loop.paused.is_set():
             self.title = "⏸"
+        elif self.loop.silenced:
+            self.title = "🤫"
         else:
             self.title = "◉" if self.loop.awake else "○"
 
@@ -171,6 +233,21 @@ class StitiApp(rumps.App):
         rumps.quit_application()
 
 
+def rotate_logs(max_mb: int = 10, keep: int = 3) -> None:
+    """Copy app.log aside and truncate it in place (the launcher appends with >>, so writing continues)."""
+    import shutil
+    log = LOG / "app.log"
+    if not log.exists() or log.stat().st_size < max_mb * 1024 * 1024:
+        return
+    for i in range(keep - 1, 0, -1):
+        older = LOG / f"app.log.{i}"
+        if older.exists():
+            older.replace(LOG / f"app.log.{i + 1}")
+    shutil.copyfile(log, LOG / "app.log.1")
+    os.truncate(log, 0)
+
+
 def run():
     LOG.mkdir(parents=True, exist_ok=True)
+    rotate_logs()
     StitiApp().run()

@@ -87,9 +87,25 @@ def voice(aec: bool = True, debug: bool = False):
 
 
 def doctor():
+    import json as _json
+    from datetime import datetime as _dt
+
     from . import embed, router
+    from .config import CFG
     from .db import one
     ok = lambda b: "✅" if b else "❌"  # noqa: E731
+    hp = CFG.home / "health.json"
+    if hp.exists():
+        h = _json.loads(hp.read_text())
+        age = (_dt.now().astimezone() - _dt.fromisoformat(h["ts"])).total_seconds()
+        fresh = age < 180
+        print(f"{ok(fresh and h.get('db') == 'ok' and h.get('voice') == 'listening')} Stiti.app: "
+              f"{'running' if fresh else f'no heartbeat for {int(age // 60)} min'} · db {h.get('db')} · voice {h.get('voice')}"
+              f"{' · silenced' if h.get('silenced') else ''}")
+    else:
+        print("➖ Stiti.app: not installed or never ran (uv run stiti install-app)")
+    bk = sorted((CFG.home / "backups").glob("stiti-*.enc")) if (CFG.home / "backups").exists() else []
+    print(f"{ok(bool(bk))} Backups: {len(bk)} kept" + (f", newest {bk[-1].name}" if bk else " — run `uv run stiti backup`"))
     try:
         n = one("SELECT count(*) n FROM episodes")["n"]
         print(f"{ok(True)} Postgres: connected, {n} episodes stored")
@@ -150,6 +166,9 @@ def main() -> None:
             print("usage: stiti ingest <file-or-folder> [--private]")
         else:
             print(ingest(args[1], privacy=2 if "--private" in args else None))
+    elif cmd == "mood":
+        from .brain.moodview import render as render_mood
+        print(f"Mood timeline → {render_mood(open_browser='--no-open' not in args)}")
     elif cmd == "graph":
         from .brain.graphview import render
         print(f"Life graph → {render(open_browser='--no-open' not in args)}")
@@ -159,4 +178,4 @@ def main() -> None:
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
