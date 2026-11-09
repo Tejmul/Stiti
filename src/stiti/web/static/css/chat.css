@@ -25,10 +25,10 @@
 .todo:hover { background: rgba(255, 255, 255, .45); }
 .todo__check { flex: none; width: 22px; height: 22px; margin-top: 1px; border-radius: 7px; border: 1.5px solid var(--line-2);
   background: transparent; display: grid; place-items: center; padding: 0; transition: background .25s, border-color .25s; }
-.todo__check:hover { border-color: var(--blue); }
+.todo__check:hover { border-color: var(--ink); }
 .todo__check svg { width: 14px; height: 14px; opacity: 0; transition: opacity .2s; color: var(--white); }
 .todo.is-done { opacity: .45; }
-.todo.is-done .todo__check { background: var(--blue); border-color: var(--blue); }
+.todo.is-done .todo__check { background: var(--ink); border-color: var(--ink); }
 .todo.is-done .todo__check svg { opacity: 1; }
 .todo.is-done .todo__title { text-decoration: line-through; }
 .todo__title { font-size: 15px; line-height: 1.4; }
@@ -79,18 +79,18 @@
 .suggest { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
 .suggest button { border: 1px solid var(--line-2); background: rgba(255, 255, 255, .5); border-radius: 999px;
   padding: 9px 14px; min-height: 40px; font-size: 14px; color: var(--ink); transition: background .3s var(--out), border-color .3s; }
-.suggest button:hover { background: var(--white); border-color: var(--blue); }
+.suggest button:hover { background: var(--white); border-color: var(--line-2); }
 .composer { display: flex; align-items: flex-end; gap: 10px; background: var(--paper-3); border: 1px solid var(--line-2);
   border-radius: 26px; padding: 8px 8px 8px 20px; box-shadow: 0 18px 40px -26px rgba(38, 43, 87, .45);
   transition: border-color .3s, box-shadow .3s; }
-.composer:focus-within { border-color: var(--blue); box-shadow: 0 0 0 4px rgba(70, 86, 214, .12), 0 18px 40px -26px rgba(38, 43, 87, .45); }
+.composer:focus-within { border-color: var(--ink-3); box-shadow: 0 0 0 4px rgba(38, 43, 87, .06), 0 18px 40px -26px rgba(38, 43, 87, .45); }
 .composer textarea { flex: 1; border: 0; background: transparent; resize: none; outline: none; padding: 10px 0;
   font: 400 17px/1.5 var(--display); color: var(--ink); max-height: 180px; }
 .composer textarea::placeholder { color: var(--ink-3); }
 .send { flex: none; width: 46px; height: 46px; border-radius: 50%; border: 0; background: var(--ink); color: var(--white);
   display: grid; place-items: center; transition: transform .3s var(--out), background .3s, opacity .3s; }
 .send svg { width: 20px; height: 20px; transition: transform .35s var(--out); }
-.send:hover:not(:disabled) { background: var(--blue); }
+.send:hover:not(:disabled) { background: #3a4180; }
 .send:hover:not(:disabled) svg { transform: translateX(3px); }
 .send:active:not(:disabled) { transform: scale(.94); }
 .send:disabled { opacity: .35; cursor: default; }
@@ -99,8 +99,7 @@
 
 /* ------------------------------------------------------------------ navbar extras on this page */
 .nav__count { display: inline-grid; place-items: center; min-width: 22px; height: 22px; padding: 0 6px; margin-left: 2px;
-  border-radius: 999px; background: var(--pill); color: var(--white); font: 500 11px var(--mono); }
-.nav__cta:hover .nav__count { background: var(--white); color: var(--blue); }
+  border-radius: 999px; background: var(--white); color: var(--ink); font: 500 11px var(--mono); }
 #today-btn { display: none; border: 0; }
 
 /* ------------------------------------------------------------------ not-connected gate */
