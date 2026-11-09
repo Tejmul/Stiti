@@ -239,6 +239,12 @@ def run(verbose: bool = False) -> dict:
     if verbose:
         print(f"3-6. extract/resolve/apply: {out['extract']}")
     decay()
+    from . import learning
+    out["lessons"] = learning.curate()
+    out["segments"] = learning.build_segments()
+    out["reflections"] = learning.reflect()
+    if verbose:
+        print(f"7. lessons curated {out['lessons']} · segments {out['segments']} · reflections {out['reflections']}")
     out["profile"] = standing_profile()
     render()
     try:

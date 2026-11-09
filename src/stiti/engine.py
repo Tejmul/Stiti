@@ -55,6 +55,14 @@ class Engine:
         self.onboarding = None                    # active onboarding interview
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
         self.ended = False                                  # text/Telegram: he said bye
+        self.clarify = None                                 # asking what he meant after "nahi/galat"
+        self.last_action: dict | None = None                # last fast-path write (for undo)
+        self.last_turn_id: int | None = None
+        self.last_lesson_ids: list[int] = []
+        self.last_reply_text: str | None = None
+        self.last_user_text: str | None = None
+        self.last_route: str | None = None
+        self.last_interrupted = False                       # set by the voice loop on barge-in
         self._offline_said_at = 0.0
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
@@ -133,8 +141,23 @@ class Engine:
         disabled_kind = proactive.disable_from_text(text)
         if domain in ("chat", "memory") and privacy < 2:
             proactive.maybe_followup(text)
+        from .brain import learning
         from .voice.wake import is_stop
-        if is_stop(text) and self.onboarding is None and self.chunker is None and self.woop is None:
+        undo = bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None
+        corrected = undo or d.is_("is_correction", 0.6)
+        learning.score_lessons(self.last_lesson_ids, corrected)
+        learning.mark_outcome(self.last_turn_id, "corrected" if corrected else "confirmed")
+        inferred_ack = None if d.is_("is_correction", 0.6) else \
+            learning.infer_from_turn(text, self.last_reply_text, interrupted=self.last_interrupted)
+        if self.clarify is not None:
+            reply, self.clarify = self.clarify.answer(text), None
+        elif undo:
+            note = learning.undo_last(self.last_action)
+            self.clarify = learning.Clarify(self.last_user_text or "", note)
+            reply = self.clarify.question()
+        elif inferred_ack:
+            reply = inferred_ack
+        elif is_stop(text) and self.onboarding is None and self.chunker is None and self.woop is None:
             reply, self.ended = "Theek hai, bye! 👋 Jab chahiye, bula lena.", True
         elif disabled_kind:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
@@ -268,6 +291,12 @@ class Engine:
                   (turn["id"], qn, d.answers[qn], d.conf.get(qn, 0.0), True, d.source))
         memory.touch(recalled_ids)
         lessons.mark_applied(lesson_ids)
+        m = re.search(r"\((task )?#(\d+)\)", reply)
+        self.last_action = ({"type": "task" if m.group(1) else "intent", "id": int(m.group(2))}
+                            if m and route == "fast_path" else None)
+        self.last_turn_id, self.last_lesson_ids = turn["id"], lesson_ids
+        self.last_reply_text, self.last_user_text, self.last_route = reply, text, route
+        self.last_interrupted = False
         self.last_user_ep, self.last_reply_ep, self.last_mood = user_ep, reply_ep, emo.label
         self.last_debug = {"domain": str(domain), "domain_conf": round(d.conf.get("domain", 0), 2), "mood": str(emo.label), "mood_conf": round(emo.conf, 2),
                            "privacy": privacy, "route": route, "provider": info.get("provider"),

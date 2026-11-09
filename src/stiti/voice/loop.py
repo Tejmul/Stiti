@@ -77,6 +77,7 @@ class VoiceLoop:
                     if speech_ms >= BARGE_MS:         # barge-in
                         self.duplex.stop_playback()
                         self._interrupted.set()
+                        self.engine.last_interrupted = True   # feedback: her reply may have been too long
                 if cur:
                     cur.append(f)
                     if p >= 0.5:
