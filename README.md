@@ -19,7 +19,7 @@
 ![Local LLM](https://img.shields.io/badge/local%20LLM-none%20(by%20design)-lightgrey)
 ![Runs on](https://img.shields.io/badge/runs%20on-M2%20·%208%20GB-black?logo=apple)
 ![Hinglish](https://img.shields.io/badge/speaks-Hinglish%20%2B%20English-FF9933)
-![Status](https://img.shields.io/badge/engine-v0%20working-success)
+![Status](https://img.shields.io/badge/engine%20%2B%20voice%20%2B%20life%20OS-working-success)
 
 *"Hey Stiti" · "Wake up baby girl" — and she remembers everything.*
 
@@ -59,6 +59,11 @@ No fine-tuning. No vendor memory. No GPU. No bill.
 | 🧘 | **Psychology built in** | At most 3 items per answer (cognitive load), no guilt words, a "minimum viable day" mode when you're drained, and WOOP goal-setting. |
 | 🔒 | **Privacy tiers** | P0 public · P1 personal · **P2 sensitive (money, health, passwords) never leaves your Mac.** |
 | 🌙 | **Sleeps like a brain** | A nightly job turns the day's chats into facts, updates your profile, curates lessons, and writes `USER.md`, `LESSONS.md` and `GRAPH_REPORT.md`. |
+| 🎙️ | **Always-on voice** | Say **"Hey Stiti"**, **"Stiti"** or **"Wake up baby girl"** → chime → talk. "So jao" sends her to sleep. ~0.7–1.8 s from your last word to her voice on an M2. |
+| 📅 | **Plans your day** | "plan my day" → OR-Tools CP-SAT time-blocks your tasks around deadlines and morning energy in ~50 ms. |
+| 🌱 | **Habits without guilt** | Strength that grows and dents, never resets. Reminders fade as the habit sticks. |
+| 🪜 | **Breaks big goals down** | "break down: launch Stiti" → Socratic questions → one 25-minute step with an if-then plan. |
+| 🕸️ | **See your life graph** | `stiti graph` opens an interactive map of your people, projects and places. |
 | 🛟 | **Works offline** | No API keys or rate-limited? Todos, alarms, memory and lessons still work. Only deep conversation pauses. |
 
 ---
@@ -163,6 +168,10 @@ Real numbers from this repo's evals, not marketing:
 | Intent decision: Laya zero-shot (for comparison) | 13–15/30 · 203–514 ms · 2.7–2.9 GB |
 | Fast-path turn (todo / alarm / lesson) | **~30–60 ms** end to end |
 | Hinglish time parsing | **15/15** checks, including the 1 AM "kal" trap |
+| Speech-to-text (whisper-small 4-bit) vs large-v3-turbo | **283 ms** vs 1,064 ms per utterance, ~same Hinglish accuracy |
+| Your last word → Stiti's first audio (voice e2e, fast path) | **~0.7–1.8 s** |
+| Whole voice stack + brain resident memory | **~954 MB** (budget 3 GB) |
+| CP-SAT day plan, 8 tasks with deadlines | **45–64 ms**, all scheduled |
 | Day scheduling, OR-Tools CP-SAT (researched) | 12 tasks solved optimally in 10–60 ms; 100 tasks ≈ 113 MB |
 
 Run them yourself: `tests/recall_eval.py`, `tests/dates_eval.py`, `tests/laya_pilot.py`.
@@ -229,6 +238,9 @@ cp .env.example .env   # paste keys
 # 4. Talk
 uv run stiti doctor          # checks Postgres, embedder, keys, LLM
 uv run stiti chat --debug    # chat; /debug shows route, mood, latency
+uv run stiti voice           # always-on voice: "Hey Stiti" / "Wake up baby girl"
+uv run stiti voice --headphones   # lets you interrupt her mid-sentence
+uv run stiti graph           # open your life graph
 uv run stiti sleep --now     # run the night job now
 ```
 
@@ -241,10 +253,13 @@ Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.
 
 - [x] **Phase 0: Research**: 6 domains, ≥10 sources each, rea reverse-engineering
 - [x] **Phase 1: Engine v0**: Postgres brain, recall, decisions, fast path, router, lessons, psychology, emotion fusion, sleep job
-- [ ] **Phase 2: Voice**: Pipecat · Silero VAD + Smart Turn · Whisper (Hinglish A/B) · Kokoro · barge-in · wake phrases **"Stiti" / "Hey Stiti" / "Wake up baby girl"**
-- [ ] **Phase 3: Emotion from voice**: emotion2vec+ base + prosody + personal baseline
-- [ ] **Phase 4: Graph depth**: `graph.html` viewer, document ingestion, private LongMemEval-style eval
-- [ ] **Phase 5: Life OS**: CP-SAT day planner, Socratic goal chunker, forgiving habits, Nudge Gate (3–5/day)
+- [x] **Phase 2: Voice v1**: wake phrases **"Stiti" / "Hey Stiti" / "Wake up baby girl"** · Silero VAD · whisper-small (Hinglish prompt) · Kokoro · sleep/awake loop · headphone barge-in
+- [ ] Phase 2.1: Pipecat + echo cancellation, Smart Turn v3, Hinglish STT A/B on Tejmul's real voice
+- [x] **Phase 3a: Voice emotion v1**: prosody (loudness, pitch, pace) vs. your own baseline, fused with text mood
+- [ ] Phase 3b: emotion2vec+ base
+- [x] **Phase 4a: Graph viewer**: `stiti graph` → interactive `graph.html` (ended facts kept as dashed edges)
+- [ ] Phase 4b: document ingestion, private LongMemEval-style eval
+- [x] **Phase 5: Life OS**: CP-SAT day planner · Socratic goal chunker · forgiving habits · morning brief · Nudge Gate
 - [ ] **Phase 6: Connectors**: MCP bus with tool-RAG, Google Workspace, Apple EventKit, Telegram, SearXNG, Playwright, pin-and-diff security
 - [ ] **Phase 7: Always-on**: signed menubar app, Login Item, Laya INT8 back on the hot path
 
@@ -276,7 +291,9 @@ src/stiti/
 │   ├── emotion.py     # fused mood hint + baseline
 │   ├── psych.py       # cognitive load, anti-guilt, WOOP, minimum viable day
 │   └── sleep.py       # nightly consolidation → facts, USER.md, GRAPH_REPORT.md
-└── fastpath/          # todos, alarms, reminders, timers, Hinglish dates
+├── fastpath/          # todos, alarms, reminders, timers, Hinglish dates
+├── life/              # CP-SAT planner, habits, Socratic chunker, morning brief + Nudge Gate
+└── voice/             # VAD, whisper STT, Kokoro TTS, wake phrases, prosody, always-on loop
 db/schema.sql          # 14 tables + recall() + current_facts()
 docs/ · reports/ · research_notes/ · tests/
 ```

@@ -77,7 +77,7 @@ Smart Turn, Whisper, emotion2vec+, Kokoro, wake word (≈1.8–3.7 GB est., budg
 
 ## 4. Roadmap
 
-### Phase 1 — **Engine v0 (tonight)** · text-only brain
+### Phase 1 — **Engine v0 (tonight)** · text-only brain — ✅ built 2026-11-10 (steps 1–8; Laya swapped for exemplar kNN, D10)
 Spec: report section "Engine v0 build spec". Done when: after a restart **and** an LLM swap, Stiti remembers last week and lists todos instantly.
 
 | # | Build | Done when |
@@ -91,7 +91,7 @@ Spec: report section "Engine v0 build spec". Done when: after a restart **and** 
 | 7 | Lessons capture end-to-end | one correction changes the next reply in the same situation |
 | 8 | `stiti sleep --now` (steps 1, 3–6, 9, 10) | facts + USER.md appear from the day's chat; restart + model swap keeps memory |
 
-### Phase 2 — Voice v1
+### Phase 2 — Voice v1 — ✅ v1 built (custom loop, whisper-small, Kokoro, wake phrases); Pipecat/AEC/Smart Turn next
 Pipecat pipeline, Whisper A/B on Tejmul's voice, Kokoro + filler bank, barge-in with AEC, latency + RAM measured on M2.
 **Wake phrases (Tejmul's spec): "Stiti", "Hey Stiti", "Wake up baby girl"** → always-listening tiny local
 wake-word model (LiveKit WakeWord v2 / openWakeWord custom phrases, ~7 MB), chime + start listening,
@@ -104,7 +104,7 @@ emotion2vec+ base, prosody, personal baseline, fusion, mood log; denials stored 
 ### Phase 4 — Knowledge graph depth + documents
 Segments/reflections tables, `GRAPH_REPORT.md` + `graph.html` viewer, document ingestion queue, private LongMemEval-style eval set.
 
-### Phase 5 — Life management
+### Phase 5 — Life management — ✅ planner, habits, chunker, brief, nudge gate built; EventKit mirror pending
 Tasks urgency, CP-SAT planner, Socratic Chunker, habits, WOOP, Nudge Gate, EventKit alarms.
 
 ### Phase 6 — Connectors
