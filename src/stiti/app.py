@@ -86,7 +86,9 @@ class StitiApp(rumps.App):
         from .connectors import telegram
         subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(text)} with title "Stiti"'])
         if present and self.loop is not None and not self.loop.paused.is_set():
-            threading.Thread(target=self.loop.say, args=(text,), daemon=True).start()
+            if self.loop.silenced:            # he told her to stop: notification only until he wakes her
+                return "notification"
+            threading.Thread(target=self.loop.say, args=(text,), kwargs={"nudge": True}, daemon=True).start()
             return "voice"
         if telegram.token() and telegram.owner() and kind in ("meeting_soon", "deadline", "followup"):
             telegram.send(text)

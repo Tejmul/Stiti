@@ -53,9 +53,12 @@ def chat(debug: bool = False, first: str | None = None):
             print(f"Stiti: {reply}")
             if debug:
                 print(f"   ↳ {eng.last_debug}")
+            if eng.ended:
+                return
     finally:
         stop.set()
-        print("Stiti: Theek hai, baad mein baat karte hain. 👋")
+        if not eng.ended:
+            print("Stiti: Theek hai, baad mein baat karte hain. 👋")
 
 
 def voice(aec: bool = True, debug: bool = False):

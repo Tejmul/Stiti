@@ -53,6 +53,8 @@ class Engine:
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
+        self.ended = False                                  # text/Telegram: he said bye
+        self._offline_said_at = 0.0
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
@@ -130,7 +132,10 @@ class Engine:
         disabled_kind = proactive.disable_from_text(text)
         if domain in ("chat", "memory") and privacy < 2:
             proactive.maybe_followup(text)
-        if disabled_kind:
+        from .voice.wake import is_stop
+        if is_stop(text) and self.onboarding is None and self.chunker is None and self.woop is None:
+            reply, self.ended = "Theek hai, bye! 👋 Jab chahiye, bula lena.", True
+        elif disabled_kind:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
         elif self.onboarding is not None:
             reply, finished = self.onboarding.answer(text, user_ep)
@@ -227,16 +232,21 @@ class Engine:
                 route = "degraded"
                 if privacy >= 2:
                     reply = "That sounds private, so I'm keeping it on this Mac. "
-                else:
+                elif time.time() - self._offline_said_at > 3600:
                     reply = "My thinking brain (cloud LLM) is offline right now. "
+                    self._offline_said_at = time.time()
+                else:
+                    reply = ""
                 if docs and (not mems or docs[0]["sim"] > mems[0]["sim"]) and docs[0]["sim"] >= 0.4:
                     d0 = docs[0]
                     reply += f"From your doc “{d0['title']}”: {d0['text'][:300]}"
                 elif mems and mems[0]["sim"] >= 0.4:
                     m = mems[0]
                     reply += f"Here's what I remember from {m['occurred_at'].astimezone(CFG.tz):%d %b}: “{m['text']}”"
-                else:
+                elif reply:
                     reply += "I can still do todos, alarms and reminders, and I'm remembering everything you say."
+                else:
+                    reply = "Hmm, that one I can't answer right now — but I've noted it."
                 info = {"error": str(e)}
 
         reply = psych.lint(reply)
