@@ -9,7 +9,7 @@ import { reducedMotion } from "./common.js";
 const STATES = {
   idle: { spin: 0.18, amp: 0.09, flow: 0.35, alpha: 1 },
   thinking: { spin: 0.65, amp: 0.17, flow: 1.25, alpha: 1 },
-  offline: { spin: 0.04, amp: 0.05, flow: 0.1, alpha: 0.45 },
+  offline: { spin: 0.06, amp: 0.06, flow: 0.12, alpha: 0.7 },
 };
 
 // cheap smooth 3D value noise (hash + trilinear), enough for an organic wobble
