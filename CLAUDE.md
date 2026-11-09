@@ -95,6 +95,15 @@ For **each** feature, follow this order. Do not skip to coding.
 - LLM access: OpenAI-compatible router over free cloud providers only (no Ollama / no local LLM).
 - Secrets in `.env` (never committed).
 
+## Session start / end protocol (every session, every model)
+
+- **Start:** read [docs/HANDOFF.md](docs/HANDOFF.md) first. It is the compact, always-current handover
+  (rules, environment, architecture map, feature status, next steps). Don't read all of `docs/`,
+  `research_notes/` or `reports/` up front — open only what the current task needs (HANDOFF points to it).
+- **End:** when Tejmul says "push" / "I'm ending" / "wrap up", follow the END-OF-SESSION PROTOCOL at the
+  bottom of `docs/HANDOFF.md`: update HANDOFF (status, next steps, session-log entry), update other docs only
+  where things changed, run tests, commit (no Claude trailers), push.
+
 ## Working style with Tejmul
 
 - He explains ideas in casual English; take the intent, not the exact words.

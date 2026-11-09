@@ -1,0 +1,122 @@
+# STITI — HANDOFF (living doc, read this FIRST every session)
+
+> **Purpose:** a new Claude session (any model) reads ONLY this file + `CLAUDE.md` to get going.
+> Do **not** read all of `docs/`, `research_notes/`, `reports/` up front — open them only when the task needs
+> that specific detail (pointers below). **Every session must update this file before it ends** (see bottom).
+>
+> Last updated: **2026-11-10** (session: whiteboard tutor build)
+
+---
+
+## 0. Hard rules from Tejmul (never break)
+1. **Brain ≠ LLM.** Identity/memory/decisions live in Stiti's local Postgres brain; the LLM is a swappable cloud
+   "mouth" fed a compiled briefing. No LLM fine-tuning (small local decision models like Laya may be tuned).
+2. **No local LLM, no Ollama — ever.** LLM = free cloud tiers only (Groq, Cerebras, OpenRouter :free, Mistral, Gemini P0).
+3. **Free only.** Zero cost.
+4. **Postgres** is the store (not SQLite, not ChromaDB).
+5. **Research before building:** ≥10 papers/architectures per feature, comparison table, then decide
+   (`research_notes/<topic>/`, decision in `docs/DECISIONS.md`).
+6. **Git: NO `Co-Authored-By: Claude`, no "Generated with Claude Code"** — commits authored by Tejmul only.
+   Small meaningful commits. He likes a "crazy" README. Building first; commits are secondary.
+7. Hardware: **Apple M2, 8 GB RAM**; local stuff ≤ ~3 GB. Measure RAM with `footprint -p <pid>`.
+8. Tejmul writes casual Hinglish/English — take intent over exact words. Short status updates, build fast & fully.
+9. Pronouns for Tejmul not stated → use "they" or the name. Stiti is "she" (wake phrase "wake up baby girl").
+10. README tagline: "Your girlfriend may not understand you, but Stiti will."
+
+## 1. Machine / environment
+- Repo **/Users/tejmul/Desktop/Stiti** (GitHub Tejmul/Stiti, public, `main`). Python 3.12 via **uv**; Node 26; gh CLI as `Tejmul`.
+- Postgres 18 (brew `postgresql@18`) + pgvector. DBs: `stiti` (REAL brain — never put test data here), `stiti_test`.
+  Schema `db/schema.sql` + `db/migrations/*.sql` (apply new migrations to BOTH DBs).
+- `~/Stiti` must become a symlink to `~/Desktop/Stiti` (Stiti.app launcher hard-codes it). Tejmul runs:
+  `rm -r ~/Stiti/research_notes ~/Stiti/.placeholder && rmdir ~/Stiti && ln -s ~/Desktop/Stiti ~/Stiti`
+- Desktop is iCloud-synced (1.8 GB `.venv`) — undecided: move to `~/Projects` or `.venv.nosync`.
+- Untracked `actions/` (PNG assets) is Tejmul's — don't commit or delete.
+- **No `.env` yet → no API keys → no LLM call has ever run.** `.env.example` lists the keys.
+- Claude Code MCP (`.mcp.json`): playwright, rea (reverse-engineering).
+- Gotchas: zsh doesn't word-split `$VAR` commands; force-push / deleting the working dir are blocked (ask Tejmul);
+  CI uses `macos-latest`; `uv run stiti` with no args waits on stdin — always pass a subcommand.
+
+## 2. Runtime layout
+`~/.stiti/` (STITI_HOME): SOUL.md, USER.md & LESSONS.md (two-way synced with Postgres), GRAPH_REPORT.md, graph.html,
+mood.html, exemplars.jsonl, onboarding/intake json, mcp.json, health.json, logs/app.log, backups/*.enc, models/.
+**Stiti.app** (~/Applications, menubar, LaunchAgent `com.tejmul.stiti`) runs `.venv/bin/python -m stiti app`.
+Restart after code changes: `echo "---- restart $(date) ----" >> ~/.stiti/logs/app.log; pkill -f "python -m stiti app"`.
+
+## 3. Commands (`uv run stiti …`)
+chat [--debug] · onboard · voice [--no-aec] [--debug] · ingest <path> [--private] · graph · mood · backup [--show-key] ·
+restore <file> [--into db] · app · install-app · uninstall-app · mcp [approve <name>] · doctor · sleep --now ·
+**teach …** · **book …** (tutor, see §5). Tests: `tests/run_all.sh` (fresh `stiti_test` per suite). CI: `.github/workflows/ci.yml`.
+
+## 4. Architecture map (src/stiti/) — open a file only when you need it
+- `engine.py` `Engine.turn()` — normalize → decide → emotion → store episode → learning → FAST PATHS (no LLM) → else
+  recall + compiler briefing (≤1,500 tok) + router + psych.lint. Degraded mode answers from memory when no LLM.
+- `decide.py` (exemplar kNN + rule floors; Laya OFF), `embed.py` (EmbeddingGemma-300M 4-bit ONNX, 768-d, ~7 ms),
+  `router.py` (custom free-tier chain, quotas in `llm_usage`, P2 never leaves the Mac), `profile.py` (owner name/pronouns).
+- `brain/` memory, compiler, lessons, learning, sleep (night job), mdsync, onboarding (old 10-Q), intake (new engine),
+  keythings, emotion, psych, ingest (documents/chunks), graphview, moodview, backup.
+- `fastpath/` Hinglish dates + handlers · `life/` planner (CP-SAT), habits, chunker, brief, proactive.
+- `voice/` duplex (AEC3), vad, stt (mlx-whisper small q4), tts (Kokoro int8), turn (Smart Turn), wake, prosody, loop.
+- `connectors/` eventkit, mail (IMAP read-only), telegram, mac (Spotlight/music/iMessage/web/screen), ocr.
+- `tools/` registry (risk tiers, confirm), mcp_bus · `app.py` menubar.
+- **`tutor/`** whiteboard tutor (see §5).
+
+## 5. Feature status
+| Feature | Status | Where to read more |
+|---|---|---|
+| Memory/brain, fast paths, voice, proactive, Mac connectors, backups, app | ✅ built + tested (see `docs/BUILD_LOG.md`) | BUILD_LOG |
+| Key-things intake v2 (`brain/guide.py`, `brain/understanding.py`) | 🟡 engine built; question set + adaptations TODO | `research_notes/Key things to know intake/intake_research.md`, DECISIONS D13 |
+| Whiteboard tutor (`src/stiti/tutor/`) | 🟢 works with the built-in lesson; ⏸ paused by Tejmul (chat first) — see §6 | DECISIONS D14/D15, `research_notes/Whiteboard tutor/` |
+| Web app (`src/stiti/web/`) | 🟢 `stiti web`: chat + landing — see §6b | DECISIONS D16 |
+| Anything needing a cloud LLM | ⛔ unverified (no API key) | — |
+
+## 6. Whiteboard tutor — current state
+- Run: `uv run stiti teach` (voice, demo "How a compiler works") · `--type` (speakers+keyboard) · `--silent` ·
+  `--no-board` (voice only) · `teach "<topic>"` / `teach book.pdf --chapter 3.1` (need LLM key) · `--resume` ·
+  `stiti book <pdf>` (outline). Voice: "Stiti, teach me X" / "X padhao" / "continue my lesson" launches it.
+- Files: `lesson.py` (format, sanitiser, strict schemas, `resolve_at`), `skills.py` (layout + whiteboard skills,
+  Board snapshot/restore), `web/` (Excalidraw page + `board.js` runtime), `server.py` (WS, security), `player.py`
+  (orchestrator), `audio.py` (silent/speaker/voice), `commands.py` (Hinglish controls), `grade.py` (local grading),
+  `planner.py` (LLM, unverified), `book.py` (contents parser), `store.py` (migration 006), `demos/compiler.json`.
+- Verified: tutor eval 27/27 (scripted full lesson, security, layout, grading); board rendered in Chrome via
+  Playwright (boxes, arrows, tree, stickies, camera, reconnect replay).
+- NOT verified: a real spoken lesson with mic + AEC; LLM planner/Q&A; FSRS review sessions (cards are saved,
+  scheduler not built); offline Excalidraw bundle (needs internet for esm.sh today).
+- Next when resumed: real voice test with board on the monitor → FSRS "revise my cards" → offline bundle →
+  planner test once GROQ key exists.
+
+## 6b. Web app — current state
+- Run: `uv run stiti web` (prints `http://127.0.0.1:7317/#t=<token>`; first visit stores the token). Pages:
+  `/` landing (sub-agent built from Tejmul's motion spec; particles ONLY in the hero — Tejmul's rule), `/chat`.
+- Files: `web/server.py` (Starlette; Host/Origin/token checks; `/ws` chat over `Engine("text")`, `/api/state`,
+  `/api/todo/{id}/done`, `/icons/<n>.png` → `public/actions/asset <n>.png`), `static/css/base.css` (tokens + navbar),
+  `static/js/common.js` (scramble, nav), `chat.html/css/js`, `js/mind.js` (breathing particle sphere), landing files.
+- Theme: paper #ecebf2, ink #262b57, blue #4656d6/#7fb2f0, Hanken Grotesk 200/600 + Martian Mono; dark-pill navbar.
+- Verified: web eval 12/12; chat turns via WS on stiti_test. NOT verified: LLM replies in chat; browser voice.
+- Icons in `public/actions` look like Streamline pictograms — check their licence/attribution before release.
+- Next: browser mic → local whisper, streaming replies, more chat features (memory search view, mood, settings).
+
+## 7. Tejmul's pending actions
+1. Symlink command (§1). 2. `uv run stiti backup --show-key` → save the key. 3. Add `GROQ_API_KEY` (+ optional others)
+to `.env`, restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
+6. Try `uv run stiti web` and `uv run stiti teach` (board on the big monitor, press F). 7. Confirm the
+`public/actions` icon licence (looks like Streamline) before the repo is promoted.
+
+## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-10 — whiteboard tutor + web app:** created this HANDOFF + session protocol in CLAUDE.md. Built the
+  tutor (§6, D15) then Tejmul switched priority to "normal chat features" → built `stiti web` (§6b, D16) with a
+  sub-agent doing the landing page. New: migration 006 (applied to stiti + stiti_test), router `schema=` strict
+  JSON + `tutor_plan` chain, engine fast path for tutor phrases, voice loop quiet during lessons, tests
+  `tutor_eval.py` 27/27 + `web_eval.py` 12/12. Tejmul feedback: frontend must be clean — motion only in the hero.
+  Test tip: isolate with `STITI_DB=postgresql:///stiti_test STITI_HOME=<tmp>` + symlink `<tmp>/models → ~/.stiti/models`.
+  Gotcha: the Playwright MCP browser is shared with sub-agents (one "current tab") — don't drive it in parallel.
+
+---
+
+## END-OF-SESSION PROTOCOL (mandatory, every session, every model)
+When Tejmul says "push" / "I'm ending" / "wrap up" (or the session's work is clearly done):
+1. Update this file: "Last updated", §5 status table, §6 (or the relevant feature section), §7 pending actions,
+   and add a ≤10-line entry to §8 (what was built, what's verified vs NOT verified, exact next steps).
+2. Update `docs/BUILD_LOG.md` / `docs/PLAN.md` / `docs/DECISIONS.md` only for things that changed.
+3. Run `tests/run_all.sh`; report failures honestly.
+4. Commit in small meaningful commits (NO Claude trailers / attribution), then `git push`.
+Keep this file under ~250 lines: replace stale text instead of appending forever.
