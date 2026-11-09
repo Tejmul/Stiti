@@ -10,8 +10,16 @@ import re
 from difflib import SequenceMatcher
 
 NAME_VARIANTS = ["stiti", "stithi", "stuti", "steeti", "stety", "sthiti", "stiti's", "stitty", "stii"]
-WAKE_PHRASES = ["wake up baby girl", "wake up baby", "hey stiti", "hi stiti", "ok stiti", "suno stiti"]
+WAKE_PHRASES = ["wake up baby girl", "wake up baby", "hey stiti", "hi stiti", "hello stiti", "ok stiti", "suno stiti",
+                "uth jao stiti", "stiti uth jao"]
 SLEEP_RX = re.compile(r"\b(so jao|soja|go to sleep|sleep now|bas itna hi|bye stiti|good ?night stiti|chup ho jao)\b", re.I)
+# Tejmul's stop words: the WHOLE utterance is just one of these (optionally + "Stiti") -> stop + sleep.
+# "okay, set an alarm…" is a command, not a stop.
+STOP_ONLY = re.compile(
+    r"^(shut up|chup|chup karo|chup ho jao|okay|ok|ok bye|okay bye|chalo|chalo bye|chalo theek hai|bye|bye bye|"
+    r"bas|bas karo|bas bas|stop|stop it|that'?s it|that'?s all|band karo|theek hai bas|good ?night|gn|so jao|"
+    r"go to sleep|leave it|rehne do)( stiti)?$", re.I)
+BACKCHANNEL = re.compile(r"^(haan|han|ha|hmm+|hm+|acha|achha|accha|right|yeah|yes|ji|haan ji|sahi|uh huh)$", re.I)
 
 
 def _norm(t: str) -> str:
@@ -27,6 +35,8 @@ def _name_hit(word: str) -> bool:
 
 def detect(transcript: str) -> tuple[bool, str]:
     """Returns (woke, remainder_after_wake_phrase) — remainder keeps the original text (numbers, a.m.)."""
+    if is_stop(transcript):          # "bye Stiti" contains her name but is a goodbye, never a wake
+        return False, ""
     orig = transcript.split()
     words = [_norm(w) for w in orig]
     keep = [i for i, w in enumerate(words) if w]
@@ -52,4 +62,12 @@ def detect(transcript: str) -> tuple[bool, str]:
 
 
 def is_sleep(transcript: str) -> bool:
-    return bool(SLEEP_RX.search(transcript))
+    return bool(SLEEP_RX.search(transcript)) or is_stop(transcript)
+
+
+def is_stop(transcript: str) -> bool:
+    return bool(STOP_ONLY.match(_norm(transcript)))
+
+
+def is_backchannel(transcript: str) -> bool:
+    return bool(BACKCHANNEL.match(_norm(transcript)))
