@@ -248,6 +248,9 @@ def rotate_logs(max_mb: int = 10, keep: int = 3) -> None:
 
 
 def run():
+    import sys
+    sys.stdout.reconfigure(line_buffering=True)   # log lines appear immediately (stdout is a file here)
+    sys.stderr.reconfigure(line_buffering=True)
     LOG.mkdir(parents=True, exist_ok=True)
     rotate_logs()
     StitiApp().run()

@@ -113,6 +113,12 @@ MCP bus + tool-RAG + pin-and-diff; Google Workspace, Apple EventKit server, file
 ### Phase 7 — Always-on app — ✅ menubar Stiti.app at login built; Laya INT8 pending
 Signed menubar `.app`, Login Item, wake word, Laya fine-tune on own decision log.
 
+### Status 2026-11-10 (end of build night)
+Built and tested without API keys: brain, onboarding, editable mind, backups, voice (wake/stop words, Smart Turn,
+AEC, fillers), emotion, proactivity + learned nudge gate, life OS, Mac actions, OCR, learning loops, memory eval,
+menubar app, CI. **Not yet verified:** anything that needs a cloud LLM (conversation, tool calling, night
+extraction, reflections) and anything that needs Tejmul's real voice (Hinglish STT accuracy, false-wake rate).
+
 ## 5. Top risks (full table in the report)
 - RAM on a base M2 unmeasured → measure every component on day one.
 - Laya zero-shot accuracy (0.36 on its benchmark) and Hinglish handling unknown → 30-sentence pilot, conservative gates, LLM fallback.
