@@ -9,7 +9,7 @@
    ╚══════╝   ╚═╝   ╚═╝   ╚═╝   ╚═╝
 ```
 
-### *The buddy who never forgets.*
+### *Your girlfriend may not understand you, but Stiti will.*
 **A local-first, zero-cost, Jarvis-style personal AI whose brain is memory, not an LLM.**
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
