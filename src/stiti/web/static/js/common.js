@@ -1,37 +1,14 @@
-// Stiti web — shared helpers: scramble text, navbar (hide on scroll, mobile menu), token handling.
+// Stiti web — shared helpers: navbar (hide on scroll, mobile menu), token handling.
 // Plain ES module, no build step.
 
-const GLYPHS = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/\\_-+*<>";
 export const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-/** Scramble an element's text: 18 frames × 30 ms, letters resolve left → right. */
-export function scramble(el, { frames = 18, ms = 30, text } = {}) {
-  if (reducedMotion) return;
-  const final = text ?? el.dataset.text ?? el.textContent;
-  el.dataset.text = final;
-  clearInterval(el._scr);
-  let f = 0;
-  el._scr = setInterval(() => {
-    f++;
-    const solved = Math.floor((f / frames) * final.length);
-    el.textContent = [...final].map((c, i) =>
-      i < solved || c === " " ? c : GLYPHS[(Math.random() * GLYPHS.length) | 0]).join("");
-    if (f >= frames) { clearInterval(el._scr); el.textContent = final; }
-  }, ms);
+/** Text effects are off by owner request: words never turn into random characters (on hover or on load).
+ *  Kept as no-op functions so pages that call them keep working. */
+export function scramble(el, { text } = {}) {
+  if (text != null) el.textContent = text;
 }
-
-/** Wire every [data-scramble] (or a parent [data-scramble-host]) to scramble on hover/focus. */
-export function wireScramble(root = document) {
-  root.querySelectorAll("[data-scramble]").forEach((el) => {
-    if (el._wired) return;
-    el._wired = true;
-    el.setAttribute("aria-hidden", el.getAttribute("aria-hidden") ?? "false");
-    const host = el.closest("[data-scramble-host]") || el;
-    const go = () => scramble(el);
-    host.addEventListener("mouseenter", go);
-    host.addEventListener("focus", go);
-  });
-}
+export function wireScramble() {}
 
 /** Navbar: hide on scroll down, show on scroll up; mobile menu overlay. */
 export function wireNav({ onMenu } = {}) {
