@@ -52,6 +52,28 @@ def chat(debug: bool = False):
         print("Stiti: Theek hai, baad mein baat karte hain. 👋")
 
 
+def voice(headphones: bool = False, debug: bool = False):
+    from . import embed, intent
+    from .engine import Engine
+    from .voice import stt
+    from .voice.loop import VoiceLoop
+    print("Stiti is waking up… (loading memory, embedder, whisper, voice)")
+    embed.embed_query("warm up")
+    intent._index()
+    import numpy as np
+    stt.transcribe_wake(np.zeros(16000, dtype=np.float32))   # load wake model
+    stt.transcribe(np.zeros(16000, dtype=np.float32))        # load main model
+    stop = threading.Event()
+    threading.Thread(target=_scheduler, args=(stop,), daemon=True).start()
+    try:
+        VoiceLoop(Engine("voice"), headphones=headphones, debug=debug).run()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop.set()
+        print("\nStiti: Bye! 👋")
+
+
 def doctor():
     from . import embed, router
     from .db import one
@@ -79,10 +101,12 @@ def main() -> None:
     cmd = args[0] if args else "chat"
     if cmd == "chat":
         chat(debug="--debug" in args)
+    elif cmd == "voice":
+        voice(headphones="--headphones" in args, debug="--debug" in args)
     elif cmd == "doctor":
         doctor()
     elif cmd == "sleep":
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | voice [--headphones] [--debug] | doctor | sleep --now]")
