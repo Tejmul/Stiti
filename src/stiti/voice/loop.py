@@ -112,7 +112,7 @@ class VoiceLoop:
 
     def say(self, text: str, mood: str = "calm", *, nudge: bool = False):
         """Speak sentence by sentence. Nudges stay silent while he has told her to stop."""
-        if self.silenced and nudge:
+        if (self.silenced or _tutor_active()) and nudge:
             return
         print(f"Stiti: {text}")
         self._speak(sentences(speakable(text)), mood)
@@ -186,6 +186,9 @@ class VoiceLoop:
                     print("💤 (sleeping — say “Hey Stiti” to wake me)")
                 if seg is None or len(seg) < SR * 0.3:
                     continue
+                if _tutor_active():                     # a whiteboard lesson owns the mic right now
+                    self.awake = False
+                    continue
                 text, ms = stt.transcribe(seg)          # one pass serves wake check + command
                 if not text:
                     continue
@@ -216,6 +219,14 @@ class VoiceLoop:
                 print(f"You: {text}" + (f"   ({ms:.0f} ms STT)" if self.debug else ""))
                 self.last_activity = now
                 self._handle(text, seg)
+
+
+def _tutor_active() -> bool:
+    try:
+        from ..tutor import tutor_active
+        return tutor_active()
+    except Exception:
+        return False
 
 
 # ---------- deep voice emotion (emotion2vec+ base), background only, never on the critical path ----------

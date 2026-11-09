@@ -20,6 +20,11 @@ from .life import brief as nudge, chunker, habits, planner
 from .connectors.mac import music_fastpath
 from .tools import registry
 
+def _tutor_request(text: str):
+    from .tutor import voice_request
+    return voice_request(text)
+
+
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
 LIFE_RX = re.compile(r"\b(birthday|shaadi|wedding|job|offer|moved|shift|breakup|died|born|exam|interview|"
                      r"promotion|salary|health|hospital)\b", re.I)
@@ -187,6 +192,9 @@ class Engine:
         elif chunker.START_RX.search(text):
             self.chunker = chunker.Chunker(chunker.goal_from(text))
             reply = self.chunker.start()
+        elif (tr := _tutor_request(text)) is not None:
+            from .tutor import launch
+            reply = launch(*tr)
         elif CAL_RX.search(text):
             from .connectors import eventkit
             reply = eventkit.speak_events(eventkit.today_events())
