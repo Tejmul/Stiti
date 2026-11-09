@@ -88,14 +88,10 @@ def mark_applied(ids: list[int]) -> None:
 
 
 def render_md() -> None:
-    rows = q("""SELECT id, situation, guidance, polarity, confidence, seen_count, helpful_count, harmful_count
-                FROM lessons WHERE status='active' ORDER BY id""")
-    lines = ["# LESSONS — how Stiti should talk to Tejmul", "",
-             "_Rendered from Postgres `lessons`. Edits here are imported by the night job (planned)._", ""]
-    for r in rows:
-        lines.append(f"- **L{r['id']}** [{'MUST NOT' if r['polarity'] == 'dont' else 'MUST'}] {r['guidance']}  "
-                     f"\n  _when:_ {r['situation']} · conf {r['confidence']:.2f} · seen {r['seen_count']}")
-    (CFG.home / "LESSONS.md").write_text("\n".join(lines) + "\n")
+    """Re-render LESSONS.md/USER.md — importing any owner edits first so they're never overwritten."""
+    from .mdsync import render_all, sync
+    sync()
+    render_all()
 
 
 def _cos(a, b) -> float:

@@ -210,21 +210,10 @@ def standing_profile() -> str:
 
 
 def render() -> None:
+    from .mdsync import render_all, sync
     home = CFG.home
-    dirs = q("SELECT category, directive FROM user_directives WHERE status='active' ORDER BY category, id")
-    facts = q("""SELECT f.fact_text, lower(f.valid) since FROM facts f JOIN entities e ON e.id=f.subj_id
-                 WHERE e.kind='self' AND upper_inf(f.recorded) AND f.valid @> now() ORDER BY f.id""")
-    lines = ["# USER — who Tejmul is and how to talk to him",
-             f"_Rendered by Stiti's sleep job {datetime.now(CFG.tz):%Y-%m-%d %H:%M}. Source of truth: Postgres._", ""]
-    lines += ["## About him"] + [f"- {f['fact_text']} (since {f['since']:%Y-%m})" for f in facts] + [""]
-    cat = None
-    for d in dirs:
-        if d["category"] != cat:
-            cat = d["category"]
-            lines.append(f"## {cat.replace('_', ' ').title()}")
-        lines.append(f"- {d['directive']}")
-    (home / "USER.md").write_text("\n".join(lines) + "\n")
-    lessons.render_md()
+    sync()            # owner edits first — they always win
+    render_all()
     # graphify-style report: god nodes = degree x recency
     gods = q("""SELECT e.name, e.kind, count(f.id) deg FROM entities e
                 JOIN facts f ON (f.subj_id=e.id OR f.obj_id=e.id) AND upper_inf(f.recorded) AND f.valid @> now()

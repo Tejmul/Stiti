@@ -94,6 +94,11 @@ class Engine:
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None) -> str:
         t0 = time.perf_counter()
         text = normalize(text)
+        try:
+            from .brain.mdsync import sync
+            sync()                      # pick up his edits to USER.md / LESSONS.md (hash check, ~0.1 ms)
+        except Exception as e:
+            print(f"[mdsync] {e}")
         lat: dict[str, float] = {}
         now = datetime.now(CFG.tz)
 
