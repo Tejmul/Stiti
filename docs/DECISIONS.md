@@ -83,3 +83,18 @@ Laya code stays (`stiti/decide.py`), off by default (`STITI_LAYA=off`).
 **Revisit:** ONNX/INT8 Laya export + calibration on the `decisions` log.
 **Also:** embedder is EmbeddingGemma-300M **4-bit ONNX** (onnx-community, ungated): 7 ms/query,
 ~600 MB RSS, 10/10 recall test. INT8 variant was 81 ms / 1.4 GB.
+
+## D11: Voice and connector build choices (2026-11-10, measured on this M2)
+- **Echo cancellation:** WebRTC AEC3 via LiveKit's `AudioProcessingModule` on one 48 kHz duplex stream
+  (TTS fed as far-end reference). Mic self-hearing during her speech: 84% → 0% frames. Barge-in on by default.
+  Chosen over Pipecat+SmallWebRTC for v1: same AEC family, far fewer moving parts.
+- **STT:** whisper-small 4-bit (283 ms) over large-v3-turbo 4-bit (1,064 ms) — ~same Hinglish accuracy on the
+  synthetic test; one model, one pass serves wake detection + command (mlx-whisper caches one model).
+- **Wake phrases:** ASR keyword spotting with fuzzy match ("Stiti", "Hey Stiti", "Wake up baby girl") — zero training.
+- **Voice emotion:** emotion2vec+ base (FunASR) in a background thread, 70–165 ms, ~+800 MB; fused with prosody vs.
+  personal baseline and text mood; confidence capped (generic SER ≈41% on natural speech).
+- **Documents:** MarkItDown (MIT) instead of PyMuPDF4LLM (AGPL) / Docling (11 s/page); heading-aware chunks in Postgres.
+- **EventKit needs an app bundle:** from VS Code/Terminal macOS silently refuses Calendar/Reminders (no usage
+  strings → no prompt). `Stiti.app` (ad-hoc signed, usage strings, LaunchAgent → `open -a`) got both granted.
+- **Mail:** read-only IMAP with an app password; content tagged untrusted; no send.
+- **Tools:** native + MCP behind tool-RAG (top-5), risk tiers, taint, pin-and-diff approval.

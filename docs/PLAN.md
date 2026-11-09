@@ -98,19 +98,19 @@ wake-word model (LiveKit WakeWord v2 / openWakeWord custom phrases, ~7 MB), chim
 conversation mode stays awake until ~20 s of silence, "bas"/"so jao"/"go to sleep" sends it back to sleep.
 Hotkey as backup trigger.
 
-### Phase 3 — Emotion
+### Phase 3 — Emotion — ✅ prosody + emotion2vec+ base + text fusion built
 emotion2vec+ base, prosody, personal baseline, fusion, mood log; denials stored as labels.
 
-### Phase 4 — Knowledge graph depth + documents
+### Phase 4 — Knowledge graph depth + documents — ✅ graph viewer + document ingestion built; eval set pending
 Segments/reflections tables, `GRAPH_REPORT.md` + `graph.html` viewer, document ingestion queue, private LongMemEval-style eval set.
 
 ### Phase 5 — Life management — ✅ planner, habits, chunker, brief, nudge gate built; EventKit mirror pending
 Tasks urgency, CP-SAT planner, Socratic Chunker, habits, WOOP, Nudge Gate, EventKit alarms.
 
-### Phase 6 — Connectors
+### Phase 6 — Connectors — ✅ EventKit, mail (read), Telegram, tool loop, MCP bus built; SearXNG pending
 MCP bus + tool-RAG + pin-and-diff; Google Workspace, Apple EventKit server, filesystem, GitHub (read-only), Telegram, ntfy, SearXNG, Playwright.
 
-### Phase 7 — Always-on app
+### Phase 7 — Always-on app — ✅ menubar Stiti.app at login built; Laya INT8 pending
 Signed menubar `.app`, Login Item, wake word, Laya fine-tune on own decision log.
 
 ## 5. Top risks (full table in the report)
