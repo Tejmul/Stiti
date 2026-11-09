@@ -223,7 +223,7 @@ _deep_last: tuple[str, float] | None = None
 
 
 def _deep_emotion_async(audio: np.ndarray):
-    if os.getenv("STITI_VOICE_EMOTION", "emotion2vec") == "off":
+    if os.getenv("STITI_VOICE_EMOTION", "off") == "off":
         return
 
     def work():

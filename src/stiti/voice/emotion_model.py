@@ -1,6 +1,7 @@
 """emotion2vec+ base (FunASR, ~90M params): deep voice emotion, run in a background thread.
 
-Measured on M2: ~165 ms/utterance, ~+800 MB RSS (torch + model). Generic naturalistic accuracy is
+Measured on M2: ~165 ms/utterance, but +1.55 GB footprint (funasr + torch) → OFF by default on 8 GB;
+turn it on from the menubar ("Deep voice emotion") or STITI_VOICE_EMOTION=emotion2vec. Generic naturalistic accuracy is
 only ~41% (research), so confidence is scaled down and capped — prosody vs. his own baseline and
 the text still vote. Set STITI_VOICE_EMOTION=off to skip it entirely.
 """

@@ -72,7 +72,7 @@ def voice(aec: bool = True, debug: bool = False):
     import numpy as np
     stt.transcribe_wake(np.zeros(16000, dtype=np.float32))   # load wake model
     stt.transcribe(np.zeros(16000, dtype=np.float32))        # load main model
-    if os.getenv("STITI_VOICE_EMOTION", "emotion2vec") != "off":
+    if os.getenv("STITI_VOICE_EMOTION", "off") != "off":
         from .voice import emotion_model
         emotion_model.preload_async()                         # background; prosody covers until ready
     stop = threading.Event()

@@ -30,7 +30,7 @@ class StitiApp(rumps.App):
         self.listen_item.state = 1
         self.thinking_item = rumps.MenuItem("—")
         self.emotion_item = rumps.MenuItem("Deep voice emotion", callback=self.toggle_emotion)
-        self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "emotion2vec") != "off")
+        self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "off") != "off")
         self.menu = [self.status_item, self.thinking_item, None,
                      rumps.MenuItem("Type to Stiti…", callback=self.type_to_stiti),
                      rumps.MenuItem("Quick add todo…", callback=self.quick_todo), None,
@@ -64,7 +64,7 @@ class StitiApp(rumps.App):
         intent._index()
         self._set_status("Loading ears & voice…")
         stt.transcribe(np.zeros(16000, dtype=np.float32))
-        if os.getenv("STITI_VOICE_EMOTION", "emotion2vec") != "off":
+        if os.getenv("STITI_VOICE_EMOTION", "off") != "off":
             from .voice import emotion_model
             emotion_model.preload_async()
         self._permissions_check()

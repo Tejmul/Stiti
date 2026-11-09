@@ -19,8 +19,21 @@ HINGLISH_PROMPT = ("Hey Stiti. Wake up baby girl. Haan Stiti, kal subah 6 baje a
 WAKE_PROMPT = HINGLISH_PROMPT
 
 
+_cache_capped = False
+
+
+def _cap_mlx_cache() -> None:
+    """MLX keeps GPU buffers cached: 1.2 GB → 0.33 GB with a 64 MB cap (STT 283 → ~320 ms). Worth it on 8 GB."""
+    global _cache_capped
+    if not _cache_capped:
+        import mlx.core as mx
+        mx.set_cache_limit(int(os.getenv("STITI_MLX_CACHE_MB", "64")) * 1024 * 1024)
+        _cache_capped = True
+
+
 def _transcribe(audio: np.ndarray, repo: str, prompt: str) -> tuple[str, float]:
     import mlx_whisper
+    _cap_mlx_cache()
     t = time.perf_counter()
     r = mlx_whisper.transcribe(audio.astype(np.float32), path_or_hf_repo=repo,
                                language=os.getenv("STITI_STT_LANG", "en"), initial_prompt=prompt,
