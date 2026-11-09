@@ -16,6 +16,7 @@ from .config import CFG
 from .db import one, q
 from .decide import decide
 from .fastpath import handlers
+from .life import brief as nudge, chunker, habits, planner
 
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
 LIFE_RX = re.compile(r"\b(birthday|shaadi|wedding|job|offer|moved|shift|breakup|died|born|exam|interview|"
@@ -34,13 +35,22 @@ def normalize(text: str) -> str:
     return text.strip()
 
 
+PLAN_RX = re.compile(r"\b(plan my day|plan (the|my) day|din plan|aaj ka plan|schedule my day|plan kar do)\b", re.I)
+GREET_RX = re.compile(r"^(hi|hello|hey|good morning|gm|morning|kya haal|uth gaya|i'?m up|namaste)\b", re.I)
+
+
 class Engine:
     def __init__(self, channel: str = "text"):
         self.session = memory.start_session(channel)
         self.woop: psych.Woop | None = None
+        self.chunker: chunker.Chunker | None = None
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
+
+    def greet(self) -> str:
+        """Called when woken with no command: the morning brief once a day, else a short hello."""
+        return nudge.morning_brief() or "Haan, bolo?"
 
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None) -> str:
         t0 = time.perf_counter()
@@ -61,7 +71,23 @@ class Engine:
         route, reply, info, recalled_ids, lesson_ids, brief_tokens, brief = "fast_path", None, {}, [], [], None, None
 
         # ---- fast paths (no LLM) ----
-        if self.woop is not None:
+        low = psych.minimum_viable_day(emo.label)
+        if self.chunker is not None:
+            reply, finished = self.chunker.answer(text)
+            if finished:
+                self.chunker = None
+        elif chunker.START_RX.search(text):
+            self.chunker = chunker.Chunker(chunker.goal_from(text))
+            reply = self.chunker.start()
+        elif PLAN_RX.search(text):
+            plan = planner.plan_day()
+            planner.accept(plan)
+            reply = planner.speak_plan(plan, low_energy=low)
+        elif (h := habits.handle(text)) is not None:
+            reply = h
+        elif GREET_RX.search(text) and (b := nudge.morning_brief(low_energy=low)):
+            reply = b
+        elif self.woop is not None:
             reply, result = self.woop.answer(text)
             if result:
                 one("""INSERT INTO tasks(title, notes, if_then, source) VALUES (%s,%s,%s,'woop') RETURNING id""",
@@ -85,7 +111,7 @@ class Engine:
         elif domain == "time":
             reply = handlers.timeish(text)
 
-        if reply is not None and domain in ("todo", "time", "control"):
+        if reply is not None and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
             q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))  # commands aren't memories
 
         # ---- LLM path ----

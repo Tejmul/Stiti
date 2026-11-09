@@ -122,7 +122,7 @@ class VoiceLoop:
                         print(f"You: {rest}")
                         self._handle(rest, seg)
                     else:
-                        self._say("Haan, bolo?")
+                        self._say(self.engine.greet())
                     continue
                 print(f"You: {text}" + (f"   ({ms:.0f} ms STT)" if self.debug else ""))
                 self.last_activity = now

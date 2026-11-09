@@ -43,7 +43,12 @@ def chat(debug: bool = False):
                 debug = not debug
                 print(f"debug {'on' if debug else 'off'}")
                 continue
-            reply = eng.turn(text)
+            try:
+                reply = eng.turn(text)
+            except Exception as e:  # one bad turn must never kill Stiti
+                import traceback
+                traceback.print_exc() if debug else None
+                reply = f"Oops, something broke on my side ({type(e).__name__}). Try again?"
             print(f"Stiti: {reply}")
             if debug:
                 print(f"   ↳ {eng.last_debug}")
