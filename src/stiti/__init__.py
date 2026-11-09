@@ -57,7 +57,7 @@ def chat(debug: bool = False):
         print("Stiti: Theek hai, baad mein baat karte hain. 👋")
 
 
-def voice(headphones: bool = False, debug: bool = False):
+def voice(aec: bool = True, debug: bool = False):
     from . import embed, intent
     from .engine import Engine
     from .voice import stt
@@ -68,10 +68,13 @@ def voice(headphones: bool = False, debug: bool = False):
     import numpy as np
     stt.transcribe_wake(np.zeros(16000, dtype=np.float32))   # load wake model
     stt.transcribe(np.zeros(16000, dtype=np.float32))        # load main model
+    if os.getenv("STITI_VOICE_EMOTION", "emotion2vec") != "off":
+        from .voice import emotion_model
+        emotion_model.preload_async()                         # background; prosody covers until ready
     stop = threading.Event()
     threading.Thread(target=_scheduler, args=(stop,), daemon=True).start()
     try:
-        VoiceLoop(Engine("voice"), headphones=headphones, debug=debug).run()
+        VoiceLoop(Engine("voice"), aec=aec, debug=debug).run()
     except KeyboardInterrupt:
         pass
     finally:
@@ -107,7 +110,13 @@ def main() -> None:
     if cmd == "chat":
         chat(debug="--debug" in args)
     elif cmd == "voice":
-        voice(headphones="--headphones" in args, debug="--debug" in args)
+        voice(aec="--no-aec" not in args, debug="--debug" in args)
+    elif cmd == "ingest":
+        from .brain.ingest import ingest
+        if len(args) < 2:
+            print("usage: stiti ingest <file-or-folder> [--private]")
+        else:
+            print(ingest(args[1], privacy=2 if "--private" in args else None))
     elif cmd == "graph":
         from .brain.graphview import render
         print(f"Life graph → {render(open_browser='--no-open' not in args)}")
@@ -117,4 +126,4 @@ def main() -> None:
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | voice [--headphones] [--debug] | graph | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | voice [--no-aec] [--debug] | ingest <path> | graph | doctor | sleep --now]")
