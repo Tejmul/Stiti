@@ -241,7 +241,13 @@ def run(verbose: bool = False) -> dict:
     decay()
     out["profile"] = standing_profile()
     render()
+    try:
+        from .backup import backup
+        out["backup"] = str(backup())
+    except Exception as e:
+        out["backup"] = f"FAILED: {e}"
     if verbose:
+        print(f"10. backup: {out['backup']}")
         print(f"8-10. decay done; standing profile:\n{out['profile'] or '(empty yet)'}\n"
               f"rendered {CFG.home}/USER.md, LESSONS.md, GRAPH_REPORT.md")
     return out

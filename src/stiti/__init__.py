@@ -114,6 +114,19 @@ def main() -> None:
         chat(first="intro shuru karo")
     elif cmd == "voice":
         voice(aec="--no-aec" not in args, debug="--debug" in args)
+    elif cmd == "backup":
+        from .brain import backup
+        if "--show-key" in args:
+            print(f"Backup key (save it in a password manager; without it backups can't be opened):\n{backup.key()}")
+        else:
+            backup.backup(verbose=True)
+    elif cmd == "restore":
+        from .brain import backup
+        if len(args) < 2:
+            print("usage: stiti restore <backup.tar.gz.enc> [--into <new_db_name>]")
+        else:
+            into = args[args.index("--into") + 1] if "--into" in args else "stiti_restored"
+            print(backup.restore(args[1], into))
     elif cmd == "app":
         from .app import run
         run()
@@ -143,4 +156,4 @@ def main() -> None:
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | ingest <path> | graph | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now]")
