@@ -17,9 +17,21 @@ from .db import one, q
 from .decide import decide
 from .fastpath import handlers
 
-REMEMBER_RX = re.compile(r"\b(remember|yaad rakh\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
+REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
 LIFE_RX = re.compile(r"\b(birthday|shaadi|wedding|job|offer|moved|shift|breakup|died|born|exam|interview|"
                      r"promotion|salary|health|hospital)\b", re.I)
+
+
+NORMALIZE = [(r"\bto-?dos?\b", lambda m: "todos" if m.group(0).lower().endswith("s") else "todo"),
+             (r"\ba\.m\.", lambda m: "am"), (r"\bp\.m\.", lambda m: "pm"),
+             (r"\bya+d\b", lambda m: "yaad"), (r"\bmommy\b", lambda m: "mummy")]
+
+
+def normalize(text: str) -> str:
+    """Smooth over STT spellings so fast paths and memory see one form."""
+    for rx, rep in NORMALIZE:
+        text = re.sub(rx, rep, text, flags=re.I)
+    return text.strip()
 
 
 class Engine:
@@ -32,6 +44,7 @@ class Engine:
 
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None) -> str:
         t0 = time.perf_counter()
+        text = normalize(text)
         lat: dict[str, float] = {}
         now = datetime.now(CFG.tz)
 
