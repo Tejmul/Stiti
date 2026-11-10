@@ -2,6 +2,7 @@
 STITI_DB=postgresql:///stiti_test STITI_HOME=<tmp> uv run python tests/emotion_learning_eval.py
 """
 import os
+from pathlib import Path
 import sys
 import tempfile
 
@@ -22,7 +23,10 @@ from stiti.config import CFG                                                  # 
 from stiti.db import one, q                                                   # noqa: E402
 from stiti.learn import emotion_train, labels, personal, recorder             # noqa: E402
 
-assert str(CFG.home).startswith(("/var/", "/tmp", "/private")), f"STITI_HOME must be a temp dir, got {CFG.home}"
+# never run against the owner's real brain folder: a temp dir, or CI's own throwaway home
+assert CFG.home.resolve() != (Path.home() / ".stiti").resolve() and (
+    str(CFG.home).startswith(("/var/", "/tmp", "/private")) or os.environ.get("CI") or CFG.home.name.endswith("-ci")
+), f"STITI_HOME must be a temp/CI dir, got {CFG.home}"
 q("TRUNCATE voice_turns, emotion_labels RESTART IDENTITY CASCADE")
 q("DELETE FROM owner_profile WHERE key LIKE 'recorder%%'")
 from stiti import profile                                                     # noqa: E402
