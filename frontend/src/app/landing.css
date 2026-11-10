@@ -522,3 +522,29 @@ html.landing-has-cursor, html.landing-has-cursor a, html.landing-has-cursor butt
 .pg-landing .feat__eg { margin: 14px 0 0; font-size: 14px; color: var(--ink-3); font-style: italic; }
 .pg-landing .moment__title { margin: 6px 0 10px; }
 .pg-landing .moment__text { margin: 0; color: var(--ink-2); font-size: 15.5px; line-height: 1.55; max-width: 26em; }
+
+/* ------------------------------------------------------------------ light, premium material (see globals.css) */
+.pg-landing .btn--primary { background: #fff; color: var(--ink); border: 1px solid var(--edge); box-shadow: var(--lift); }
+.pg-landing .btn--primary:hover, .pg-landing .btn--primary:focus-visible {
+  background: #fff; border-color: var(--edge-2); box-shadow: 0 1px 0 #fff inset, 0 18px 34px -14px rgba(38, 43, 87, .42); }
+.pg-landing .foot__mark { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
+.pg-landing .qa[open] .qa__icon { background: rgba(38, 43, 87, .05); border-color: var(--edge-2); }
+.pg-landing .qa[open] .qa__icon::before, .pg-landing .qa[open] .qa__icon::after { background: var(--ink); }
+.pg-landing .start-dlg__steps li::before { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge-2); }
+/* the Mac: light aluminium, a white-glass pill, white bubbles (no dark navy blocks) */
+.pg-landing .shot__lid { background: linear-gradient(180deg, #f6f6fa, #dedfe8);
+  box-shadow: inset 0 0 0 1px rgba(38, 43, 87, .08), inset 0 1px 0 #fff, 0 50px 90px -44px rgba(38, 43, 87, .45),
+              0 24px 40px -26px rgba(38, 43, 87, .3); }
+.pg-landing .shot__dock-s { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge); }
+.pg-landing .shot__dock-s::after { background: rgba(38, 43, 87, .45); }
+.pg-landing .pill { background: rgba(255, 255, 255, .86); color: var(--ink);
+  -webkit-backdrop-filter: blur(10px) saturate(160%); backdrop-filter: blur(10px) saturate(160%);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .9), 0 calc(var(--u) * 1.2) calc(var(--u) * 2.8) calc(var(--u) * -1) rgba(38, 43, 87, .35); }
+.pg-landing .pill--listening .pill__wave { color: var(--blue); }
+.pg-landing .pill--speaking .pill__wave { color: var(--blue); }
+.pg-landing .pill--thinking .pill__wave { color: rgba(70, 86, 214, .7); }
+.pg-landing .bub--stiti { background: rgba(255, 255, 255, .96); color: var(--ink);
+  box-shadow: 0 calc(var(--u) * .6) calc(var(--u) * 1.8) calc(var(--u) * -.6) rgba(38, 43, 87, .28); }
+.pg-landing .bub--you { background: rgba(255, 255, 255, .42); color: var(--ink);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .7); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.pg-landing .bub__tag { background: rgba(70, 86, 214, .08); color: var(--blue); }
