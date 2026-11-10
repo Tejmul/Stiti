@@ -135,6 +135,7 @@ class Engine:
         voice can say "ek sec, dekhti hoon" instantly instead of dead air."""
         t0 = time.perf_counter()
         self.streamed = False
+        self.last_used = None           # what the brain handed the LLM this turn (web "memory receipts")
         ack = on_ack or (lambda kind: None)
         text = normalize(text)
         try:
@@ -287,6 +288,12 @@ class Engine:
             lat["recall"] = (time.perf_counter() - t) * 1000
             recalled_ids = [m["episode_id"] for m in mems]
             lesson_ids = [l["id"] for l in les]
+            self.last_used = {
+                "memories": [{"text": m["text"][:220], "at": m["occurred_at"].isoformat()} for m in mems[:6]],
+                "facts": [f["fact_text"] for f in facts[:8]],
+                "docs": list(dict.fromkeys(f"{x['title']}" + (f" › {x['section'].split(' > ')[-1]}" if x.get("section") else "")
+                                           for x in docs))[:4],
+                "lessons": [l.get("guidance", "") for l in les[:4]]}
             talk = [r["directive"] for r in q(
                 "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style'")]
             loops = None
