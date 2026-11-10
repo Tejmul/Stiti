@@ -24,9 +24,15 @@ origin = {"origin": base, **host}
 tok = server.web_token()
 c = TestClient(server.app(), base_url=base)
 
-check("landing + chat pages served", c.get("/chat").status_code == 200 and "Message Stiti" in c.get("/chat").text)
+built = (server.OUT / "chat.html").exists()          # Next.js export (cd frontend && pnpm build)
+pages = {p: c.get(p) for p in ("/", "/chat", "/memory")}
+check("landing, chat and memory pages served (or a clear 'not built' message)",
+      all(r.status_code == 200 and "<html" in r.text for r in pages.values()) if built
+      else all(r.status_code == 503 and "pnpm build" in r.text for r in pages.values()))
 check("Host check blocks DNS rebinding", c.get("/chat", headers={"host": "evil.example"}).status_code == 400)
-check("static assets served", c.get("/static/css/base.css").status_code == 200)
+if built:
+    check("Next.js assets served", c.get("/favicon.svg").status_code == 200 and c.get(
+        next(a for a in __import__("re").findall(r'/_next/static/[^"]+\.js', pages["/chat"].text))).status_code == 200)
 check("pictogram icons: numbers only", c.get("/icons/180.png").status_code in (200, 404)
       and c.get("/icons/..%2F..%2Fsecret.png").status_code == 404)
 check("API needs the token", c.get("/api/state").status_code == 403 and c.get(f"/api/state?t={tok}").status_code == 200)
@@ -55,7 +61,7 @@ with c.websocket_connect(f"/ws?t={tok}", headers=origin) as ws:
     r = ws.receive_json()
     st = ws.receive_json()
     check("chat turn runs through the Engine fast path", r["type"] == "reply" and r["route"] == "fast_path"
-          and "water the plants" in r["text"], str(r)[:200])
+          and "water the plants" in r["text"] and "used" in r, str(r)[:200])
     titles = [t["title"] for t in st["todos"]]
     check("state push shows the new todo", st["type"] == "state" and "water the plants" in titles, str(titles))
     tid = next(t["id"] for t in st["todos"] if t["title"] == "water the plants")
@@ -64,6 +70,26 @@ check("todo done needs same-origin + token",
       c.post(f"/api/todo/{tid}/done", headers={"x-stiti-token": tok}).status_code == 403)
 after = c.post(f"/api/todo/{tid}/done", headers={"x-stiti-token": tok, **origin}).json()
 check("todo done from the side panel", all(t["id"] != tid for t in after["todos"]))
+
+# ---- Memory page API (D23)
+check("memory API needs the token", c.get("/api/mind").status_code == 403)
+mind = c.get("/api/mind", headers={"x-stiti-token": tok}).json()
+check("memory overview has every section", all(k in mind for k in (
+    "facts", "people", "directives", "lessons", "habits", "mood", "docs", "todos", "alarms", "counts")) and len(mind["mood"]) == 14)
+check("adding a fact needs same-origin + token",
+      c.post("/api/fact", json={"text": "I love filter coffee"}, headers={"x-stiti-token": tok}).status_code == 403)
+check("too-short fact refused", c.post("/api/fact", json={"text": "a"}, headers={"x-stiti-token": tok, **origin}).status_code == 400)
+new = c.post("/api/fact", json={"text": "I love filter coffee"}, headers={"x-stiti-token": tok, **origin}).json()
+mind = c.get("/api/mind", headers={"x-stiti-token": tok}).json()
+from stiti.config import CFG  # noqa: E402
+check("added fact shows up (and in USER.md)", any(f["id"] == new["id"] for f in mind["facts"])
+      and "I love filter coffee" in (CFG.home / "USER.md").read_text())
+c.post(f"/api/fact/{new['id']}/forget", headers={"x-stiti-token": tok, **origin})
+mind = c.get("/api/mind", headers={"x-stiti-token": tok}).json()
+check("forgotten fact is gone (kept in history)", all(f["id"] != new["id"] for f in mind["facts"])
+      and "filter coffee" not in (CFG.home / "USER.md").read_text())
+hits = c.get("/api/moments?q=plants", headers={"x-stiti-token": tok}).json()
+check("conversation search finds earlier messages", any("plants" in m["text"] for m in hits), str(hits)[:200])
 
 print(f"web: {ok}/{ok + fail} checks passed")
 raise SystemExit(1 if fail else 0)
