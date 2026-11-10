@@ -116,7 +116,7 @@ img { max-width: 100%; display: block; }
   transition: transform .5s var(--out);
 }
 .nav__logo:hover { transform: none; }
-.nav__logo svg { width: 25px; height: 25px; }
+.nav__mark { font: 600 23px/1 var(--display); letter-spacing: -.04em; transform: translateY(-1px); }
 .nav__links { display: flex; align-items: center; gap: 2px; margin: 0 6px; }
 .nav__link {
   position: relative; display: inline-flex; align-items: center; height: 44px; padding: 0 16px;
