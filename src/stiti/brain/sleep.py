@@ -252,6 +252,13 @@ def run(verbose: bool = False) -> dict:
     if verbose:
         print(f"7. lessons curated {out['lessons']} · segments {out['segments']} · reflections {out['reflections']}")
     out["profile"] = standing_profile()
+    try:                    # D28: personal voice-emotion head from his recorded turns (no-op if the recorder never ran)
+        from ..learn.emotion_train import nightly as emotion_nightly
+        out["emotion"] = emotion_nightly()
+    except Exception as e:
+        out["emotion"] = f"FAILED: {e}"
+    if verbose:
+        print(f"9b. personal emotion: {out['emotion']}")
     render()
     try:
         from .backup import backup
