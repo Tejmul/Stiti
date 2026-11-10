@@ -11,6 +11,7 @@ import threading
 import numpy as np
 import sounddevice as sd
 
+from . import hinglish
 from .models import path
 
 SPEED_FOR_MOOD = {"stressed": 0.95, "angry": 0.95, "sad": 0.92, "tired": 0.92, "happy": 1.06, "calm": 1.0}
@@ -40,6 +41,7 @@ class TTS:
         self.k = Kokoro(str(path("kokoro-v1.0.int8.onnx")), str(path("voices-v1.0.bin")))
         self.voice = os.getenv("STITI_VOICE", "af_heart")
         self.lang = os.getenv("STITI_VOICE_LANG", "en-us")
+        self.hi_voice = os.getenv("STITI_HI_VOICE", "hf_alpha")    # Hinglish lines (D22); "off" = always English
         self._stop = threading.Event()
         self.speaking = False
         # Kokoro pays ~700 ms of setup the first time it runs in any new thread (measured on the M2), so all
@@ -47,13 +49,19 @@ class TTS:
         from concurrent.futures import ThreadPoolExecutor
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kokoro")
         self._worker.submit(self.synth, "Warm up.", "calm")
+        self._worker.submit(self.synth, "Haan, ho gaya.", "calm")   # warms espeak 'hi' + the Hindi voice
 
     def synth_on_worker(self, text: str, mood: str = "calm") -> tuple[np.ndarray, int]:
         """synth() on the persistent Kokoro thread (no per-thread warm-up cost)."""
         return self._worker.submit(self.synth, text, mood).result()
 
     def synth(self, text: str, mood: str = "calm") -> tuple[np.ndarray, int]:
-        return self.k.create(text, voice=self.voice, speed=SPEED_FOR_MOOD.get(mood, 1.0), lang=self.lang)
+        """Hinglish → Hindi voice with mixed hi/en-us phonemes (hinglish.py); plain English → the normal voice."""
+        speed = SPEED_FOR_MOOD.get(mood, 1.0)
+        ph = hinglish.phonemize(text) if self.hi_voice != "off" else None
+        if ph:
+            return self.k.create(ph, voice=self.hi_voice, speed=speed, is_phonemes=True)
+        return self.k.create(text, voice=self.voice, speed=speed, lang=self.lang)
 
     def say(self, text: str, mood: str = "calm") -> bool:
         """Speak sentence by sentence (first audio after the first sentence). Returns False if interrupted."""
