@@ -25,4 +25,5 @@ run "proactivity"                     tests/proactive_eval.py
 run "learning loops"                  tests/learning_eval.py
 run "whiteboard tutor"                tests/tutor_eval.py
 run "web app (chat + security)"       tests/web_eval.py
+run "conversation speed pieces"       tests/speed_eval.py
 exit $fail
