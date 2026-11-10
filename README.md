@@ -18,8 +18,8 @@
 ![Cost](https://img.shields.io/badge/cost-%E2%82%B90%20forever-2ea44f)
 ![Local LLM](https://img.shields.io/badge/local%20LLM-none%20(by%20design)-lightgrey)
 ![Runs on](https://img.shields.io/badge/runs%20on-M2%20·%208%20GB-black?logo=apple)
-![Hinglish](https://img.shields.io/badge/speaks-Hinglish%20%2B%20English-FF9933)
-![Status](https://img.shields.io/badge/engine%20%2B%20voice%20%2B%20life%20OS-working-success) ![evals](https://github.com/Tejmul/Stiti/actions/workflows/ci.yml/badge.svg)
+![Voice](https://img.shields.io/badge/voice-Indian%20English%20%C2%B7%20understands%20Hinglish-FF9933)
+![Evals](https://img.shields.io/badge/evals-19%20suites%20%C2%B7%20650%2B%20checks-success) ![CI](https://github.com/Tejmul/Stiti/actions/workflows/ci.yml/badge.svg)
 
 *"Hey Stiti" · "Wake up baby girl" — and she remembers everything.*
 
@@ -49,17 +49,36 @@ No fine-tuning. No vendor memory. No GPU. No bill.
 
 ## ✨ What she does (today)
 
+### New: a conversation that feels human
+Talking to a voice assistant usually feels like talking to a form. We reverse-engineered how the best do it
+(**ElevenLabs** from its open SDKs and a live black-box measurement, **Wispr Flow** with `rea`, plus
+**LiveKit**, **Pipecat**, **TEN**, **Kyutai Unmute** and **Bolna** at source level) and rebuilt the conversation layer:
+
+| | What changed | How |
+|---|---|---|
+| 👂 | **She lets you finish** | Audio end-of-turn (Smart Turn) + a text check on your words ("So…", "remind me at 4 to", "I was wondering…" → wait 3 s; "hold on / ek sec" → silent up to 8 s). Learns *your* pace. |
+| ✋ | **Interrupt her like a person** | Two-stage barge-in: she ducks at 250 ms, checks your words; "mm-hm / haan" → she carries on, real words → she stops. She only remembers the part you actually heard. |
+| ⚡ | **Answers before you finish the pause** | Preemptive reply: the LLM starts on the early transcript and plays only once the turn is final. Measured: commit → first word **530 ms → ~0 ms** on waiting turns. |
+| 🎩 | **JARVIS, not a chatbot** | A local *reply strategy* each turn (listen, solve, confirm, banter, stay quiet…) sets the word cap, whether she may ask a question or bring up a memory. Code enforces it: no therapy-speak, no flattery, no random "how did the interview go?". |
+| 🗣️ | **Hears *your* words** | Whisper prompt built from your own brain (names, projects, docs) + snap-to-glossary + a cloud second opinion on unsure turns. "Tejmal" → **Tejmul**. WER **12.4% → 6.8%** on Indian-accented speech. Say "no, I said X" and she learns the word. |
+| 🇮🇳 | **Indian-English voice** | goonj-1-82M personas (Apache-2.0) on the same Kokoro runtime: English by default, Hindi words pronounced right, one voice per reply. `stiti voices try / use`. |
+| 🧠 | **Instructions stick instantly** | "Talk in English", "keep it short", "don't ask so many questions", "stop asking about X" become permanent rules the moment you say them. |
+| 💛 | **Learns *your* moods** | Opt-in local recorder + labels from your own words ("I'm so tired", "I'm not angry") → a nightly personal head on emotion2vec, switched on only when it beats the generic model on your data. |
+| 🎵 | **Gets out of the way** | Your music pauses while she listens or talks, and resumes after. |
+
+### Everything else
+
 | | Capability | How |
 |---|---|---|
 | 🗂️ | **Infinite memory** | Every word is stored verbatim forever. Hybrid vector + keyword recall with a 30-day fade that never hits zero. |
 | 🕸️ | **Life knowledge graph** | People, projects, places, and feelings as **bitemporal facts**: "lived in Pune *until* Oct, Mumbai *since*". Postgres itself blocks two contradictory "current" facts. |
-| 🎓 | **Learns from corrections** | Say *"itna lamba mat bolo"* once → it becomes a rule (lesson) checked before every reply in that situation. |
+| 🎓 | **Learns from corrections** | Say *"don't talk so long"* once → it becomes a rule (lesson) checked before every reply in that situation. |
 | ✅ | **Todos, alarms, reminders, timers** | *"kal subah 6 baje uthana"*, *"remind me at 7 pm to call mummy"*: handled **without any LLM** in ~30 ms, with the exact date read back. |
-| 💛 | **Emotion-aware** | Fused mood signal with your personal baseline. It's a *hint*, never a verdict: Stiti asks, she doesn't declare. Voice emotion lands with the voice pipeline. |
+| 💛 | **Emotion-aware** | Fused mood signal from your voice and words against *your* baseline. It's a hint, never a verdict, and it changes how she talks, not what she announces. |
 | 🧘 | **Psychology built in** | At most 3 items per answer (cognitive load), no guilt words, a "minimum viable day" mode when you're drained, and WOOP goal-setting. |
-| 🔒 | **Privacy tiers** | P0 public · P1 personal · **P2 sensitive (money, health, passwords) never leaves your Mac.** |
+| 🔒 | **Privacy tiers** | P0 public · P1 personal · **P2 sensitive (money, health, passwords) never leaves your Mac.** Your conversations are never shown on any web page, and the public website ships no chat code at all. |
 | 🌙 | **Sleeps like a brain** | A nightly job turns the day's chats into facts, updates your profile, curates lessons, and writes `USER.md`, `LESSONS.md` and `GRAPH_REPORT.md`. |
-| 🎙️ | **Always-on voice** | Say **"Hey Stiti"**, **"Stiti"** or **"Wake up baby girl"** → chime → talk. "So jao" sends her to sleep. ~0.7–1.8 s from your last word to her voice on an M2. |
+| 🎙️ | **Always-on voice** | Say **"Hey Stiti"** or **"Wake up baby girl"** → "Hey, how are you?" → talk. "Bye" gets a short goodbye. ~0.85 s from your last word to her voice on an M2. |
 | 📅 | **Plans your day** | "plan my day" → OR-Tools CP-SAT time-blocks your tasks around deadlines and morning energy in ~50 ms. |
 | 🌱 | **Habits without guilt** | Strength that grows and dents, never resets. Reminders fade as the habit sticks. |
 | 🪜 | **Breaks big goals down** | "break down: launch Stiti" → Socratic questions → one 25-minute step with an if-then plan. |
@@ -72,32 +91,36 @@ No fine-tuning. No vendor memory. No GPU. No bill.
 | 📱 | **Telegram** | Chat with Stiti from your phone; alarms get pushed there too. Owner-locked with a pairing code. |
 | 🔌 | **Any MCP tool** | Plug in MCP servers; only the 5 most relevant tools are shown per request, write actions need your "haan", and a server whose tools change is disabled until you re-approve it. |
 | 🤫 | **Knows when to shut up** | "shut up", "okay", "chalo", "bye", "bas" → she stops mid-sentence and stays silent (nudges too) until "Hi Stiti". |
-| 👂 | **Lets you finish** | Smart Turn v3.2 tells a pause from a finished thought (6/6 in tests, ~30 ms); "haan/hmm" while she talks doesn't stop her. |
 | 🔔 | **Speaks first — rarely** | Meeting in 10 min, a deadline, 3 h without a break, "how did the interview go?" — budgeted, quiet at night, and it learns which nudges you like. |
 | 🖱️ | **Does things on your Mac** | Calendar events, Spotlight file search, music, iMessage (only after your "haan"), web search, "what's on my screen". |
 | 📈 | **Gets better every day** | "nahi, galat" undoes and learns; "short mein" twice becomes a rule; lessons that keep failing retire themselves. |
 | 🖥️ | **Lives in your menubar** | `stiti install-app` → signed Stiti.app, starts at login: ○ listening · ◉ awake · ⏸ muted. |
 | 💾 | **Never loses her mind** | Nightly AES-256 encrypted backup of the whole brain (key in your Keychain); restores go into a separate database, never over the live one. |
-| 👋 | **Gets to know you** | "intro shuru karo" → a 10-question interview that writes your people, routine, goals and how to talk to you straight into her brain. |
+| 🌍 | **Knows what's happening** | "What's new in AI?", "any new research papers?", "placement news?" → free sources fetched in parallel, answered in a short spoken brief with sources. |
+| 📖 | **Teaches any book overnight** | Hand her a PDF, EPUB or scanned book (on-device OCR) → a one-night crash course on a live whiteboard: diagnostic quiz, lessons, checkpoints, cheat sheet, spaced revision. |
+| 🖥️ | **Shows, not just tells** *(in progress)* | "What's on my to-do list?" → a liquid-glass pill on your desktop reacts while she listens, and the list drops onto the screen as a card you can tick. |
+| 👋 | **Gets to know you** | "intro shuru karo" → a short interview, offered once (and never again after "turn this off"). |
 | ✍️ | **You can edit her mind** | Change, delete or add lines in `USER.md` / `LESSONS.md`; your edits flow back into Postgres and always win. |
 | 🛟 | **Works offline** | No API keys or rate-limited? Todos, alarms, memory and lessons still work. Only deep conversation pauses. |
 
 ---
 
-## 🗣️ A real session (engine v0, zero API keys)
+## 🗣️ A real session
 
 ```text
-> Meri sister Priya Pune mein rehti hai, yaad rakhna
-Stiti: Yaad rakh liya. 👍
-> add todo buy milk
-Stiti: Added: “buy milk”. (task #1)
-> kal subah 7 baje alarm laga do
-Stiti: Alarm set for tomorrow, Wed 11 Nov at 7:00 AM. (#3)
-> where does my sister live
-Stiti: …Here's what I remember from 10 Nov: “Meri sister Priya Pune mein rehti hai”
-> itna lamba mat bolo yaar
-Stiti: Samajh gaya — dhyan rakhunga. (lesson L1)
-> mera bank password kya tha
+> Hey Stiti
+Stiti: Hey, how are you?
+> Today I'm on my resume till 4 — remind me at 4 to start it.
+Stiti: Got it — reminder today at 4 PM: start your resume. Anything else?
+> Not yet. Is any new AI research paper out today?
+Stiti: Three worth a look. Want the short version?
+> My sister Priya lives in Pune, remember that
+Stiti: Noted.
+> where does my sister live?
+Stiti: Priya's in Pune.
+> talk in English, and keep it short
+Stiti: Sure, English from now on.
+> what was my bank password?
 Stiti: That sounds private, so I'm keeping it on this Mac.
 ```
 
@@ -108,11 +131,11 @@ Stiti: That sounds private, so I'm keeping it on this Mac.
 ```mermaid
 flowchart LR
     subgraph IN[Input]
-        V[🎙️ Voice<br/>wake word · VAD · Whisper<br/><i>phase 2</i>]
+        V[🎙️ Voice<br/>wake word · VAD · Whisper<br/>end-of-turn · barge-in]
         T[⌨️ Text / Telegram]
     end
     subgraph BRAIN[🧠 Stiti Engine — local]
-        D[Decide<br/>exemplar kNN + rules<br/>8 ms]
+        D[Decide<br/>exemplar kNN + rules<br/>+ reply strategy · 8 ms]
         F[Fast path<br/>todos · alarms · lessons<br/>no LLM]
         R[Recall<br/>vector ⊕ full-text → RRF<br/>+ facts + lessons · 10 ms]
         C[Context compiler<br/>briefing ≤ 1,500 tok]
@@ -125,7 +148,7 @@ flowchart LR
         K[tasks · intents]
     end
     subgraph CLOUD[☁️ Free LLM plug]
-        X[Groq → Cerebras → OpenRouter → Mistral]
+        X[Groq → Cloudflare → NVIDIA → OpenRouter → Z.ai]
     end
     S[🌙 Sleep job<br/>extract · resolve · supersede · render]
 
@@ -178,14 +201,17 @@ Real numbers from this repo's evals, not marketing:
 
 | What | Result |
 |---|---|
-| Memory recall (20 Hinglish/English memories, 10 questions) | **10/10** in top-3 (all rank 1) · **~10 ms** embed + recall |
+| Memory recall (20 Hinglish/English memories, 10 questions) | **10/10** in top-3 (all rank 1) · **~10–20 ms** embed + recall |
+| Speech-to-text on 110 Indian-accented clips (synthetic voices) | WER **12.4% → 6.8%** · your terms heard right **64 → 82 of 90** · p50 ~280 ms |
+| Commit → first reply text, preemptive vs. before (real Groq) | median **530 ms → ~0 ms** on turns where she waits |
+| Turn-taking vs. ElevenLabs' live demo (same audio) | ElevenLabs ~2.1 s to first word; Stiti waits through "So…" and "hold on" where it talked over |
 | Embedder (EmbeddingGemma-300M, 4-bit ONNX) | **7 ms**/query · ~600 MB RSS |
 | Intent decision: exemplar kNN | **26/30** · **8 ms** · ~0 extra RAM |
 | Intent decision: Laya zero-shot (for comparison) | 13–15/30 · 203–514 ms · 2.7–2.9 GB |
 | Fast-path turn (todo / alarm / lesson) | **~30–60 ms** end to end |
 | Hinglish time parsing | **15/15** checks, including the 1 AM "kal" trap |
-| Speech-to-text (whisper-small 4-bit) vs large-v3-turbo | **283 ms** vs 1,064 ms per utterance, ~same Hinglish accuracy |
-| Your last word → Stiti's first audio (voice e2e, fast path) | **~0.7–1.8 s** |
+| Speech-to-text (whisper-small 4-bit) vs large-v3-turbo | **~280 ms** vs ~1,035 ms per utterance |
+| Your last word → Stiti's first audio | **~0.85 s** (streamed LLM + first-clause TTS) |
 | Whole voice stack + brain resident memory | **~954 MB** (+~800 MB with emotion2vec+), budget 3 GB |
 | Echo: mic hearing her own voice as speech (laptop speakers) | **84% → 0%** with AEC |
 | Document search (hybrid, chunks) | **~12 ms** |
@@ -195,18 +221,25 @@ Real numbers from this repo's evals, not marketing:
 | CP-SAT day plan, 8 tasks with deadlines | **45–64 ms**, all scheduled |
 | Day scheduling, OR-Tools CP-SAT (researched) | 12 tasks solved optimally in 10–60 ms; 100 tasks ≈ 113 MB |
 
-Run them yourself: `tests/recall_eval.py`, `tests/dates_eval.py`, `tests/laya_pilot.py`.
+All of it is checked by **19 eval suites (650+ checks)** on every push: `tests/run_all.sh`.
 
 ---
 
 ## 🔬 Built on research, not vibes
 
-Before a single line of code, 6 parallel research tracks compared **at least 10 papers and
-architectures per feature**: 300+ sources across assistants, memory, voice, psychology,
-routing and connectors. Then [`rea`](https://github.com/morluto/rea) reverse-engineered
-OpenClaw's memory pipeline.
+Before a single line of code, parallel research tracks compared **at least 10 papers and
+architectures per feature**. Then [`rea`](https://github.com/morluto/rea) and source reading
+reverse-engineered the products that do it best:
 
-📄 **[Full report (14k words)](<reports/Stiti personal AI buddy research.md>)** · 🗒️ [raw notes](research_notes/) · ⚖️ [decision log](docs/DECISIONS.md)
+| Studied | What we took |
+|---|---|
+| **ElevenLabs** (open SDKs + a live black-box test of the public demo) | Turn-eagerness design, skip-turn on "hold on", heard-only memory, the timings to beat |
+| **Wispr Flow** (static analysis with rea) | Context-biased speech recognition, correction learning, the floating HUD's motion and level maths |
+| **LiveKit · Pipecat · TEN · Kyutai Unmute · Bolna** (source) | Endpointing state machines, interruption rules, preemptive generation, turn markers |
+| **JARVIS** (the films) + 21 psychology frameworks | Brevity, "as you wish" after one honest warning, emotional-support strategies chosen locally |
+| **OpenClaw** (rea) | Memory provenance, nightly-only long-term writes |
+
+📄 **[Full report](<reports/Stiti personal AI buddy research.md>)** · 🔬 [per-feature research](docs/research/) · 🗒️ [raw notes](research_notes/) · ⚖️ [decision log](docs/DECISIONS.md)
 
 <details>
 <summary><b>What Stiti borrows, and from whom</b></summary>
@@ -253,7 +286,7 @@ createdb stiti && psql stiti -f db/schema.sql
 # 2. Engine
 uv sync
 
-# 3. Free API keys (no card): Groq, Cerebras, OpenRouter
+# 3. Free API keys (no card): Groq, OpenRouter, Gemini, Cloudflare, NVIDIA
 cp .env.example .env   # paste keys
 
 # 4. Talk
@@ -266,11 +299,16 @@ uv run stiti onboard         # 3-minute intro so she knows who you are
 uv run stiti backup          # encrypted backup now (also runs nightly); --show-key to save the key
 uv run stiti install-app     # menubar app that starts at login (mic, Calendar, Reminders prompts say "Stiti")
 uv run stiti sleep --now     # run the night job now
-uv run stiti web             # Stiti in your browser: landing page + chat (127.0.0.1:7317)
+uv run stiti web             # your local chat + Memory pages (127.0.0.1:7317; Stiti.app serves them too)
+uv run stiti voices          # list / try / pick her voice (Indian-English personas)
+uv run stiti recordings on   # opt-in local recorder that teaches her your moods (off by default)
 uv run stiti teach           # whiteboard lesson by voice (built-in "How a compiler works"; no key needed)
 uv run stiti teach book.pdf --chapter 3.1   # teach a book chapter (needs a free LLM key)
 uv run stiti book book.pdf   # show a book's outline (works on scanned PDFs via the printed Contents)
 ```
+
+Website: `cd frontend && pnpm install && pnpm build` (Next.js, static). `STITI_PUBLIC=1 pnpm build` makes the
+public, landing-only site.
 
 Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.md`, `GRAPH_REPORT.md`), **never in git**.
 `SOUL.md` is Stiti's personality. It's yours to edit.
@@ -291,10 +329,14 @@ Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.
 - [x] **App**: menubar (type-to-Stiti, quick todo, mood timeline, live status) · starts at login · health check · log rotation
 - [x] **Evals + CI**: dates 15/15 · recall 10/10 · LongMemEval-style 12/12 · sync · proactivity · learning — on every push
 - [x] **Whiteboard tutor**: voice lesson on a live Excalidraw board · draws while she talks · "ruko / phir se / peeche / skip" · questions on a side board · checks with hints · revision cards · resume later — tutor eval 27/27
-- [x] **Web app**: `stiti web` — chat with the same Stiti in the browser, todos + alarms panel, light theme — web eval 12/12
-- [ ] **Needs API keys to verify**: LLM conversation, tool calling, nightly fact extraction, reflections
-- [ ] **Needs your voice**: Hinglish STT A/B, wake-word false-wake rate, personal voice baseline
-- [ ] Later: Laya INT8 on the hot path · Google Workspace write actions · speaker verification · streaming LLM→TTS
+- [x] **Web**: Next.js marketing site + local chat (memory receipts) and Memory pages · public build ships no private code
+- [x] **Human conversation**: turn-taking, two-stage barge-in, preemptive replies, ●◐○ turn markers, JARVIS persona — reverse-engineered from ElevenLabs, Wispr Flow, LiveKit, Pipecat
+- [x] **Hears and speaks right**: glossary-biased STT + cloud second opinion, word learning from corrections, Indian-English voice
+- [x] **Learns your moods**: opt-in local recorder + nightly personal emotion head
+- [x] **Live info + tutor**: news/papers/placements · any-book one-night crash course with spaced revision
+- [ ] **Desktop pop-up** (in progress): liquid-glass listening pill + to-do / reminder / news cards
+- [ ] **Live demo**
+- [ ] Later: tune turn-taking and moods on real recordings · Laya per-user timing · speaker verification
 
 ---
 
@@ -312,7 +354,8 @@ Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.
 
 ```
 src/stiti/
-├── engine.py          # turn(): decide → fast path | recall → brief → LLM → lint → log
+├── engine.py          # turn(): decide → strategy → fast path | gated recall → brief → LLM → lint → log
+├── cards.py           # what she shows on screen (todos, reminders, news)
 ├── decide.py          # System 1: exemplar kNN / Laya + privacy & correction floors
 ├── intent.py          # exemplar classifier on the shared embedder
 ├── embed.py           # EmbeddingGemma 4-bit ONNX
@@ -322,14 +365,20 @@ src/stiti/
 │   ├── compiler.py    # the briefing every LLM gets
 │   ├── lessons.py     # learn-from-correction playbook
 │   ├── emotion.py     # fused mood hint + baseline
-│   ├── psych.py       # cognitive load, anti-guilt, WOOP, minimum viable day
+│   ├── psych.py       # reply rules enforced in code (no tics, no flattery, word caps)
+│   ├── strategy.py    # per-turn reply strategy (listen · solve · confirm · banter · quiet…)
+│   ├── gate.py        # when a memory may come up (and when it never should)
+│   ├── instructions.py # "talk in English" → a rule, instantly
 │   └── sleep.py       # nightly consolidation → facts, USER.md, GRAPH_REPORT.md
 ├── fastpath/          # todos, alarms, reminders, timers, Hinglish dates
 ├── life/              # CP-SAT planner, habits, Socratic chunker, morning brief + Nudge Gate
-├── voice/             # AEC duplex audio, VAD, whisper, Kokoro, wake phrases, prosody, emotion2vec+
+├── voice/             # AEC duplex audio, VAD, whisper + glossary, Kokoro/goonj, endpoint.py (turn-taking), realtime.py
+├── learn/             # opt-in recorder + personal emotion training
 ├── connectors/        # EventKit (calendar, reminders), IMAP mail, Telegram
 ├── tools/             # tool registry (risk tiers, taint), MCP bus (pin-and-diff)
+├── web/               # local server: chat + Memory pages API, WebSocket
 ├── app.py             # menubar app · install_app.py builds Stiti.app + login agent
+frontend/              # Next.js website (static export)
 db/schema.sql          # 14 tables + recall() + current_facts()
 docs/ · reports/ · research_notes/ · tests/
 ```
