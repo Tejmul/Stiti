@@ -6,6 +6,7 @@ decide (System 1) -> fast path (no LLM) | recall + compile briefing -> router (f
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from datetime import datetime
@@ -17,12 +18,21 @@ from .db import one, q
 from .decide import decide
 from .fastpath import handlers
 from .life import brief as nudge, chunker, habits, planner
+from .connectors import live
 from .connectors.mac import music_fastpath
 from .tools import registry
 
 def _tutor_request(text: str):
     from .tutor import voice_request
     return voice_request(text)
+
+
+def _names_his_person(words: str) -> bool:
+    """Do these words name a person in his life? Then they're never sent to a search engine (live.detect)."""
+    return bool(one("""SELECT 1 AS x FROM entities WHERE merged_into IS NULL AND kind IN ('person', 'self') AND (
+                         word_similarity(lower(name), lower(%(w)s)) >= 0.6
+                         OR EXISTS (SELECT 1 FROM unnest(aliases) a WHERE word_similarity(lower(a), lower(%(w)s)) >= 0.6))
+                       LIMIT 1""", {"w": words}))
 
 
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
@@ -46,7 +56,8 @@ PLAN_RX = re.compile(r"\b(plan my day|plan (the|my) day|din plan|aaj ka plan|sch
 CAL_RX = re.compile(r"\b(calendar|schedule|meetings?|events?)\b.*\b(today|aaj|kya hai|what|my)\b|"
                     r"\b(aaj|today)\b.*\b(calendar|schedule|meetings?)\b", re.I)
 MAIL_RX = re.compile(r"\b(unread|inbox|koi mail|any (new )?(mail|email)s?|check (my )?(mail|email))\b", re.I)
-TOOL_HINT_RX = re.compile(r"\b(calendar|schedule|meeting|event|mail|email|inbox|open|volume|app|spotify)\b", re.I)
+TOOL_HINT_RX = re.compile(r"\b(calendar|schedule|meeting|event|mail|email|inbox|open|volume|app|spotify|"
+                          r"web|internet|online|google|look ?up|website)\b", re.I)
 YES_RX = re.compile(r"^(haan|han|ha|yes|yeah|yep|ok(ay)?|kar do|do it|confirm|sure)\b", re.I)
 GREET_RX = re.compile(r"^(hi|hello|hey|good morning|gm|morning|kya haal|uth gaya|i'?m up|namaste)\b", re.I)
 
@@ -73,6 +84,9 @@ class Engine:
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
         self.streamed = False                               # last reply was already delivered via on_delta
+        self.live_last: tuple | None = None                 # (LiveResult, next item index, time) for "want more?"
+        if os.getenv("STITI_LIVE_WARM", "1") != "0":
+            live.warm()                                     # news caches filled in the background, once per process
 
     def _llm(self, brief: str, text: str, qvec, privacy: int, use_tools: bool) -> tuple[str, dict]:
         """LLM call with an optional tool loop (≤3 rounds, risk-gated, taint-aware)."""
@@ -142,6 +156,7 @@ class Engine:
                                      importance=importance, emotion=emo.as_json())
         domain = d.get("domain", "chat")
         route, reply, info, recalled_ids, lesson_ids, brief_tokens, brief = "fast_path", None, {}, [], [], None, None
+        live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
 
         # ---- fast paths (no LLM) ----
         low = psych.minimum_viable_day(emo.label)
@@ -203,6 +218,14 @@ class Engine:
         elif (tr := _tutor_request(text)) is not None:
             from .tutor import launch
             reply = launch(*tr)
+        elif (self.live_last and time.time() - self.live_last[2] < 300 and live.MORE_RX.match(text)
+              and re.search(r"\b(more|aur)\b", self.last_reply_text or "", re.I)):
+            live_res, live_from, _ = self.live_last             # "want more?" → "haan": next items, no refetch
+            if live_from >= len(live_res.items):
+                reply, live_res = "That's everything I found for now.", None
+        elif privacy < 2 and not corrected and (lreq := live.detect(text, known=_names_his_person)) is not None:
+            ack("web")                      # "ek sec, internet pe dekhti hoon" while sources load in parallel
+            live_job = live.start(lreq)     # only his extracted words leave the Mac; recall runs meanwhile
         elif CAL_RX.search(text):
             ack("calendar")
             from .connectors import eventkit
@@ -273,7 +296,17 @@ class Engine:
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=memory.recent_turns(self.session)[:-1], memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs)
-            use_tools = domain == "tool" or bool(TOOL_HINT_RX.search(text))
+            if live_job is not None:
+                try:
+                    live_res = live_job.result(timeout=live.BUDGET_S + 1.5)
+                except Exception:
+                    live_res = live.LiveResult(lreq, [], datetime.now(CFG.tz), 0.0, [], ["all"])
+                lat["live_fetch"] = live_res.ms
+            if live_res is not None:                    # fetched facts → briefing; the LLM only words them
+                block = live.block(live_res, start_at=live_from)
+                brief += "\n\n" + block
+                brief_tokens = (brief_tokens or 0) + len(block) // 4
+            use_tools = live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))
             try:
                 if on_delta is not None and not use_tools:      # stream: she starts talking at the first clause
                     info = {}
@@ -298,7 +331,9 @@ class Engine:
                     self._offline_said_at = time.time()
                 else:
                     reply = ""
-                if docs and (not mems or docs[0]["sim"] > mems[0]["sim"]) and docs[0]["sim"] >= 0.4:
+                if live_res is not None:                # no LLM: read the top headlines out directly
+                    reply += live.speak(live_res, start_at=live_from)
+                elif docs and (not mems or docs[0]["sim"] > mems[0]["sim"]) and docs[0]["sim"] >= 0.4:
                     d0 = docs[0]
                     reply += f"From your doc “{d0['title']}”: {d0['text'][:300]}"
                 elif mems and mems[0]["sim"] >= 0.4:
@@ -332,8 +367,12 @@ class Engine:
         self.last_turn_id, self.last_lesson_ids = turn["id"], lesson_ids
         self.last_reply_text, self.last_user_text, self.last_route = reply, text, route
         self.last_interrupted = False
+        self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         self.last_user_ep, self.last_reply_ep, self.last_mood = user_ep, reply_ep, emo.label
         self.last_debug = {"domain": str(domain), "domain_conf": round(d.conf.get("domain", 0), 2), "mood": str(emo.label), "mood_conf": round(emo.conf, 2),
                            "privacy": privacy, "route": route, "provider": info.get("provider"),
-                           "latency_ms": {k: round(v) for k, v in lat.items()}}
+                           "latency_ms": {k: round(v) for k, v in lat.items()},
+                           "live": None if live_res is None else {
+                               "kind": live_res.req.kind, "query": live_res.req.query, "items": len(live_res.items),
+                               "ok": live_res.ok, "failed": live_res.failed}}
         return reply

@@ -5,6 +5,7 @@ cd "$(dirname "$0")/.."
 PG="${PG_BIN:-/opt/homebrew/opt/postgresql@18/bin}"
 export STITI_DB="postgresql:///stiti_test"
 export STITI_HOME="${STITI_TEST_HOME:-$(mktemp -d)}"
+export STITI_EVENTKIT=off           # tests never create real Apple Reminders
 fresh_db() {
   "$PG/dropdb" --if-exists stiti_test
   "$PG/createdb" stiti_test
@@ -26,4 +27,7 @@ run "learning loops"                  tests/learning_eval.py
 run "whiteboard tutor"                tests/tutor_eval.py
 run "web app (chat + security)"       tests/web_eval.py
 run "conversation speed pieces"       tests/speed_eval.py
+run "crash course + any book"         tests/course_eval.py
+run "alarms, reminders, timers"       tests/alarms_eval.py
+run "live internet info"            tests/live_eval.py
 exit $fail

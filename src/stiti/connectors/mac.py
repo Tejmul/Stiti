@@ -98,12 +98,9 @@ def send_imessage(to: str, text: str) -> dict:
 
 # ---------------- web ----------------
 def web_search(query: str, limit: int = 5) -> list[dict]:
-    from ddgs import DDGS
-    try:
-        res = DDGS().text(query, max_results=limit, backend="auto")
-    except Exception as e:
-        return [{"error": f"search failed: {str(e)[:80]}"}]
-    return [{"title": r.get("title", ""), "url": r.get("href", ""), "snippet": (r.get("body") or "")[:240]} for r in res]
+    """Kept for old callers: live.web_search (Yahoo via ddgs + Google News, cached) — ddgs 'auto' returns nothing now."""
+    from .live import web_search as live_search
+    return live_search(query, limit=limit)
 
 
 def web_read(url: str, max_chars: int = 3000) -> dict:

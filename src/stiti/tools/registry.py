@@ -112,6 +112,13 @@ def _mac(fn_name: str):
     return call
 
 
+def _live(fn_name: str):
+    def call(**kw):
+        from ..connectors import live
+        return getattr(live, fn_name)(**kw)
+    return call
+
+
 NATIVE = [
     Tool("calendar_today", "List today's events from the user's calendar (Apple/Google via macOS Calendar).",
          _obj(), lambda: _cal_today()),
@@ -139,10 +146,18 @@ NATIVE = [
          _obj(action={"type": "string", "enum": ["play", "pause", "next", "previous"]}), _mac("music"), risk="low"),
     Tool("imessage_send", "Send an iMessage to a phone number or email.",
          _obj(to={"type": "string"}, text={"type": "string"}), _mac("send_imessage"), risk="write"),
-    Tool("web_search", "Search the web (DuckDuckGo/Bing/Google mix). Returns titles, urls, snippets.",
-         _obj(query={"type": "string"}), _mac("web_search"), untrusted_output=True),
-    Tool("web_read", "Read the text of a web page by URL.",
-         _obj(url={"type": "string"}), _mac("web_read"), untrusted_output=True),
+    Tool("web_search", "Search the web for current information. Returns titles, urls, snippets. Use a short "
+         "query with only public words — never personal details.",
+         _obj(query={"type": "string"}), _live("web_search"), untrusted_output=True),
+    Tool("web_read", "Read the text of a public web page by URL.",
+         _obj(url={"type": "string"}), _live("read_url"), untrusted_output=True),
+    Tool("live_news", "Latest news headlines right now. topic: 'world', 'india', 'tech', 'ai', 'jobs' "
+         "(placements/hiring) or any product/company/event name.",
+         _obj(topic={"type": "string"}), _live("news"), untrusted_output=True),
+    Tool("research_papers", "Newest research papers (arXiv, Hugging Face daily papers) in a field, e.g. 'NLP', "
+         "'computer vision', 'diffusion models'.",
+         _obj(field={"type": "string", "description": "research field or topic"}), _live("papers"),
+         untrusted_output=True),
     Tool("screen_now", "Which app and window the user is looking at right now.", _obj(), _mac("screen_now")),
     Tool("screen_read", "Read the text currently on the user's screen (on-device OCR, nothing stored).",
          _obj(), _mac("screen_read"), untrusted_output=True),
