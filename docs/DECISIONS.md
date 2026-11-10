@@ -495,3 +495,27 @@ Research: `docs/research/conversation_turn_taking.md` §3–§4 (LiveKit preempt
   question got no rules by design), 4/4 LLM-judged fragments got ◐/○.
 - **Cost:** 0 new models, 0 MB RAM; a held transaction costs 3–7 ms to open (off the critical path); a dropped
   speculation costs one free LLM request. loop.py: 7 one-line call sites. Tests: `tests/realtime_eval.py`.
+
+## D26: Desktop overlay — native Core Animation pill + AppKit cards (2026-11-11)
+Owner: "when I say 'Hey Stiti' some animation should come on my desktop… when I ask what's on my to-do list it should
+show me 'you have these to complete'." Research + prototypes: `docs/research/desktop_overlay.md` (16 references,
+Core Animation vs WKWebView measured on the M2); behaviour tuned from `docs/research/re_wispr_flow.md` §1.
+- **Native, in the rumps process (`src/stiti/overlay/`), no WebKit.** A borderless non-activating `NSPanel` at status
+  level (set *after* `setFloatingPanel`), all Spaces + full-screen auxiliary, kept out of screen sharing, never key.
+  White liquid glass (`NSGlassEffectView`, macOS 26) → `NSVisualEffectView` → solid paper under Reduce Transparency.
+- **Pill** top-centre, 8 pt under the menu bar, on the display with the pointer: 7 navy/blue/sky dots shimmer while
+  idle/listening, swell with his mic level (adaptive dB floor, 40 ms blocks, 150 ms average, slew 1.6/s), ripple
+  while thinking ("Checking calendar" label for slow actions), swell with her voice, fade on sleep. 30 fps cap; the
+  Python timer runs only while listening/speaking. Click-through while listening; click = stop her while she
+  thinks/speaks. Reduce Motion = fades + brightness only.
+- **Cards** from `Engine.last_card` (the brain's data, never the LLM's words; titles/items only, no captions — D24):
+  todos / reminders / news drop out of the pill; `todo_added`/`reminder_set` widen the pill into a one-line ✓. Click a
+  to-do = tick it (optimistic, written in a worker thread, reverted on failure). Closes on Esc, click elsewhere, when
+  she sleeps, or 4 s + 1.2 s/row (≤ 15 s) after her speech ends (paused on hover).
+- **API** `overlay.set_state / level / show_card / hide_card / speech_ended` is thread-safe and a no-op until
+  `init()` runs on the main thread, so `stiti voice` in a terminal and the tests are unchanged. Menu toggle "Show
+  Stiti on screen" → `owner_profile` `overlay=on/off` (default on).
+- Cost (measured, display locked so WindowServer numbers are not valid): ~0.5–2 % of one core in our process;
+  +5 MB for the pill and +2 MB with a card open in a rumps-like process, plateauing at ~+16 MB after hundreds of cards
+  (font/symbol caches, no leak). Tests: `tests/overlay_eval.py`. Not verified yet: on-screen look with the display on,
+  full-screen video (status vs `STITI_OVERLAY_LEVEL=screensaver`), notch Macs.

@@ -4,7 +4,7 @@
 thinking, doing and speaking, and how should she show answers like his to-do list? It has to look premium and calm,
 match Stiti's look (paper `#ecebf2`, navy `#262b57`, blue `#4656d6`, sky `#7fb2f0`, dot particles, white liquid-glass
 pill), never take focus away from what he's doing, and stay cheap on an **M2 with 8 GB**. Everything stays on the Mac.
-Proposed decision: **D26** (not recorded in `DECISIONS.md` yet; add it after Tejmul approves).
+Decision: **D26** in `DECISIONS.md` (built 2026-11-11, `src/stiti/overlay/`).
 
 **Short answer:** a **native Core Animation pill** inside the rumps process: a borderless, non-activating `NSPanel` at
 status-bar level, using macOS 26 `NSGlassEffectView` for the glass. It sits top-centre, just under the menu bar (or
