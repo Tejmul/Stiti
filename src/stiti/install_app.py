@@ -21,6 +21,10 @@ LAUNCHER = """#!/bin/bash
 REPO="{repo}"
 LOGDIR="$HOME/.stiti/logs"
 mkdir -p "$LOGDIR"
+if [ ! -x "$REPO/.venv/bin/python" ]; then
+  echo "[launcher] $(date): no Stiti code at $REPO (moved?) — run 'uv run stiti install-app' from the repo" >> "$LOGDIR/app.log"
+  exit 1
+fi
 cd "$REPO" || exit 1
 while true; do
   "$REPO/.venv/bin/python" -m stiti app >> "$LOGDIR/app.log" 2>&1
