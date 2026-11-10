@@ -1,7 +1,7 @@
 "use client";
-// Stiti landing — motion ported from the original static/js/landing.js: Lenis smooth scroll + GSAP/ScrollTrigger,
-// preloader (counter → logo dot collapses → sphere blooms), hero timeline, hero-only particles, scroll reveals,
-// marquees, smooth anchors. Everything below the hero is still and clean (owner rule); reduced motion = no motion.
+// Stiti landing — Lenis smooth scroll + GSAP/ScrollTrigger: sphere bloom intro, hero timeline, hero-only particles
+// (an ambient halo behind the product shot), one-time scroll reveals, smooth anchors. Everything below the hero is
+// still and clean (owner rule); reduced motion = no motion.
 // No redirect to /chat anywhere here (the original had none either): the landing always stays the landing.
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
@@ -11,9 +11,8 @@ import Nav from "@/components/Nav";
 import { prefersReducedMotion } from "@/lib/stiti";
 import { createField } from "./particles";
 import { EXPO, OUT } from "./ease";
-import Preloader from "./Preloader";
 import Cursor from "./Cursor";
-import { Hero, Body, Footer } from "./Sections";
+import { Hero, Features, Day, Privacy, Faq, Footer } from "./Sections";
 
 export default function Landing() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -66,7 +65,7 @@ export default function Landing() {
       el.focus({ preventScroll: true });
     };
     const byHash = (h: string) => (/^#[\w-]+$/.test(h) ? document.getElementById(h.slice(1)) : null);
-    // capture phase on window, so it runs before next/link's handler (the nav's "/#abilities" links)
+    // capture phase on window, so it runs before next/link's handler (the nav's "/#features" links)
     on<MouseEvent>(window, "click", (e) => {
       if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
       const a = (e.target as Element | null)?.closest?.('a[href^="#"], a[href^="/#"]');
@@ -75,146 +74,82 @@ export default function Landing() {
       if (!el) return;
       e.preventDefault();
       e.stopPropagation();
-      if (body.classList.contains("menu-open")) dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));  // Nav closes on Esc
+      if (body.classList.contains("menu-open")) {
+        dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));  // Nav closes on Esc
+        lenis?.start();                                                    // (it was stopped while the menu was open)
+      }
       scrollToEl(el);
     }, { capture: true });
 
+    // the sphere sits behind the product shot as an ambient halo (and follows it while the hero scrolls)
+    const shot = $(".shot");
+    const anchorField = () => {
+      const r = shot.getBoundingClientRect();
+      const stacked = innerWidth <= 900;            // copy above the shot: keep the halo off the text
+      const rad = MOBILE ? r.width * .6 : Math.min(r.width * (stacked ? .4 : .48), innerHeight * .42);
+      field.anchor(r.left + r.width / 2, r.top + r.height * .46, rad);
+    };
+    anchorField();
+    on(window, "resize", anchorField);
+
     let alive = true;
     const ctx = gsap.context(() => {
-      // -------------------------------------------------------------- hero timeline
+      // -------------------------------------------------------------- hero timeline (fade/rise only)
       const tl = gsap.timeline({ paused: true, defaults: { ease: OUT } });
       if (!reduced) {
         const label = $(".hero__label-text");
         const lines = $$(".hero__title .line").map((l) => $$(".w", l));
-        const strip = $(".hero__strip"), desc = $(".hero__desc"), stack = $$(".hero__stack li");
-        const ctas = $$(".hero__ctas .btn"), cue = $(".hero__cue");
+        const rest = [$(".hero__quote"), $(".hero__ctas"), $(".hero__facts")];
         gsap.set(label, { opacity: 0, y: 20 });
         lines.forEach((ws) => gsap.set(ws, { yPercent: 110 }));
-        gsap.set([strip, desc], { opacity: 0, y: 20 });
-        gsap.set(stack, { opacity: 0 });
-        gsap.set(ctas, { opacity: 0, y: 30 });
-        gsap.set(cue, { autoAlpha: 0 });
+        gsap.set(rest, { opacity: 0, y: 24 });
+        gsap.set(shot, { opacity: 0, y: 40 });
 
         tl.to(label, { opacity: 1, y: 0, duration: .6 }, 0);
-        lines.forEach((ws, i) => tl.to(ws, { yPercent: 0, duration: .9, stagger: .08, ease: OUT }, .1 + i * .2));
-        tl.to(strip, { opacity: 1, y: 0, duration: .8 }, .9)
-          .to(desc, { opacity: 1, y: 0, duration: .8 }, 1.1)
-          .to(stack, { opacity: 1, duration: .6, stagger: .1, ease: "power1.out" }, 1.3)
-          .to(ctas, { opacity: 1, y: 0, duration: .9, stagger: .12, clearProps: "transform" }, 1.5)
-          .to(cue, { autoAlpha: 1, duration: .6 }, 1.9);
+        lines.forEach((ws, i) => tl.to(ws, { yPercent: 0, duration: .9, stagger: .08, ease: OUT }, .1 + i * .18));
+        tl.to(shot, { opacity: 1, y: 0, duration: 1.2, clearProps: "transform" }, .35)
+          .to(rest, { opacity: 1, y: 0, duration: .9, stagger: .12, clearProps: "transform" }, .8);
       }
 
       // -------------------------------------------------------------- particles: hero only
-      // as the hero scrolls out the sphere rises a little and fades to nothing; the loop sleeps at 0
+      // as the hero scrolls out the sphere follows the shot and fades to nothing; the loop sleeps at 0
       const hero = $("#hero"), cta = $(".hero__ctas .btn--primary");
       ScrollTrigger.create({
         trigger: hero, start: "top top", end: "bottom 30%",
-        onUpdate: (s) => { field.cur.lift = s.progress * innerHeight * .3; field.setFade(1 - s.progress); },
+        onUpdate: (s) => { anchorField(); field.setFade(1 - s.progress); },
         onLeave: () => field.setFade(0),
+        onRefresh: anchorField,
       });
       // a ripple through the dots from the hero CTA and from clicks inside the hero
       on(cta, "mouseenter", () => { const r = cta.getBoundingClientRect(); field.ripple(r.left + r.width / 2, r.top + r.height / 2); });
       on<PointerEvent>(hero, "pointerdown", (e) => field.ripple(e.clientX, e.clientY));
 
       if (!reduced) {
-        // ------------------------------------------------------------ scroll reveals
-        const st = (trigger: Element | string, start = "top 86%") => ({ trigger, start, once: true });
-
+        // ------------------------------------------------------------ scroll reveals (one time, still afterwards)
+        const st = (trigger: Element | string, start = "top 88%") => ({ trigger, start, once: true });
         $$("[data-reveal]").forEach((el) =>
-          gsap.from(el, { opacity: 0, y: 30, duration: .9, ease: OUT, scrollTrigger: st(el) }));
-
-        // section headings with a thin/bold mix get the masked word rise
-        $$(".abilities .h2, .privacy .h2, .sayings .h2").forEach((h) =>
+          gsap.from(el, { opacity: 0, y: MOBILE ? 18 : 28, duration: .9, ease: OUT, clearProps: "transform", scrollTrigger: st(el) }));
+        // headings with a thin/bold mix get the masked word rise
+        $$("main .h2, .foot__title").forEach((h) =>
           gsap.from($$(".w", h), { yPercent: 110, duration: .9, stagger: .06, ease: OUT, scrollTrigger: st(h) }));
-
-        // quote: each word's opacity scrubbed .15 → 1, caption after the last word
-        const q = $(".quote__text p"), cap = $(".quote__cap");
-        gsap.fromTo($$(".w", q), { opacity: .15 }, {
-          opacity: 1, stagger: .1, ease: "none",
-          scrollTrigger: { trigger: q, start: "top 75%", end: "bottom 40%", scrub: true },
-        });
-        gsap.fromTo(cap, { opacity: 0, y: 20 }, {
-          opacity: 1, y: 0, duration: .8, ease: OUT,
-          scrollTrigger: { trigger: q, start: "bottom 40%", toggleActions: "play none none reverse" },
-        });
-        gsap.from($(".quote__glyph"), { opacity: 0, y: 40, duration: 1.2, ease: OUT, scrollTrigger: st($(".quote"), "top 80%") });
-
-        // abilities rows: border draws left → right, then icon / title / text rise
-        $$(".row").forEach((row) => {
-          const line = $(".row__line", row), kids = $$(".row__icon, .row__title, .row__text", row);
-          gsap.set(line, { scaleX: 0 });
-          gsap.set(kids, { opacity: 0, y: MOBILE ? 16 : 30 });
-          ScrollTrigger.create({
-            trigger: row, start: "top 88%", once: true,
-            onEnter: () => { gsap.timeline()
-              .to(line, { scaleX: 1, duration: .8, ease: EXPO })
-              .to(kids, { opacity: 1, y: 0, duration: .8, stagger: .1, ease: OUT, clearProps: "transform" }, .3); },
-          });
-        });
-
-        // privacy stats: each figure fades + rises into place once, always showing its final text
-        gsap.from($$(".stat"), { opacity: 0, y: 30, duration: .9, stagger: .15, ease: OUT, scrollTrigger: st($(".stats"), "top 82%") });
-        gsap.from($$(".point"), { opacity: 0, y: 30, duration: .8, stagger: .1, ease: OUT, clearProps: "transform,opacity", scrollTrigger: st($(".points")) });
-        gsap.from($(".sayings__viewport"), { opacity: 0, y: 30, duration: 1, ease: OUT, scrollTrigger: st($(".sayings__viewport")) });
-
-        // CTA: "Say hi to Stiti." words rise like the hero
-        const ct = $(".cta__title");
-        gsap.from($$(".w", ct), { yPercent: 110, duration: 1, stagger: .08, ease: OUT, scrollTrigger: st(ct, "top 85%") });
-
-        // ------------------------------------------------------------ marquees
-        const ticker = $(".ticker");
-        const tk = gsap.to($(".ticker__track"), { xPercent: -50, duration: 28, ease: "none", repeat: -1 });
-        on(ticker, "mouseenter", () => gsap.to(tk, { timeScale: .25, duration: .6, ease: "power2.out", overwrite: true }));
-        on(ticker, "mouseleave", () => gsap.to(tk, { timeScale: 1, duration: .6, ease: "power2.out", overwrite: true }));
-
-        const vp = $(".sayings__viewport");
-        const sy = gsap.to($(".sayings__track"), { xPercent: -100 / 3, duration: 70, ease: "none", repeat: -1 });
-        on(vp, "mouseenter", () => gsap.to(sy, { timeScale: 0, duration: .5, ease: "power2.out", overwrite: true }));
-        on(vp, "mouseleave", () => gsap.to(sy, { timeScale: 1, duration: .5, ease: "power2.in", overwrite: true }));
       }
 
-      // -------------------------------------------------------------- preloader (0 → 2.4 s), then the hero plays
+      // -------------------------------------------------------------- intro: the sphere blooms out of Stiti's orb
+      // (no preloader screen — owner: "the 100% loading animation is the worst")
       const afterLoad = () => {
         tl.play();
         const el = byHash(location.hash);
         if (el) scrollToEl(el, true);
       };
-      const loader = $(".loader");
-      // The preloader is an intro: once per browser tab. Coming back (e.g. Chat → Abilities) goes straight in.
-      let seen = false;
-      try { seen = sessionStorage.getItem("stiti_intro") === "1"; } catch { /* storage blocked: play it */ }
-      if (reduced || seen) {
-        loader.style.display = "none";
-        if (reduced) canvas.style.opacity = "1";
-        else {
-          field.intro(innerWidth / 2, innerHeight / 2);
-          gsap.to(canvas, { opacity: 1, duration: .8, ease: "power1.out" });
-        }
-        loading = false;
-        afterLoad();
-        return;
+      loading = false;
+      if (reduced) {
+        canvas.style.opacity = "1";
+      } else {
+        const orb = $(".pill__orb").getBoundingClientRect();
+        field.intro(orb.left + orb.width / 2, orb.top + orb.height / 2);
+        gsap.to(canvas, { opacity: 1, duration: 1, ease: "power1.out" });
       }
-      scrollTo(0, 0);
-      html.classList.add("landing-loading");
-      lenis?.stop();
-      const num = $(".loader__num"), line = $(".loader__line"), logo = $(".loader__logo");
-      const o = { v: 0 };
-      gsap.timeline()
-        .fromTo(logo, { opacity: 0, scale: .8 }, { opacity: 1, scale: 1, duration: 1.2, ease: OUT }, 0)
-        .to(o, { v: 100, duration: 1.8, ease: "power2.inOut", onUpdate: () => { num.textContent = String(Math.round(o.v)).padStart(3, "0") + "%"; } }, 0)
-        .fromTo(line, { scaleX: 0 }, { scaleX: 1, duration: 1.8, ease: "power2.inOut" }, 0)
-        .to([num, line], { opacity: 0, y: -40, duration: .4, ease: OUT }, 1.8)
-        // handoff: the logo's dot collapses and the sphere blooms out of that exact point
-        .to(logo, { scale: .25, opacity: 0, duration: .35, ease: EXPO }, 1.72)
-        .add(() => field.intro(innerWidth / 2, innerHeight / 2), 2.15)
-        .to(canvas, { opacity: 1, duration: 1, ease: "power1.out" }, 1.75)
-        .to(loader, { yPercent: -100, duration: .9, ease: EXPO }, 2.0)
-        .add(() => {
-          html.classList.remove("landing-loading"); loading = false; lenis?.start(); afterLoad();
-          try { sessionStorage.setItem("stiti_intro", "1"); } catch { /* ignore */ }
-          html.classList.add("intro-seen");
-        }, 2.4)
-        .add(() => { loader.style.display = "none"; }, 2.95);
+      afterLoad();
     }, root);
 
     document.fonts?.ready.then(() => { if (alive) ScrollTrigger.refresh(); });
@@ -234,24 +169,23 @@ export default function Landing() {
         if (t) clearTimeout(t);
         gsap.ticker.lagSmoothing(500, 33);
       }
-      html.classList.remove("landing-loading", "landing-page");
+      html.classList.remove("landing-page");
       history.scrollRestoration = prevRestoration;
-      const loader = $(".loader"), num = $(".loader__num");
-      loader.style.display = "";
-      num.textContent = "000%";
       canvas.style.opacity = "";
     };
   }, []);
 
   return (
     <div className="pg-landing" ref={rootRef}>
-      <Preloader />
       <canvas className="field" aria-hidden="true" />
       <Cursor />
       <Nav current="home" />
       <main id="main" tabIndex={-1}>
         <Hero />
-        <Body />
+        <Features />
+        <Day />
+        <Privacy />
+        <Faq />
       </main>
       <Footer />
     </div>

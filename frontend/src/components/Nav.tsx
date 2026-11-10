@@ -3,27 +3,27 @@
 // Hides on scroll down, returns on scroll up; pointer sheen follows the cursor; full-screen menu on mobile.
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { GITHUB } from "@/lib/site";
 
 type Page = "home" | "chat" | "memory";
-const LINKS: { href: string; label: string; page?: Page }[] = [
-  { href: "/chat", label: "Chat", page: "chat" },
-  { href: "/memory", label: "Memory", page: "memory" },
-  { href: "/#abilities", label: "Abilities" },
+// One nav on every page: the site's own sections, a "Live demo · Soon" teaser and GitHub. Chat/Memory are never in
+// the nav (owner: "chat in the navbar feels meaningless") — on his Mac they open from the menu bar (Stiti → Open Stiti).
+type NavLink = { href: string; label: string; page?: Page };
+const SITE_LINKS: NavLink[] = [
+  { href: "/#features", label: "Features" },
   { href: "/#privacy", label: "Privacy" },
+  { href: "/#faq", label: "FAQ" },
 ];
 
 export function Logo() {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <circle cx="16" cy="16" r="6.5" fill="currentColor" />
-      <ellipse cx="16" cy="16" rx="14" ry="5.2" stroke="currentColor" strokeWidth="2.2" transform="rotate(-24 16 16)" />
-    </svg>
-  );
+  // A plain letter mark (the old dot-in-a-tilted-ring read as an eye).
+  return <span className="nav__mark" aria-hidden="true">S</span>;
 }
 
 /** `cta` replaces the right-hand button (e.g. the chat page's "Today" toggle). */
 export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode }) {
   const nav = useRef<HTMLElement>(null);
+  const LINKS = SITE_LINKS;
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
 
@@ -60,11 +60,14 @@ export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode 
               {l.label}
             </Link>
           ))}
+          <Link className="nav__soon" href="/#demo" aria-label="Live demo, coming soon">
+            <span>Live demo</span><span className="nav__soon-tag" aria-hidden="true">Soon</span>
+          </Link>
         </div>
         <button className="nav__menu-btn" type="button" aria-expanded={open} aria-controls="menu" onClick={() => setOpen(!open)}>
           {open ? "CLOSE" : "MENU"}
         </button>
-        {cta ?? <Link className="nav__cta" href="/chat">Talk to Stiti</Link>}
+        {cta ?? <a className="nav__cta" href={GITHUB} target="_blank" rel="noopener">GitHub<span className="sr-only"> (opens in a new tab)</span></a>}
       </nav>
       <div className={`menu${open ? " is-open" : ""}`} id="menu" aria-label="Menu">
         <div className="menu__links">
@@ -73,8 +76,11 @@ export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode 
               <span style={{ transitionDelay: open ? `${i * 70}ms` : "0ms" }}>{l.label}</span>
             </Link>
           ))}
+          <Link href="/#demo" onClick={() => setOpen(false)}>
+            <span style={{ transitionDelay: open ? `${LINKS.length * 70}ms` : "0ms" }}>Live demo <small className="menu__soon">soon</small></span>
+          </Link>
         </div>
-        <div className="menu__foot">Runs on your Mac · Your memory stays at ~/.stiti</div>
+        <div className="menu__foot">Free · Open source · Lives on your Mac</div>
       </div>
     </>
   );
