@@ -4,6 +4,8 @@
 export const DEV = process.env.NODE_ENV === "development";
 const BACKEND = "127.0.0.1:7317";
 
+let memToken = "";                      // fallback when localStorage is blocked
+
 /** Per-install token: arrives once in the URL fragment (#t=…), then lives in localStorage. */
 export function getToken(): string {
   if (typeof window === "undefined") return "";
@@ -13,16 +15,43 @@ export function getToken(): string {
       localStorage.setItem("stiti_t", h);
       history.replaceState(null, "", location.pathname + location.search);
     }
-    return h || localStorage.getItem("stiti_t") || "";
+    return h || localStorage.getItem("stiti_t") || memToken;
   } catch {
-    return h || "";
+    return h || memToken;
   }
 }
 
 export class NotAllowed extends Error {}
 
+/** The key, fetching it from Stiti's own server if this browser has never been linked (same-origin only). */
+let linking: Promise<string> | null = null;
+export function forgetToken() {
+  memToken = "";
+  try { localStorage.removeItem("stiti_t"); } catch { /* ignore */ }
+}
+export function ensureToken(): Promise<string> {
+  const t = getToken();
+  if (t) return Promise.resolve(t);
+  linking ??= fetch("/api/link", { cache: "no-store" })
+    .then((r) => (r.ok ? r.json() : { t: "" }))
+    .then(({ t }: { t: string }) => {
+      if (t) try { localStorage.setItem("stiti_t", t); } catch { /* private mode: keep in memory */ }
+      memToken = t || "";
+      return memToken;
+    })
+    .catch(() => "")
+    .finally(() => { linking = null; });
+  return linking;
+}
+
 export async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
-  const r = await fetch(path, { ...init, headers: { "x-stiti-token": getToken(), ...(init.headers || {}) } });
+  let key = await ensureToken();
+  let r = await fetch(path, { ...init, headers: { "x-stiti-token": key, ...(init.headers || {}) } });
+  if (r.status === 403 && key) {                       // stale saved key (e.g. reinstalled) → re-link once
+    forgetToken();
+    key = await ensureToken();
+    if (key) r = await fetch(path, { ...init, headers: { "x-stiti-token": key, ...(init.headers || {}) } });
+  }
   if (r.status === 403) throw new NotAllowed("not allowed");
   const body = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error((body as { error?: string }).error || `HTTP ${r.status}`);
