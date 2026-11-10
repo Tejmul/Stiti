@@ -10,6 +10,7 @@ drops the rest. Every play() gets an id and `done_id` says which pieces were ful
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import deque
@@ -18,10 +19,13 @@ import numpy as np
 import sounddevice as sd
 from livekit import rtc
 
+from ..overlay import level as _overlay_level
+
 RATE = 48000
 BLOCK = 480            # 10 ms — what the WebRTC APM expects
 FADE_S = 0.03          # 30 ms ramps: no clicks on duck / pause / stop
 DUCK_GAIN = 0.3
+LEVEL_BLOCK = RATE * 40 // 1000        # 40 ms of samples per published level
 
 
 def resample(audio: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
@@ -58,6 +62,10 @@ class Duplex:
         self.ended_at: float | None = None     # ... and when the last one ended
         self.drained = threading.Event()
         self.drained.set()
+        self.mic_rms = 0.0                # his AEC-cleaned voice / her voice, RMS per 40 ms (desktop overlay dots)
+        self.out_rms = 0.0
+        self._lv_m = self._lv_o = 0.0     # running sums of squares for the current 40 ms block
+        self._lv_n = 0
 
     # ---------- playback side ----------
     def play(self, audio: np.ndarray, sr: int) -> int:
@@ -152,6 +160,16 @@ class Duplex:
             mf = rtc.AudioFrame(_to_i16(mic), RATE, 1, BLOCK)
             self.apm.process_stream(mf)
             mic = np.frombuffer(mf.data, dtype=np.int16).astype(np.float32) / 32768.0
+        if frames and len(mic) == frames:          # overlay dots: two dot products, no arrays allocated
+            self._lv_o += float(np.dot(out, out))
+            self._lv_m += float(np.dot(mic, mic))
+            self._lv_n += frames
+            if self._lv_n >= LEVEL_BLOCK:          # one RMS per 40 ms block (Wispr Flow's level path)
+                self.out_rms = math.sqrt(self._lv_o / self._lv_n)
+                self.mic_rms = math.sqrt(self._lv_m / self._lv_n)
+                self._lv_m = self._lv_o = 0.0
+                self._lv_n = 0
+                _overlay_level(self.mic_rms, self.out_rms)
         self.on_mic(mic.reshape(-1, 3).mean(axis=1) if len(mic) % 3 == 0 else resample(mic, RATE, 16000))
 
     def __enter__(self):
