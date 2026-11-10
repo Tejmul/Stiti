@@ -19,8 +19,9 @@ class Config:
     tz: ZoneInfo = ZoneInfo(os.getenv("STITI_TZ", "Asia/Kolkata"))
     briefing_token_budget: int = 1500
     keys: dict[str, str] = field(default_factory=lambda: {
-        p: os.getenv(f"{p.upper()}_API_KEY", "")
-        for p in ("groq", "cerebras", "openrouter", "mistral", "gemini")
+        **{p: os.getenv(f"{p.upper()}_API_KEY", "")
+           for p in ("groq", "cerebras", "zai", "cloudflare", "openrouter", "mistral", "nvidia", "gemini")},
+        "cloudflare_account": os.getenv("CLOUDFLARE_ACCOUNT_ID", ""),
     })
 
 

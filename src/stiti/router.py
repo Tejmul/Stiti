@@ -21,33 +21,49 @@ class Provider:
     base_url: str
     rpm: int
     rpd: int
-    tpm: int  # tokens per minute (0 = unknown)
+    tpm: int          # tokens per minute (0 = unknown)
+    max_privacy: int  # highest privacy tier this provider may see: 1 = personal OK, 0 = public questions only
 
 
+# Free tiers only (D8, D17). max_privacy 1 = no training on API data per the provider's terms.
 PROVIDERS = {
-    "groq": Provider("groq", "https://api.groq.com/openai/v1", 30, 1000, 8000),
-    "cerebras": Provider("cerebras", "https://api.cerebras.ai/v1", 5, 10_000, 0),
-    "openrouter": Provider("openrouter", "https://openrouter.ai/api/v1", 20, 50, 0),
-    "mistral": Provider("mistral", "https://api.mistral.ai/v1", 60, 10_000, 0),
-    "gemini": Provider("gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", 10, 500, 0),
+    "groq": Provider("groq", "https://api.groq.com/openai/v1", 30, 1000, 8000, 1),
+    "cerebras": Provider("cerebras", "https://api.cerebras.ai/v1", 5, 10_000, 0, 1),        # now needs a card (2026-07)
+    "zai": Provider("zai", "https://api.z.ai/api/paas/v4", 20, 10_000, 0, 1),                # GLM Flash: free, 1 at a time
+    "cloudflare": Provider("cloudflare", "https://api.cloudflare.com/client/v4/accounts/{account}/ai/v1",
+                           60, 300, 0, 1),                                                    # 10k neurons/day free
+    "openrouter": Provider("openrouter", "https://openrouter.ai/api/v1", 20, 50, 0, 1),     # P1 only via data_collection=deny
+    "mistral": Provider("mistral", "https://api.mistral.ai/v1", 60, 10_000, 0, 1),          # opt out of training first
+    "nvidia": Provider("nvidia", "https://integrate.api.nvidia.com/v1", 40, 10_000, 0, 0),  # trial terms: public only
+    "gemini": Provider("gemini", "https://generativelanguage.googleapis.com/v1beta/openai/", 10, 500, 0, 0),  # free tier trains
 }
 
-# (provider, model) in order; first available wins. Confirm IDs in each console.
+# (provider, model) in order; first available wins. Missing keys / unknown model IDs are skipped automatically
+# (IDs are checked against each provider's /models list). Latencies measured 2026-11-10 (first token, streaming).
 CHAINS = {
-    "voice_fast": [("groq", "openai/gpt-oss-20b"), ("groq", "qwen/qwen3.8-27b"),
-                   ("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"),
-                   ("openrouter", "openai/gpt-oss-20b:free"), ("mistral", "mistral-small-latest")],
-    "background_smart": [("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b"),
-                         ("groq", "openai/gpt-oss-120b"), ("mistral", "mistral-small-latest")],
+    "voice_fast": [("groq", "qwen/qwen3.8-27b"),                 # ~190 ms first token
+                   ("groq", "openai/gpt-oss-120b"),               # ~510 ms
+                   ("groq", "openai/gpt-oss-20b"),
+                   ("zai", "glm-4.7-flash"), ("cerebras", "gpt-oss-120b"),
+                   ("cloudflare", "@cf/openai/gpt-oss-120b"),
+                   ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),  # ~1.9 s
+                   ("openrouter", "google/gemma-4-31b-it:free"), ("mistral", "mistral-small-latest")],
+    "background_smart": [("cerebras", "gpt-oss-120b"), ("zai", "glm-4.7-flash"), ("groq", "openai/gpt-oss-120b"),
+                         ("cerebras", "qwen-3.8-27b"), ("zai", "glm-4.5-flash"),
+                         ("cloudflare", "@cf/openai/gpt-oss-120b"),
+                         ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("mistral", "mistral-small-latest")],
     # whiteboard tutor: lesson writing (strict JSON) — big free models first, Groq TPD is precious
-    "tutor_plan": [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("groq", "openai/gpt-oss-20b"),
-                   ("cerebras", "qwen-3.8-27b"), ("openrouter", "openai/gpt-oss-20b:free"),
-                   ("mistral", "mistral-small-latest")],
+    "tutor_plan": [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("zai", "glm-4.7-flash"),
+                   ("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss-20b"), ("cerebras", "qwen-3.8-27b"),
+                   ("cloudflare", "@cf/openai/gpt-oss-120b"),
+                   ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("mistral", "mistral-small-latest")],
 }
 # providers/models with strict json_schema (constrained decoding); others get json_object + validation
 STRICT_SCHEMA = {("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
                  ("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b")}
-P0_EXTRA = [("gemini", "gemini-flash-lite-latest")]
+# extra fallbacks that may only see public (P0) questions
+P0_EXTRA = [("nvidia", "deepseek-ai/deepseek-v3.1"), ("nvidia", "moonshotai/kimi-k2-instruct"),
+            ("nvidia", "qwen/qwen3-235b-a22b"), ("gemini", "gemini-flash-lite-latest")]
 
 
 class NoProvider(RuntimeError):
@@ -63,14 +79,20 @@ def _client(p: str) -> OpenAI | None:
     if not key:
         return None
     if p not in _clients:
-        _clients[p] = OpenAI(api_key=key, base_url=PROVIDERS[p].base_url, timeout=20, max_retries=0)
+        url = PROVIDERS[p].base_url
+        if "{account}" in url:
+            account = CFG.keys.get(p + "_account", "")
+            if not account:
+                return None
+            url = url.format(account=account)
+        _clients[p] = OpenAI(api_key=key, base_url=url, timeout=20, max_retries=0)
     return _clients[p]
 
 
 def _available_models(p: str) -> set[str] | None:
     if p not in _models:
         try:
-            _models[p] = {m.id for m in _client(p).models.list().data}
+            _models[p] = {m.id.removeprefix("models/") for m in _client(p).models.list().data}  # Gemini: "models/…"
         except Exception:
             _models[p] = None  # unknown: try anyway
     return _models[p]
@@ -125,7 +147,7 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
     """Returns {text, provider, model, ms, tokens_in, tokens_out}. Raises NoProvider if all fail."""
     if privacy >= 2:
         raise NoProvider("P2: sensitive content never leaves the Mac")
-    chain = list(CHAINS[route]) + (P0_EXTRA if privacy == 0 else [])
+    chain = [(p, m) for p, m in list(CHAINS[route]) + P0_EXTRA if PROVIDERS[p].max_privacy >= privacy]
     est = sum(len(str(m.get("content") or "")) for m in messages) // 4 + max_tokens + (300 if tools else 0)
     errors = []
     for p, model in chain:
@@ -139,8 +161,13 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             errors.append(f"{p}/{model}: gated")
             continue
         kwargs = dict(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
+        extra = {}
         if "gpt-oss" in model and p in ("groq", "cerebras", "openrouter"):
-            kwargs["extra_body"] = {"reasoning_effort": reasoning}  # "low" for voice turns; avoid empty content
+            extra["reasoning_effort"] = reasoning  # "low" for voice turns; avoid empty content
+        if p == "openrouter" and privacy >= 1:
+            extra["provider"] = {"data_collection": "deny"}  # personal turns: skip hosts that may train on prompts
+        if extra:
+            kwargs["extra_body"] = extra
         if schema is not None and (p, model) in STRICT_SCHEMA:
             kwargs["response_format"] = {"type": "json_schema",
                                          "json_schema": {"name": schema_name, "strict": True, "schema": schema}}
@@ -181,5 +208,6 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
 def status() -> list[dict]:
     out = []
     for p in PROVIDERS:
-        out.append({"provider": p, "key": bool(CFG.keys.get(p))})
+        ready = bool(CFG.keys.get(p)) and ("{account}" not in PROVIDERS[p].base_url or bool(CFG.keys.get(p + "_account")))
+        out.append({"provider": p, "key": ready, "personal": PROVIDERS[p].max_privacy >= 1})
     return out

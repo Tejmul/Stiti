@@ -115,7 +115,8 @@ def doctor():
     embed.embed_query("hello")
     print(f"{ok(True)} Embedder: {embed.EMBED_MODEL} ({(time.perf_counter() - t) * 1000:.0f} ms incl. load)")
     for s in router.status():
-        print(f"{ok(s['key'])} {s['provider']:10} API key {'set' if s['key'] else 'missing'}")
+        scope = "personal + public" if s["personal"] else "public questions only"
+        print(f"{ok(s['key'])} {s['provider']:10} API key {'set' if s['key'] else 'missing'}  ({scope})")
     if any(s["key"] for s in router.status()):
         try:
             r = router.complete([{"role": "user", "content": "Reply with just: ok"}], max_tokens=20)
