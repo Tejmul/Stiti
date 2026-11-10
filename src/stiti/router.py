@@ -40,30 +40,45 @@ PROVIDERS = {
 
 # (provider, model) in order; first available wins. Missing keys / unknown model IDs are skipped automatically
 # (IDs are checked against each provider's /models list). Latencies measured 2026-11-10 (first token, streaming).
+NV_FAST = [("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b"), ("nvidia", "nvidia/nemotron-3.5-bolt-e4b")]
+# nvidia/gemini entries are skipped automatically for personal (P1) turns (max_privacy 0).
 CHAINS = {
     "voice_fast": [("groq", "qwen/qwen3.8-27b"),                 # ~190 ms first token
                    ("groq", "openai/gpt-oss-120b"),               # ~510 ms
                    ("groq", "openai/gpt-oss-20b"),
-                   ("zai", "glm-4.7-flash"), ("cerebras", "gpt-oss-120b"),
-                   ("cloudflare", "@cf/openai/gpt-oss-120b"),
-                   ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),  # ~1.9 s
-                   ("openrouter", "google/gemma-4-31b-it:free"), ("mistral", "mistral-small-latest")],
-    "background_smart": [("cerebras", "gpt-oss-120b"), ("zai", "glm-4.7-flash"), ("groq", "openai/gpt-oss-120b"),
+                   ("cerebras", "gpt-oss-120b"), ("cloudflare", "@cf/openai/gpt-oss-120b"),
+                   *NV_FAST,                                       # ~0.5 s, public questions only
+                   ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),  # ~1–2.5 s
+                   ("openrouter", "google/gemma-4-31b-it:free"), ("mistral", "mistral-small-latest"),
+                   ("zai", "glm-4.7-flash"), ("zai", "glm-4.5-flash")],     # free but overloaded: 429s / 8–20 s
+    "background_smart": [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("zai", "glm-4.7-flash"),
                          ("cerebras", "qwen-3.8-27b"), ("zai", "glm-4.5-flash"),
-                         ("cloudflare", "@cf/openai/gpt-oss-120b"),
+                         ("cloudflare", "@cf/openai/gpt-oss-120b"), ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
                          ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("mistral", "mistral-small-latest")],
     # whiteboard tutor: lesson writing (strict JSON) — big free models first, Groq TPD is precious
-    "tutor_plan": [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("zai", "glm-4.7-flash"),
-                   ("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss-20b"), ("cerebras", "qwen-3.8-27b"),
-                   ("cloudflare", "@cf/openai/gpt-oss-120b"),
+    "tutor_plan": [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
+                   ("groq", "openai/gpt-oss-20b"), ("cerebras", "qwen-3.8-27b"), ("zai", "glm-4.7-flash"),
+                   ("cloudflare", "@cf/openai/gpt-oss-120b"), ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
                    ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("mistral", "mistral-small-latest")],
 }
 # providers/models with strict json_schema (constrained decoding); others get json_object + validation
 STRICT_SCHEMA = {("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
                  ("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b")}
-# extra fallbacks that may only see public (P0) questions
-P0_EXTRA = [("nvidia", "deepseek-ai/deepseek-v3.1"), ("nvidia", "moonshotai/kimi-k2-instruct"),
-            ("nvidia", "qwen/qwen3-235b-a22b"), ("gemini", "gemini-flash-lite-latest")]
+# last-resort extras for public (P0) questions
+P0_EXTRA = [("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"), ("gemini", "gemini-flash-lite-latest")]
+
+
+# Z.ai models priced at 0 (docs.z.ai pricing, 2026-11-10). Its /models list omits them, so they skip that check.
+ZAI_FREE = {"glm-4.7-flash", "glm-4.5-flash", "glm-4.6v-flash"}
+
+
+def is_free(p: str, model: str) -> bool:
+    """Zero-cost guard: never call a model that could bill, even if a key later gets credit or a card attached."""
+    if p == "openrouter":
+        return model.endswith(":free")
+    if p == "zai":
+        return model in ZAI_FREE                 # exact list: e.g. glm-5.3-flash exists but is NOT free
+    return p in PROVIDERS                         # others: free-tier accounts with no billing attached
 
 
 class NoProvider(RuntimeError):
@@ -147,7 +162,8 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
     """Returns {text, provider, model, ms, tokens_in, tokens_out}. Raises NoProvider if all fail."""
     if privacy >= 2:
         raise NoProvider("P2: sensitive content never leaves the Mac")
-    chain = [(p, m) for p, m in list(CHAINS[route]) + P0_EXTRA if PROVIDERS[p].max_privacy >= privacy]
+    chain = [(p, m) for p, m in dict.fromkeys(list(CHAINS[route]) + P0_EXTRA)   # de-dup, keep order
+             if PROVIDERS[p].max_privacy >= privacy and is_free(p, m)]
     est = sum(len(str(m.get("content") or "")) for m in messages) // 4 + max_tokens + (300 if tools else 0)
     errors = []
     for p, model in chain:
@@ -155,7 +171,7 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
         if cli is None:
             continue
         avail = _available_models(p)
-        if avail is not None and model not in avail:
+        if avail is not None and model not in avail and p != "zai":
             continue
         if not _gate_ok(p, model, est):
             errors.append(f"{p}/{model}: gated")
@@ -164,6 +180,8 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
         extra = {}
         if "gpt-oss" in model and p in ("groq", "cerebras", "openrouter"):
             extra["reasoning_effort"] = reasoning  # "low" for voice turns; avoid empty content
+        if p == "zai":
+            extra["thinking"] = {"type": "disabled"}  # GLM Flash: answer directly (thinking adds seconds)
         if p == "openrouter" and privacy >= 1:
             extra["provider"] = {"data_collection": "deny"}  # personal turns: skip hosts that may train on prompts
         if extra:
