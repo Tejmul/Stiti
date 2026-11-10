@@ -66,7 +66,7 @@ HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek secon
                      r"let me think|soch(ne do| ke batata hoon| ke batati hoon| raha hoon| rahi hoon)|"
                      r"hmm+,? let me think)[.!…, ]*$", re.I)
 # "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
-NOTHING_RX = re.compile(r"^\s*(no|nope|nah|nahi|nahin|not yet|nothing|nothing else|that'?s (it|all)( for now)?|bas|bas itna|"
+NOTHING_RX = re.compile(r"^\s*(no|nope|nah|nahi|nahin|not yet|ok|okay|alright|nothing|nothing else|that'?s (it|all)( for now)?|bas|bas itna|"
                         r"no thanks|no thank you|all good|i'?m good|abhi nahi|kuch nahi|that'?s it for now|nope that'?s it)[.!]*\s*$", re.I)
 ASKED_NAME_RX = re.compile(r"\b(?:about|remember|yaad hai|of)\s+(?P<name>[A-Z][a-z]{2,20})\b")
 
