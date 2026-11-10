@@ -71,6 +71,14 @@ check("todo done needs same-origin + token",
 after = c.post(f"/api/todo/{tid}/done", headers={"x-stiti-token": tok, **origin}).json()
 check("todo done from the side panel", all(t["id"] != tid for t in after["todos"]))
 
+# ---- auto-link: Stiti's own pages get the key; other sites can't
+same = {"sec-fetch-site": "same-origin", **host}
+check("own page gets the key without the terminal link", c.get("/api/link", headers=same).json().get("t") == tok)
+check("other websites and non-browser calls can't get the key",
+      c.get("/api/link", headers={"sec-fetch-site": "cross-site", **host}).status_code == 403
+      and c.get("/api/link", headers=host).status_code == 403
+      and c.get("/api/link", headers={"sec-fetch-site": "same-origin", "host": "evil.example"}).status_code in (400, 403))
+
 # ---- Memory page API (D23)
 check("memory API needs the token", c.get("/api/mind").status_code == 403)
 mind = c.get("/api/mind", headers={"x-stiti-token": tok}).json()
