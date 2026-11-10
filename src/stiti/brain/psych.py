@@ -45,6 +45,9 @@ BANNED = [
     r"\bi can'?t (actually )?(see|read|open|access) (files|documents|links|attachments|your (files|documents|resume))\b",
     r"\bi don'?t have access to (your )?(files|documents)\b", r"\bhow (do|does|did) (you|that) (feel|make you feel)\b",
     r"\bvent\b", r"\bself[- ]care\b",
+    # flattery (SOUL: "No flattery") — e.g. "Your brilliance continues to be on point."
+    r"\byour (brilliance|genius|greatness|talent)\b", r"\b(you'?re|you are) (a )?(genius|brilliant|amazing|incredible|a legend|a rockstar)\b",
+    r"\b(proud of you|knew you (could|would))\b", r"\bon point\b", r"\bnailed it\b",
 ]
 BANNED_RX = re.compile("|".join(BANNED), re.I)
 OPENER_TIC = re.compile(r"^\s*(absolutely|of course|great|awesome|amazing|sure thing|oh wow|wow|totally|certainly|"
