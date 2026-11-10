@@ -10,15 +10,6 @@ const icon = (n: number) => ({ "--icon": `url(/icons/${n}.png)` }) as CSSPropert
 
 
 // The site's one action until the app ships (a live demo link comes later).
-/** A tiny two-line exchange: what you say → what she says. */
-function Say({ you, her }: { you: string; her: string }) {
-  return (
-    <div className="say">
-      <p className="say__you"><span className="sr-only">You say: </span>{you}</p>
-      <p className="say__her"><span className="sr-only">Stiti says: </span>{her}</p>
-    </div>
-  );
-}
 
 function H2({ id, thin, bold }: { id: string; thin: string; bold: string }) {
   return <h2 className="h2" id={id}><span className="thin"><Split t={thin} /></span> <b><Split t={bold} /></b></h2>;
@@ -43,7 +34,22 @@ export function Hero() {
           <div className="hero__ctas"><StartButton /></div>
           <p className="label hero__facts">Free <span aria-hidden="true">·</span> No account <span aria-hidden="true">·</span> Stays on your Mac</p>
         </div>
-        <div className="hero__shot"><MacShot /></div>
+        <div className="hero__space" aria-hidden="true" />{/* the neural sphere lives here (hero-only particles) */}
+      </div>
+    </section>
+  );
+}
+
+// ------------------------------------------------------------------ see her at work (the product shot, still page)
+export function SeeHer() {
+  return (
+    <section className="see" id="see" aria-labelledby="see-title">
+      <div className="container">
+        <div className="see__head" data-reveal>
+          <p className="label">See her at work</p>
+          <H2 id="see-title" thin="This is what talking" bold="to Stiti looks like." />
+        </div>
+        <div className="see__shot" data-reveal><MacShot once /></div>
       </div>
     </section>
   );
@@ -88,7 +94,7 @@ export function Features() {
               <span className="feat__icon" style={icon(f.icon)} aria-hidden="true" />
               <h3 className="feat__title">{f.title}</h3>
               <p className="feat__text">{f.text}</p>
-              <Say you={f.you} her={f.her} />
+              <p className="feat__eg"><span className="sr-only">For example, you say: </span>“{f.you}”</p>
             </li>
           ))}
         </ul>
@@ -98,25 +104,12 @@ export function Features() {
 }
 
 // ------------------------------------------------------------------ a day with Stiti (time order carries meaning)
-const DAY: { time: string; iso: string; title: string; lines: { who: "you" | "her"; t: string }[] }[] = [
-  { time: "7:30 AM", iso: "07:30", title: "Morning brief", lines: [
-    { who: "you", t: "Morning, Stiti." },
-    { who: "her", t: "Morning! Clear skies till 5, three things on your list, and it’s Maya’s birthday tomorrow." },
-  ] },
-  { time: "4:00 PM", iso: "16:00", title: "Right on time", lines: [
-    { who: "her", t: "It’s 4. Time to start your resume." },
-    { who: "you", t: "Okay, starting now." },
-    { who: "her", t: "I’ll check in at 5." },
-  ] },
-  { time: "8:30 PM", iso: "20:30", title: "What’s new in AI", lines: [
-    { who: "you", t: "Anything new in AI today?" },
-    { who: "her", t: "Two new open models and a paper on memory for assistants. Two-minute version?" },
-  ] },
-  { time: "1:10 AM", iso: "01:10", title: "Still up?", lines: [
-    { who: "you", t: "One more chapter and I’m done." },
-    { who: "her", t: "You sound tired, and it’s past 1. Sleep. I’ll recap the chapter at breakfast." },
-  ] },
-];
+const DAY: { time: string; iso: string; title: string; text: string }[] = [
+  { time: "7:30 AM", iso: "07:30", title: "Morning brief", text: "The weather, your three things for today, and a heads-up that it’s Maya’s birthday tomorrow." },
+  { time: "4:00 PM", iso: "16:00", title: "Right on time", text: "“It’s 4. Time to start your resume.” She checks in again at 5." },
+  { time: "8:30 PM", iso: "20:30", title: "What’s new in AI", text: "Two new open models and one paper worth reading, in a two-minute brief." },
+  { time: "1:10 AM", iso: "01:10", title: "Still up?", text: "You sound tired and it’s past 1. She says it once, then lets you decide." },
+]
 
 export function Day() {
   return (
@@ -135,13 +128,7 @@ export function Day() {
               <span className="moment__dot" aria-hidden="true" />
               <time className="label moment__time" dateTime={m.iso}>{m.time}</time>
               <h3 className="moment__title">{m.title}</h3>
-              <div className="moment__lines">
-                {m.lines.map((l, i) => (
-                  <p key={i} className={l.who === "you" ? "say__you" : "say__her"}>
-                    <span className="sr-only">{l.who === "you" ? "You: " : "Stiti: "}</span>{l.t}
-                  </p>
-                ))}
-              </div>
+              <p className="moment__text">{m.text}</p>
             </li>
           ))}
         </ol>

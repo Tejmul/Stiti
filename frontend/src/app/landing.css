@@ -91,7 +91,7 @@ html.landing-has-cursor, html.landing-has-cursor a, html.landing-has-cursor butt
 .pg-landing .hero__ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(26px, 4vh, 40px); }
 .pg-landing .hero__facts { margin: 18px 0 0; font-size: 11px; }
 .pg-landing .hero__facts span { color: var(--blue); margin: 0 4px; }
-.pg-landing .hero__shot { position: relative; }
+.pg-landing .hero__space { min-height: 1px; }                 /* right column: the neural sphere (canvas) */
 
 /* ------------------------------------------------------------------ the product shot: Stiti on a Mac desktop */
 .pg-landing .shot { --u: 1cqw; position: relative; margin: 0 0 0 auto; width: 100%; max-width: 720px; container-type: inline-size; }
@@ -419,7 +419,8 @@ html.landing-has-cursor, html.landing-has-cursor a, html.landing-has-cursor butt
 
 @media (max-width: 900px) {
   .pg-landing .hero { padding: 112px 0 56px; }
-  .pg-landing .hero__grid { grid-template-columns: minmax(0, 1fr); row-gap: 48px; }
+  .pg-landing .hero__grid { grid-template-columns: minmax(0, 1fr); row-gap: 0; }
+  .pg-landing .hero__space { display: none; }
   .pg-landing .shot { margin: 0 auto; max-width: 640px; }
 }
 
@@ -502,3 +503,22 @@ html.landing-has-cursor, html.landing-has-cursor a, html.landing-has-cursor butt
 @media (prefers-reduced-motion: reduce) {
   .pg-landing .start-dlg[open] .start-dlg__card, .pg-landing .start-dlg[open]::backdrop { animation: none; }
 }
+
+/* ------------------------------------------------------------------ see her at work: the Mac shot, below the hero */
+.pg-landing .see { position: relative; padding: clamp(72px, 9vw, 130px) 0 clamp(40px, 6vw, 80px); }
+.pg-landing .see__head { max-width: 780px; margin: 0 auto clamp(28px, 4vw, 52px); text-align: center; }
+.pg-landing .see__head .label { margin: 0 0 14px; }
+.pg-landing .see__shot { max-width: 980px; margin: 0 auto; }
+.pg-landing .see__shot .shot { margin: 0 auto; }
+
+/* ------------------------------------------------------------------ clean features + day (owner: "I asked for a clean UI") */
+.pg-landing .feats { gap: 0 clamp(28px, 4vw, 56px); }
+.pg-landing .feat { background: none; border: 0; border-top: 1px solid var(--line-2); border-radius: 0; box-shadow: none;
+  padding: 28px 0 40px; }
+.pg-landing .feat:hover { border-color: var(--line-2); }
+.pg-landing .feat__icon { width: 30px; height: 30px; }
+.pg-landing .feat__title { margin: 18px 0 8px; font-size: clamp(19px, 1.5vw, 22px); }
+.pg-landing .feat__text { font-size: 15.5px; max-width: 32em; }
+.pg-landing .feat__eg { margin: 14px 0 0; font-size: 14px; color: var(--ink-3); font-style: italic; }
+.pg-landing .moment__title { margin: 6px 0 10px; }
+.pg-landing .moment__text { margin: 0; color: var(--ink-2); font-size: 15.5px; line-height: 1.55; max-width: 26em; }
