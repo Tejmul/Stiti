@@ -558,5 +558,32 @@ learning.undo_last = real_undo
 check("a joined continuation undoes the fragment's fast-path write (no double reminder)",
       undone == [{"type": "intent", "id": 7}] and vl.engine.last_action is None)
 
+print("engine hooks (persona branch; guarded so this branch works alone)")
+
+
+class HoldEngine(FakeEngine):
+    def turn(self, text, voice_emotion=None, on_delta=None, on_ack=None):
+        self.skip_turn = True
+        return ""
+
+
+vl.engine = HoldEngine()
+vl.fillers = [(np.ones(2400, np.float32), 24000)]
+vl.duplex = Duplex.__new__(Duplex)
+vl.duplex._init_playback()
+played = []
+real_play = vl.duplex.play
+vl.duplex.play = lambda a, sr: played.append(len(a)) or real_play(a, sr)
+vl._interrupted.clear()
+vl._handle("Ek sec.", None, None)
+check("engine.skip_turn → she says nothing, no filler", played == [])
+vl.fillers = []
+
+off = type("E", (), {"last_reply_text": "Done, 4 PM. Anything else?"})()
+check("after 'Anything else?' the loop sees an answer, not a goodbye",
+      L._after_offer(off) and not L._after_offer(type("E", (), {"last_reply_text": "Done."})())
+      and not any(L._explicit_bye(t) for t in ("that's it", "okay", "bas", "no", "nothing", "not yet")))
+check("…but a real bye still ends it", all(L._explicit_bye(t) for t in ("bye", "okay bye", "good night", "chalo bye")))
+
 print(f"turn-taking: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

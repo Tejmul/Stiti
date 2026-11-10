@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import queue
 import random
+import re
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -200,9 +201,10 @@ class VoiceLoop:
         now = time.monotonic()
         pend = endpoint.Pending(text, committed_t=c.commit_t if c is not None else now,
                                speech_end_t=c.end_t if c is not None else now)
-        finished = c is None or c.state in (None, "finished")
-        sp = Speaker(self, mood, filler_after=FILLER_AFTER_S if finished else 1e9,   # never "hmm" on a fragment
+        finished = (c is None or c.state in (None, "finished")) and endpoint.text_state(text) != "wait"
+        sp = Speaker(self, mood, filler_after=FILLER_AFTER_S if finished else 1e9,   # never "hmm" on a fragment/hold
                      on_first_audio=lambda t: setattr(pend, "first_audio_t", t))
+        # StreamLint() binds to the strategy engine.turn() picks for THIS turn (on the engine thread, at first piece)
         chunker, lint, result = ClauseChunker(), StreamLint(), {}
 
         def on_delta(d: str):
@@ -224,6 +226,9 @@ class VoiceLoop:
                 print(f"[turn] {type(e).__name__}: {e}")
             try:
                 if pend.cancelled or result.get("cancelled"):
+                    return
+                if getattr(self.engine, "skip_turn", False) and not (result.get("reply") or "").strip():
+                    result["skip"] = True               # "ek sec" / "let me think": he's thinking, say nothing
                     return
                 if self.engine.streamed:
                     for piece in chunker.flush():
@@ -251,6 +256,8 @@ class VoiceLoop:
         if sp.interrupted:
             self._truncate(sp.heard, th)
             print(f"Stiti: {' '.join(sp.heard)} —(cut off)")
+        elif result.get("skip"):
+            print("Stiti: (quiet — you're thinking)")
         else:
             print(f"Stiti: {result.get('reply', '…')}")
         if self.debug:
@@ -337,7 +344,10 @@ class VoiceLoop:
                     self.say(said)
                     continue
                 engaged = self.awake or now - self.last_activity < 10      # awake, or she just spoke (a nudge)
-                if engaged and (wake.is_stop(text) or wake.is_sleep(text)):
+                # after her "…Anything else?", "that's it / okay / bas / not yet" is an answer, not a goodbye:
+                # the engine says "Okay, I'm here." and the session stays open (only a real bye or the timeout ends it)
+                answer = self.awake and _after_offer(self.engine) and len(text.split()) <= 4 and not _explicit_bye(text)
+                if engaged and not answer and (wake.is_stop(text) or wake.is_sleep(text)):
                     if not endpoint.goodbye_counts(c, res, d.ended_at):
                         self._dbg(f"ignored {text!r}: {c.speech_ms} ms, no_speech {res.no_speech_prob:.2f}, "
                                   f"logprob {res.avg_logprob:.2f} — too short / unsure / her echo")
@@ -349,7 +359,8 @@ class VoiceLoop:
                         self.say(farewell(text, self.engine.last_mood))
                     self.deactivate()
                     continue
-                if c.overlap and not c.barged and all(w in endpoint.BACKCHANNEL_WORDS for w in endpoint.words(text)):
+                if (c.overlap and not c.barged and not answer
+                        and all(w in endpoint.BACKCHANNEL_WORDS for w in endpoint.words(text))):
                     self._dbg(f"backchannel while she spoke: {text!r}")
                     continue
                 if self.awake and self._resume and wake.is_backchannel(text):
@@ -398,6 +409,24 @@ class VoiceLoop:
                 print(f"You: {text}" + (f"   ({res.ms:.0f} ms STT)" if self.debug else ""))
                 self.last_activity = now
                 self._handle(text, c.audio, c)
+
+
+def _after_offer(engine) -> bool:
+    """Her last reply closed with "Anything else?" (the engine's confirm-and-close)."""
+    return bool(re.search(r"anything else\?\s*$", getattr(engine, "last_reply_text", None) or "", re.I))
+
+
+def _explicit_bye(text: str) -> bool:
+    try:
+        from ..farewell import is_bye                   # the persona engine's goodbye detector, when present
+        if is_bye(text):
+            return True
+    except ImportError:
+        pass
+    return bool(_BYE_RX.search(text))
+
+
+_BYE_RX = re.compile(r"\b(bye+|good ?night|gn|so jao|go to sleep|sleep now|see you|kal milte|shubh ratri)\b", re.I)
 
 
 def _tutor_active() -> bool:
