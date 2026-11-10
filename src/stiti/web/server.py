@@ -48,16 +48,6 @@ def _state() -> dict:
                        for a in alarms]}
 
 
-def _history(n: int = 40) -> list[dict]:
-    from ..db import q
-    rows = q("""SELECT speaker, text, ts FROM (
-                  SELECT speaker, text, occurred_at AS ts FROM episodes
-                  WHERE speaker IN ('user','stiti') AND origin IN ('owner','agent') AND privacy < 2
-                  ORDER BY occurred_at DESC LIMIT %s) x ORDER BY ts""", (n,))
-    return [{"who": "you" if r["speaker"] == "user" else "stiti", "text": r["text"], "ts": r["ts"].isoformat()}
-            for r in rows]
-
-
 class ChatSession:
     """One Engine per browser connection; turns are serialised (the Engine is not re-entrant)."""
 
@@ -158,13 +148,6 @@ def app():
         from . import mind
         return JSONResponse(await asyncio.to_thread(mind.overview))
 
-    async def moments_api(req):
-        if not guard(req):
-            return JSONResponse({"error": "not allowed"}, 403)
-        from . import mind
-        return JSONResponse(await asyncio.to_thread(
-            mind.moments, req.query_params.get("q", "")[:200], req.query_params.get("before") or None))
-
     async def fact_add(req):
         if not guard(req, write=True):
             return JSONResponse({"error": "not allowed"}, 403)
@@ -191,7 +174,7 @@ def app():
         try:
             from .. import profile, router
             hello = {"type": "hello", "name": profile.call() if profile.known() else None,
-                     "llm": any(s["key"] for s in router.status()), "history": await asyncio.to_thread(_history),
+                     "llm": any(s["key"] for s in router.status()),
                      "state": await asyncio.to_thread(_state)}
             await ws.send_text(json.dumps(hello))
             while True:
@@ -218,7 +201,7 @@ def app():
 
     return Starlette(routes=[
         Route("/", page("index.html")), Route("/chat", page("chat.html")), Route("/memory", page("memory.html")),
-        Route("/api/link", link), Route("/api/mind", mind_api), Route("/api/moments", moments_api),
+        Route("/api/link", link), Route("/api/mind", mind_api),
         Route("/api/fact", fact_add, methods=["POST"]),
         Route("/api/fact/{id:int}/forget", fact_forget, methods=["POST"]),
         Route("/icons/{n}.png", icon), Route("/api/state", state),

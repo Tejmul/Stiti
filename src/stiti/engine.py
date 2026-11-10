@@ -289,7 +289,7 @@ class Engine:
             recalled_ids = [m["episode_id"] for m in mems]
             lesson_ids = [l["id"] for l in les]
             self.last_used = {
-                "memories": [{"text": m["text"][:220], "at": m["occurred_at"].isoformat()} for m in mems[:6]],
+                "memories": len(mems),          # a count only: past conversations are never sent to a UI
                 "facts": [f["fact_text"] for f in facts[:8]],
                 "docs": list(dict.fromkeys(f"{x['title']}" + (f" › {x['section'].split(' > ')[-1]}" if x.get("section") else "")
                                            for x in docs))[:4],
