@@ -198,3 +198,20 @@ Research + live latency table: `docs/research/free_llm_providers.md` (17 provide
 - **Measured after keys arrived:** NVIDIA Nemotron Lightning/Bolt ~0.3–0.5 s (P0 fallback); Z.ai free GLM overloaded
   (429 / 8–20 s) → last resort. Personal-chat backup when Groq is down = Cloudflare (needs the account ID).
 - **Why:** with only Groq + OpenRouter, a Groq outage left personal chats with no backup (tested).
+
+## D18: Conversation speed — stream, overlap, never dead air (2026-11-10)
+Research: `docs/research/voice_latency.md` (19 sources). Measured on the M2 (simulated mic/speaker, real models + Groq):
+voice-to-first-audio ≈ **0.85–1.0 s** (was ≈ 2.3 s): transcript ready 233–368 ms after he stops, first audio
+≈ 0.3 s after the LLM's first token.
+- **Stream the LLM** (`router.stream`, same chain/gates; fallback only before the first token) and speak the
+  first short clause (`ClauseChunker`: a sentence end of any length, a comma after ≥3 words, or ~7 words).
+- **Gapless speech** (`voice/speaker.py`): the next piece is synthesised while the current one plays (0 ms gaps).
+- **One persistent Kokoro thread** — Kokoro pays ~700 ms the first time it runs in any new thread (measured).
+- **Early STT**: whisper starts 160 ms into a pause on a persistent thread; thrown away if he keeps talking.
+- **Turn-end**: Smart Turn re-asked at 300/600/1000 ms with a falling bar; fallback 1.5 s (was one check + 2 s).
+- **Warm everything**: Smart Turn + whisper + Kokoro loaded at start; LLM connections opened on wake, kept alive 300 s.
+- **Never dead air**: instant pre-synthesised acks for slow actions ("Ek sec, calendar dekhti hoon") fired by the
+  engine (`on_ack`); "hmm" filler if nothing is ready by 0.9 s.
+- **Goodbyes**: "bye / chalo bye / good night" → a warm local goodbye (`farewell.py`, time/mood/language aware,
+  no LLM); "shut up / stop / chup" stay silent.
+- `psych.StreamLint` applies the reply rules (guilt words, one question, ≤3 items) per streamed piece.

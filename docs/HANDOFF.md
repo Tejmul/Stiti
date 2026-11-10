@@ -57,7 +57,8 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - `brain/` memory, compiler, lessons, learning, sleep (night job), mdsync, onboarding (old 10-Q), intake (new engine),
   keythings, emotion, psych, ingest (documents/chunks), graphview, moodview, backup.
 - `fastpath/` Hinglish dates + handlers · `life/` planner (CP-SAT), habits, chunker, brief, proactive.
-- `voice/` duplex (AEC3), vad, stt (mlx-whisper small q4), tts (Kokoro int8), turn (Smart Turn), wake, prosody, loop.
+- `voice/` duplex (AEC3), vad, stt (mlx-whisper small q4), tts (Kokoro int8 + ClauseChunker), turn (Smart Turn), wake,
+  prosody, speaker (gapless streamed speech, acks, fillers), loop. Speed design: D18. `farewell.py` goodbyes.
 - `connectors/` eventkit, mail (IMAP read-only), telegram, mac (Spotlight/music/iMessage/web/screen), ocr.
 - `tools/` registry (risk tiers, confirm), mcp_bus · `app.py` menubar.
 - **`tutor/`** whiteboard tutor (see §5).
@@ -112,6 +113,10 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 Streamline) before the repo is promoted.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-10 — conversation speed + goodbyes (D18):** streamed LLM → first-clause TTS, gapless speaker, persistent
+  Kokoro/whisper threads (Kokoro's 700 ms new-thread cost), early STT in the pause, Smart Turn re-checks, warm-up on
+  start/wake, instant acks + fillers, warm goodbyes. Web chat streams too. Simulated: ~0.85–1.0 s voice→first audio
+  (was ~2.3 s). `tests/speed_eval.py` 24/24. NOT verified: a real mic session (echo cancellation + barge-in mid-stream).
 - **2026-11-10 — free LLM providers (D17):** Tejmul added Groq/OpenRouter/Gemini keys. Researched 17 free providers,
   measured latency live (Groq Qwen3.8-27B ~190 ms first token). Router: per-provider `max_privacy`, Z.ai/Cloudflare/
   NVIDIA added, Gemini `models/` ID bug + dead OpenRouter model fixed, OpenRouter `data_collection: deny` on P1.
