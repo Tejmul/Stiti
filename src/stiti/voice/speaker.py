@@ -18,6 +18,7 @@ ACKS = {
     "mail": "Haan, mail check karti hoon.",
     "plan": "Okay, let me plan your day.",
     "tools": "Ek second, dekhti hoon.",
+    "web": "Ek sec, internet pe dekhti hoon.",
 }
 FILLERS = ["Hmm.", "Hmm, let me think.", "Achha…"]
 _END = object()
