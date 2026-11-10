@@ -31,4 +31,5 @@ run "crash course + any book"         tests/course_eval.py
 run "alarms, reminders, timers"       tests/alarms_eval.py
 run "live internet info"            tests/live_eval.py
 run "Hinglish voice (TTS)"          tests/hinglish_eval.py
+run "conversation basics"           tests/conversation_eval.py
 exit $fail
