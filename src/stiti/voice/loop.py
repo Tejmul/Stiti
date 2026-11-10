@@ -33,7 +33,7 @@ import numpy as np
 
 from . import endpoint, prosody, stt, turn, wake
 from .duplex import Duplex
-from .. import router
+from .. import overlay, router
 from ..brain.psych import StreamLint
 from .speaker import ACKS, FILLER_AFTER_S, FILLERS, Speaker
 from .tts import TTS, ClauseChunker, chime_audio, sentences, speakable
@@ -149,7 +149,12 @@ class VoiceLoop:
         if (self.silenced or _tutor_active()) and nudge:
             return
         print(f"Stiti: {text}")
+        shown = self.awake                         # on screen only while awake (asleep = nothing on screen)
+        if shown:
+            overlay.set_state("speaking")
         self._speak(sentences(speakable(text)), mood)
+        if shown and self.awake:
+            overlay.set_state("listening")
 
     def _speak(self, parts: list[str], mood: str):
         """Gapless: the next sentence is synthesised while the current one plays."""
@@ -171,6 +176,7 @@ class VoiceLoop:
 
     def deactivate(self):
         """Stop word: stop now, no words, stay silent until a wake phrase."""
+        overlay.set_state("hidden")
         if self.duplex is not None:
             self.duplex.stop_playback()
         self._resume = None
@@ -187,6 +193,7 @@ class VoiceLoop:
 
     def _handle(self, text: str, audio: np.ndarray | None, c: endpoint.Commit | None = None):
         self._wait_work()
+        overlay.set_state("thinking")
         voice = None
         if audio is not None:
             label, conf, _ = prosody.update_and_score(prosody.features(audio, SR, len(text.split())))
@@ -202,8 +209,16 @@ class VoiceLoop:
         pend = endpoint.Pending(text, committed_t=c.commit_t if c is not None else now,
                                speech_end_t=c.end_t if c is not None else now)
         finished = (c is None or c.state in (None, "finished")) and endpoint.text_state(text) != "wait"
+        def first_audio(t: float) -> None:
+            pend.first_audio_t = t
+            overlay.set_state("speaking")
+
         sp = Speaker(self, mood, filler_after=FILLER_AFTER_S if finished else 1e9,   # never "hmm" on a fragment/hold
-                     on_first_audio=lambda t: setattr(pend, "first_audio_t", t))
+                     on_first_audio=first_audio)
+
+        def on_ack(kind: str) -> None:                  # "Checking your calendar." + the pill says what she's doing
+            sp.ack(kind)
+            overlay.set_state("thinking", kind)
         # StreamLint() binds to the strategy engine.turn() picks for THIS turn (on the engine thread, at first piece)
         chunker, lint, result = ClauseChunker(), StreamLint(), {}
 
@@ -215,8 +230,9 @@ class VoiceLoop:
                     sp.add(piece)
 
         def work():
+            t_turn = time.time()
             try:
-                result["reply"] = self.engine.turn(text, voice_emotion=voice, on_delta=on_delta, on_ack=sp.ack)
+                result["reply"] = self.engine.turn(text, voice_emotion=voice, on_delta=on_delta, on_ack=on_ack)
                 if getattr(self.engine, "last_route", None) == "fast_path":
                     pend.action = getattr(self.engine, "last_action", None)
             except _Cancelled:
@@ -227,6 +243,9 @@ class VoiceLoop:
             try:
                 if pend.cancelled or result.get("cancelled"):
                     return
+                card = getattr(self.engine, "last_card", None)
+                if card and card.get("ts", 0) >= t_turn:   # this turn's card (a held turn keeps the old one)
+                    overlay.show_card(card)             # on screen while she starts saying it
                 if getattr(self.engine, "skip_turn", False) and not (result.get("reply") or "").strip():
                     result["skip"] = True               # "ek sec" / "let me think": he's thinking, say nothing
                     return
@@ -246,6 +265,8 @@ class VoiceLoop:
         th.start()
         left = sp.run()
         self.last_activity = time.time()
+        overlay.speech_ended()                          # the card's auto-dismiss clock starts now
+        overlay.set_state("listening" if self.awake else "hidden")
         if pend.first_audio_t is None and self.tt.pending is pend:
             self.tt.pending = None                      # nothing was said: nothing to join to
         if pend.cancelled:
@@ -314,6 +335,7 @@ class VoiceLoop:
         print("🎙️  Listening for “Stiti”, “Hi Stiti” or “Wake up baby girl”…  (stop her anytime: “shut up”, “bye”, “chalo”)")
         print(f"   echo cancellation {'ON — interrupt her anytime' if self.aec else 'OFF — half-duplex'}")
         threading.Thread(target=self._segmenter, args=(stop,), daemon=True).start()
+        overlay.set_click_handler(lambda: self._on_event(("stop",)))   # click the pill = stop her
         with Duplex(self._on_mic, aec=self.aec) as d:
             self.duplex = d
             self.tt.started_t = time.monotonic()
@@ -326,12 +348,14 @@ class VoiceLoop:
                 if (self.awake and now - self.last_activity > AWAKE_TIMEOUT_S and not d.playing
                         and not self.tt.busy):           # never fall asleep while he's mid-sentence
                     self.awake = False
+                    overlay.set_state("hidden")
                     self._chime(up=False)
                     print("💤 (sleeping — say “Hey Stiti” to wake me)")
                 if c is None or len(c.audio) < SR * 0.3:
                     continue
                 if _tutor_active():                     # a whiteboard lesson owns the mic right now
                     self.awake = False
+                    overlay.set_state("hidden")
                     continue
                 # one pass serves wake check + command; usually already done (started early in the pause)
                 res = self._result(c)
@@ -376,6 +400,7 @@ class VoiceLoop:
                     if not woke:
                         continue
                     self.awake, self.silenced, self.last_activity = True, False, now
+                    overlay.set_state("listening")      # "Hey Stiti" → the pill blooms in under the menu bar
                     router.warm()                       # reconnect to the LLM while the chime plays
                     self._chime(up=True)
                     if len(rest.split()) >= 2:   # "Hey Stiti, what are my todos" -> handle at once

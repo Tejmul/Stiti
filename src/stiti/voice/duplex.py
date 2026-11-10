@@ -10,6 +10,7 @@ drops the rest. Every play() gets an id and `done_id` says which pieces were ful
 """
 from __future__ import annotations
 
+import math
 import threading
 import time
 from collections import deque
@@ -17,6 +18,8 @@ from collections import deque
 import numpy as np
 import sounddevice as sd
 from livekit import rtc
+
+from ..overlay import level as _overlay_level
 
 RATE = 48000
 BLOCK = 480            # 10 ms — what the WebRTC APM expects
@@ -58,6 +61,8 @@ class Duplex:
         self.ended_at: float | None = None     # ... and when the last one ended
         self.drained = threading.Event()
         self.drained.set()
+        self.mic_rms = 0.0                # his AEC-cleaned voice / her voice, per 10 ms block (desktop overlay dots)
+        self.out_rms = 0.0
 
     # ---------- playback side ----------
     def play(self, audio: np.ndarray, sr: int) -> int:
@@ -152,6 +157,10 @@ class Duplex:
             mf = rtc.AudioFrame(_to_i16(mic), RATE, 1, BLOCK)
             self.apm.process_stream(mf)
             mic = np.frombuffer(mf.data, dtype=np.int16).astype(np.float32) / 32768.0
+        if frames:                                 # two dot products: no arrays allocated (overlay dots)
+            self.out_rms = math.sqrt(float(np.dot(out, out)) / frames)
+            self.mic_rms = math.sqrt(float(np.dot(mic, mic)) / len(mic)) if len(mic) else 0.0
+            _overlay_level(self.mic_rms, self.out_rms)
         self.on_mic(mic.reshape(-1, 3).mean(axis=1) if len(mic) % 3 == 0 else resample(mic, RATE, 16000))
 
     def __enter__(self):
