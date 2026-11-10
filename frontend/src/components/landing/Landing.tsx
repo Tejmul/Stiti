@@ -12,7 +12,7 @@ import { prefersReducedMotion } from "@/lib/stiti";
 import { createField } from "./particles";
 import { EXPO, OUT } from "./ease";
 import Cursor from "./Cursor";
-import { Hero, Features, Day, Privacy, Faq, Footer } from "./Sections";
+import { Hero, SeeHer, Features, Day, Privacy, Faq, Footer } from "./Sections";
 
 export default function Landing() {
   const rootRef = useRef<HTMLDivElement>(null);
@@ -81,16 +81,8 @@ export default function Landing() {
       scrollToEl(el);
     }, { capture: true });
 
-    // the sphere sits behind the product shot as an ambient halo (and follows it while the hero scrolls)
-    const shot = $(".shot");
-    const anchorField = () => {
-      const r = shot.getBoundingClientRect();
-      const stacked = innerWidth <= 900;            // copy above the shot: keep the halo off the text
-      const rad = MOBILE ? r.width * .6 : Math.min(r.width * (stacked ? .4 : .48), innerHeight * .42);
-      field.anchor(r.left + r.width / 2, r.top + r.height * .46, rad);
-    };
-    anchorField();
-    on(window, "resize", anchorField);
+    // the neural sphere sits in its own place on the hero's right (owner liked it there); the Mac shot lives
+    // further down in "See her at work", without particles
 
     let alive = true;
     const ctx = gsap.context(() => {
@@ -103,22 +95,19 @@ export default function Landing() {
         gsap.set(label, { opacity: 0, y: 20 });
         lines.forEach((ws) => gsap.set(ws, { yPercent: 110 }));
         gsap.set(rest, { opacity: 0, y: 24 });
-        gsap.set(shot, { opacity: 0, y: 40 });
 
         tl.to(label, { opacity: 1, y: 0, duration: .6 }, 0);
         lines.forEach((ws, i) => tl.to(ws, { yPercent: 0, duration: .9, stagger: .08, ease: OUT }, .1 + i * .18));
-        tl.to(shot, { opacity: 1, y: 0, duration: 1.2, clearProps: "transform" }, .35)
-          .to(rest, { opacity: 1, y: 0, duration: .9, stagger: .12, clearProps: "transform" }, .8);
+        tl.to(rest, { opacity: 1, y: 0, duration: .9, stagger: .12, clearProps: "transform" }, .8);
       }
 
       // -------------------------------------------------------------- particles: hero only
-      // as the hero scrolls out the sphere follows the shot and fades to nothing; the loop sleeps at 0
+      // as the hero scrolls out the sphere rises and fades to nothing; the loop sleeps at 0
       const hero = $("#hero"), cta = $(".hero__ctas .btn--primary");
       ScrollTrigger.create({
         trigger: hero, start: "top top", end: "bottom 30%",
-        onUpdate: (s) => { anchorField(); field.setFade(1 - s.progress); },
+        onUpdate: (s) => field.setFade(1 - s.progress),
         onLeave: () => field.setFade(0),
-        onRefresh: anchorField,
       });
       // a ripple through the dots from the hero CTA and from clicks inside the hero
       on(cta, "mouseenter", () => { const r = cta.getBoundingClientRect(); field.ripple(r.left + r.width / 2, r.top + r.height / 2); });
@@ -182,6 +171,7 @@ export default function Landing() {
       <Nav current="home" />
       <main id="main" tabIndex={-1}>
         <Hero />
+        <SeeHer />
         <Features />
         <Day />
         <Privacy />

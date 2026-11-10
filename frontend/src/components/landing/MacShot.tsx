@@ -46,7 +46,9 @@ function Paper() {
   );
 }
 
-export default function MacShot() {
+/** `once`: play the conversation one time when it scrolls into view, then stay on the finished exchange
+ *  (below the hero the page is still — owner rule). */
+export default function MacShot({ once = false }: { once?: boolean }) {
   const [state, setState] = useState<State>("idle");
   const [shown, setShown] = useState(0);
   const [resetting, setResetting] = useState(false);
@@ -84,6 +86,7 @@ export default function MacShot() {
           if (n >= 0) setShown(n);
           await wait(ms);
         }
+        if (once) return;                   // stays on the last exchange
         setResetting(true);                 // the finished conversation fades out together
         await wait(700);
         if (!alive) return;
@@ -91,7 +94,7 @@ export default function MacShot() {
       }
     })();
     return () => { alive = false; clearTimeout(timer); io.disconnect(); };
-  }, []);
+  }, [once]);
 
   // keep the newest visible bubble at the bottom of the caption area; older ones slide up under the top fade
   useLayoutEffect(() => {
