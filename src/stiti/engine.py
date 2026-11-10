@@ -598,9 +598,9 @@ class Engine:
         if reply is None:
             # voice: the LLM also says whether he had finished (● ◐ ○). Not on the web, not for tools, not for a
             # question, and not twice in a row (a weak model that always says ◐ must never silence her)
+            tools_turn = live_job is None and live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))
             markers = (self.channel == "voice" and on_delta is not None and not text.rstrip().endswith("?")
-                       and time.time() - self.incomplete_at > 30 and not (
-                           live_job is None and live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))))
+                       and time.time() - self.incomplete_at > 30 and not tools_turn)
             brief, brief_tokens = compiler.build(
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=recent, memories=mems, facts=facts, lessons=les,
