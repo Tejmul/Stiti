@@ -61,6 +61,16 @@ def detect(transcript: str) -> tuple[bool, str]:
     return False, ""
 
 
+# stop words that are a goodbye (she says bye back) vs a hush (she goes quiet at once, no words)
+HUSH = re.compile(r"^(shut up|chup|chup karo|chup ho jao|bas|bas karo|bas bas|stop|stop it|band karo|leave it|"
+                  r"rehne do|okay|ok)( stiti)?$", re.I)
+
+
+def is_goodbye(transcript: str) -> bool:
+    """'bye', 'chalo bye', 'good night', 'so jao', 'bye Stiti'… — but not 'shut up' / 'stop'."""
+    return is_sleep(transcript) and not HUSH.match(_norm(transcript)) and not re.search(r"chup", transcript, re.I)
+
+
 def is_sleep(transcript: str) -> bool:
     return bool(SLEEP_RX.search(transcript)) or is_stop(transcript)
 
