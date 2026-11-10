@@ -257,7 +257,7 @@ export function Faq() {
 // ------------------------------------------------------------------ footer
 export function Footer() {
   return (
-    <footer className="foot">
+    <footer className="foot" id="demo">
       <div className="container foot__cta">
         <p className="label" data-reveal>READY WHEN YOU ARE</p>
         <p className="foot__title"><span className="thin"><Split t="Say hi to" /></span> <b><Split t="Stiti." /></b></p>

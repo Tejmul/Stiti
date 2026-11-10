@@ -169,3 +169,12 @@ body.menu-open .nav { z-index: calc(var(--z-menu) + 1); }   /* keep the CLOSE bu
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
     transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* "Live demo · Soon" teaser in the nav (owner: replace the meaningless Chat link with a teaser) */
+.nav__soon { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 16px;
+  font-size: 16px; font-weight: 450; border-radius: 999px; white-space: nowrap; color: var(--ink); transition: background .3s var(--out); }
+.nav__soon:hover { background: rgba(255, 255, 255, .55); }
+.nav__soon-tag { display: inline-grid; place-items: center; height: 22px; padding: 0 8px; border-radius: 999px;
+  font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--white); background: var(--blue); }
+.menu__soon { font: 500 .3em var(--mono); letter-spacing: .12em; text-transform: uppercase; vertical-align: middle;
+  color: var(--white); background: var(--blue); padding: .5em .9em; border-radius: 999px; }
