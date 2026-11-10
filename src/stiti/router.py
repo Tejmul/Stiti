@@ -6,6 +6,7 @@ Model IDs are checked against each provider's /models list on first use.
 """
 from __future__ import annotations
 
+import re
 import time
 from dataclasses import dataclass
 
@@ -46,7 +47,9 @@ CHAINS = {
     "voice_fast": [("groq", "qwen/qwen3.8-27b"),                 # ~190 ms first token
                    ("groq", "openai/gpt-oss-120b"),               # ~510 ms
                    ("groq", "openai/gpt-oss-20b"),
-                   ("cerebras", "gpt-oss-120b"), ("cloudflare", "@cf/openai/gpt-oss-120b"),
+                   ("cerebras", "gpt-oss-120b"),
+                   ("cloudflare", "@cf/openai/gpt-oss-120b"),        # ~1 s with low reasoning; personal backup
+                   ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),  # 0.9–16 s (varies)
                    *NV_FAST,                                       # ~0.5 s, public questions only
                    ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),  # ~1–2.5 s
                    ("openrouter", "google/gemma-4-31b-it:free"), ("mistral", "mistral-small-latest"),
@@ -79,6 +82,20 @@ def is_free(p: str, model: str) -> bool:
     if p == "zai":
         return model in ZAI_FREE                 # exact list: e.g. glm-5.3-flash exists but is NOT free
     return p in PROVIDERS                         # others: free-tier accounts with no billing attached
+
+
+_HARMONY = re.compile(r"<\|[a-z_]+\|>")
+
+
+def _clean(text: str) -> str:
+    """gpt-oss on some hosts (Cloudflare) can leak its 'harmony' channel tokens, mostly when cut off mid-turn."""
+    if "<|" not in text:
+        return text
+    if "<|channel|>final<|message|>" in text:
+        text = text.rsplit("<|channel|>final<|message|>", 1)[1]
+    elif "<|channel|>" in text:
+        return ""                                  # only analysis/header tokens → treat as empty, try next provider
+    return _HARMONY.sub("", text).strip()
 
 
 class NoProvider(RuntimeError):
@@ -178,7 +195,7 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             continue
         kwargs = dict(model=model, messages=messages, max_tokens=max_tokens, temperature=temperature)
         extra = {}
-        if "gpt-oss" in model and p in ("groq", "cerebras", "openrouter"):
+        if "gpt-oss" in model and p in ("groq", "cerebras", "openrouter", "cloudflare"):
             extra["reasoning_effort"] = reasoning  # "low" for voice turns; avoid empty content
         if p == "zai":
             extra["thinking"] = {"type": "disabled"}  # GLM Flash: answer directly (thinking adds seconds)
@@ -209,7 +226,7 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             errors.append(f"{p}/{model}: {status or type(e).__name__}")
             continue
         msg = r.choices[0].message
-        text = (msg.content or "").strip()
+        text = _clean((msg.content or "").strip())
         calls = [{"id": c.id, "name": c.function.name, "arguments": c.function.arguments or "{}"}
                  for c in (msg.tool_calls or [])]
         u = r.usage
