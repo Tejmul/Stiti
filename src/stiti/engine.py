@@ -94,6 +94,7 @@ class Engine:
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
         self.ended = False                                  # text/Telegram: he said bye
         self.last_offer: tuple[str, float] | None = None   # ("intro", time) — what "turn this off" refers to
+        self.last_card: dict | None = None                  # on-screen card for the last turn (cards.py)
         self.clarify = None                                 # asking what he meant after "nahi/galat"
         self.last_action: dict | None = None                # last fast-path write (for undo)
         self.last_turn_id: int | None = None
@@ -438,6 +439,12 @@ class Engine:
         self.last_reply_text, self.last_user_text, self.last_route = reply, text, route
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
+        try:                                    # what to SHOW on screen while she says it (desktop overlay card)
+            from . import cards
+            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from)
+        except Exception as e:
+            print(f"[cards] {e}")
+            self.last_card = None
         self.last_user_ep, self.last_reply_ep, self.last_mood = user_ep, reply_ep, emo.label
         self.last_debug = {"domain": str(domain), "domain_conf": round(d.conf.get("domain", 0), 2), "mood": str(emo.label), "mood_conf": round(emo.conf, 2),
                            "privacy": privacy, "route": route, "provider": info.get("provider"),
