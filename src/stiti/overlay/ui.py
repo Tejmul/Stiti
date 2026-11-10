@@ -18,7 +18,7 @@ from PyObjCTools import AppHelper
 from . import model as M
 from .card import Card
 from .pill import Pill
-from .surface import Access, screen_anchor, screen_locked
+from .surface import Access, pointer_screen, screen_anchor, screen_key, screen_locked
 
 
 class _Target(NSObject):
@@ -54,10 +54,12 @@ class Overlay:
         self.on_click = on_click               # pill click while she thinks / speaks = stop her
         self.acc = Access.read()
         self.state = M.PillState()
-        self.smooth = M.LevelSmoother()
+        self.meters = {k: M.LevelMeter(**v) for k, v in M.METER.items()}
         self.src: str | None = None
         self.timer = None
         self.slow = None
+        self.follow = None                     # 400 ms: is the pointer on another display?
+        self.screen = None
         self.monitor = None
         self.dismiss: M.DismissTimer | None = None
         self.confirm: M.DismissTimer | None = None
@@ -66,6 +68,7 @@ class Overlay:
         self.ticks = 0                         # frames drawn (measurement)
         self._t_tick = _Target.alloc().initWithFn_(self._tick)
         self._t_slow = _Target.alloc().initWithFn_(self._slow)
+        self._t_follow = _Target.alloc().initWithFn_(self._follow)
         self._t_a11y = _Target.alloc().initWithFn_(self._a11y_changed)
         AppKit.NSWorkspace.sharedWorkspace().notificationCenter().addObserver_selector_name_object_(
             self._t_a11y, "fire:", AppKit.NSWorkspaceAccessibilityDisplayOptionsDidChangeNotification, None)
@@ -92,6 +95,7 @@ class Overlay:
             return
         if tr.hide:
             self._stop_timer()
+            self._stop_follow()
             self.pill.hide()
             self.hide_card()
             self._end_confirm(collapse=False)
@@ -100,7 +104,10 @@ class Overlay:
             if self.respect_lock and screen_locked():
                 self.state.state = "hidden"    # nothing on screen while the Mac is locked; retried next state
                 return
-            self.pill.show(screen_anchor())
+            scr = pointer_screen()             # the display he is using right now
+            self.screen = screen_key(scr)
+            self.pill.show(screen_anchor(scr))
+            self._start_follow()
         self.pill.set_look(tr.look)
         if self.confirm is None:               # a ✓ confirmation owns the wide pill until it times out
             lbl = M.doing_label(tr.detail)
@@ -110,7 +117,8 @@ class Overlay:
                 self.pill.collapse()
         if tr.look.source != self.src:
             self.src = tr.look.source
-            self.smooth.reset()
+            if self.src in self.meters:
+                self.meters[self.src].reset()
         if tr.look.timer:
             self._start_timer()
         else:
@@ -132,8 +140,9 @@ class Overlay:
 
     def _tick(self) -> None:
         self.ticks += 1
-        rms = self.lv[0] if self.src == "mic" else self.lv[1] if self.src == "out" else 0.0
-        self.pill.set_level(self.smooth.step(rms))
+        m = self.meters.get(self.src)
+        if m is not None:
+            self.pill.set_level(m.step(self.lv[0] if self.src == "mic" else self.lv[1], time.monotonic()))
         if self.state.state == "listening":    # pointer over the click-through pill → it fades out of the way
             self.pill.set_dim(self.pill.contains_pointer())
 
@@ -158,7 +167,7 @@ class Overlay:
             return
         if self.respect_lock and screen_locked():
             return
-        anchor = self.pill.anchor if self.pill.visible and self.pill.anchor else screen_anchor()
+        anchor = self.pill.anchor if self.pill.visible and self.pill.anchor else screen_anchor(pointer_screen())
         self.card.show(lay, anchor)
         self.dismiss = M.DismissTimer(kind, lay.n, now, speaking)
         if self.monitor is None:               # click anywhere else closes it (mouse monitors need no permission)
@@ -246,6 +255,32 @@ class Overlay:
             self._end_confirm()
         self._maybe_stop_slow()
 
+    # ---------------------------------------------------------------- follow the pointer's display
+    def _start_follow(self) -> None:
+        if self.follow is None and len(AppKit.NSScreen.screens() or []) > 1:   # one display: nothing to follow
+            t = NSTimer.timerWithTimeInterval_target_selector_userInfo_repeats_(M.FOLLOW_S, self._t_follow, "fire:",
+                                                                                 None, True)
+            t.setTolerance_(0.1)
+            NSRunLoop.currentRunLoop().addTimer_forMode_(t, NSRunLoopCommonModes)
+            self.follow = t
+
+    def _stop_follow(self) -> None:
+        if self.follow is not None:
+            self.follow.invalidate()
+            self.follow = None
+
+    def _follow(self) -> None:
+        if not self.pill.visible:
+            self._stop_follow()
+            return
+        scr = pointer_screen()
+        key = screen_key(scr)
+        if key != self.screen:                 # he moved to another display: fade over there
+            self.screen = key
+            anchor = screen_anchor(scr)
+            self.pill.move(anchor)
+            self.card.move(anchor)
+
     # ---------------------------------------------------------------- pill click, settings, lifecycle
     def _pill_clicked(self) -> None:
         if self.state.state in ("thinking", "speaking") and self.on_click is not None:
@@ -274,6 +309,7 @@ class Overlay:
 
     def shutdown(self) -> None:
         self._stop_timer()
+        self._stop_follow()
         self.hide_card()
         self.confirm = None
         self._maybe_stop_slow()

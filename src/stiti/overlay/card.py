@@ -48,6 +48,14 @@ class _CardView(AppKit.NSView):
     def acceptsFirstMouse_(self, event):
         return True
 
+    def hitTest_(self, point):              # the rounded card only, not its transparent corners
+        hit = objc.super(_CardView, self).hitTest_(point)
+        if hit is None:
+            return None
+        p = self.convertPoint_fromView_(point, self.superview())
+        b = self.bounds().size
+        return hit if M.in_round_rect(p.x, p.y, b.width, b.height, RADIUS) else None
+
     def mouseEntered_(self, event):
         cb = getattr(self, "on_hover", None)
         if cb is not None:
@@ -98,6 +106,7 @@ class Card:
         self.visible = False
         self.gen = 0
         self.lay: M.CardLayout | None = None
+        self.anchor = None
         self.rows: list[dict] = []           # per row: view, icon, text, meta
 
     def frame_for(self, lay: M.CardLayout, anchor):
@@ -107,7 +116,7 @@ class Card:
 
     def show(self, lay: M.CardLayout, anchor) -> None:
         self.gen += 1
-        self.lay = lay
+        self.lay, self.anchor = lay, anchor
         self._build(lay)
         (x, y), (w, h) = self.frame_for(lay, anchor)
         if self.visible:                     # a new turn replaces the card in place (no stacking, no history)
@@ -125,6 +134,21 @@ class Card:
             self.panel.setFrame_display_(((x, y + 10), (w, h)), True)
             self.panel.orderFrontRegardless()
             animate_frame(self.panel, ((x, y), (w, h)), 1.0, 0.32, out_ease())
+
+    def move(self, anchor) -> None:
+        """Follow the pill to another display (fade, jump, fade in)."""
+        if not self.visible or self.lay is None or anchor == self.anchor:
+            return
+        self.anchor = anchor
+        self.gen += 1
+        g = self.gen
+        fade(self.panel, 0.0, M.STATE_S)
+
+        def land():
+            if g == self.gen and self.visible:
+                self.panel.setFrame_display_(self.frame_for(self.lay, anchor), True)
+                fade(self.panel, 1.0, 0.2)
+        AppHelper.callLater(M.STATE_S + 0.02, land)
 
     def hide(self) -> None:
         if not self.visible:

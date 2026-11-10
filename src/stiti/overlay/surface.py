@@ -7,6 +7,7 @@ Main thread only. Gotchas from the research prototypes (docs/research/desktop_ov
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 
 import AppKit
@@ -41,13 +42,21 @@ class Access:
                    bool(pi.isLowPowerModeEnabled()) if hasattr(pi, "isLowPowerModeEnabled") else False)
 
 
+def panel_level() -> int:
+    """Status-bar level (25) by default. STITI_OVERLAY_LEVEL=screensaver uses 1000, Wispr Flow's choice, in case
+    status level ends up under full-screen video (untested with a display on, see D26)."""
+    if os.getenv("STITI_OVERLAY_LEVEL", "status") == "screensaver":
+        return AppKit.NSScreenSaverWindowLevel
+    return AppKit.NSStatusWindowLevel
+
+
 def make_panel(cls, w: float, h: float):
     """A borderless, non-activating panel at status-bar level that floats over every Space and full-screen app."""
     p = cls.alloc().initWithContentRect_styleMask_backing_defer_(
         ((0, 0), (w, h)), AppKit.NSWindowStyleMaskBorderless | AppKit.NSWindowStyleMaskNonactivatingPanel,
         AppKit.NSBackingStoreBuffered, False)
     p.setFloatingPanel_(True)                        # resets the level to 3 (floating) …
-    p.setLevel_(AppKit.NSStatusWindowLevel)          # … so status level (25) goes AFTER it
+    p.setLevel_(panel_level())                       # … so our level goes AFTER it
     p.setCollectionBehavior_(AppKit.NSWindowCollectionBehaviorCanJoinAllSpaces
                              | AppKit.NSWindowCollectionBehaviorFullScreenAuxiliary
                              | AppKit.NSWindowCollectionBehaviorStationary
@@ -174,8 +183,16 @@ def animate_frame(window, frame, alpha: float | None, secs: float, timing=None) 
 OUT_EASE = (0.16, 1.0, 0.3, 1.0)                     # the web's --out token
 
 
+def ease(points=OUT_EASE):
+    return Quartz.CAMediaTimingFunction.functionWithControlPoints____(*points)
+
+
 def out_ease():
-    return Quartz.CAMediaTimingFunction.functionWithControlPoints____(*OUT_EASE)
+    return ease(OUT_EASE)
+
+
+def state_ease():                                    # 100 ms state transitions
+    return ease(M.STATE_EASE)
 
 
 def frame_rate(anim, fps: float) -> None:
@@ -183,9 +200,24 @@ def frame_rate(anim, fps: float) -> None:
         anim.setPreferredFrameRateRange_(Quartz.CAFrameRateRangeMake(min(15.0, fps), fps, fps))
 
 
-def screen_anchor() -> tuple[float, float]:
-    """(centre x, top y) for the pill on the screen he's using: under the menu bar, or hugging a notch."""
-    s = AppKit.NSScreen.mainScreen() or AppKit.NSScreen.screens()[0]
+def pointer_screen():
+    """The display the mouse pointer is on (or nearest to): the pill follows him across displays."""
+    screens = list(AppKit.NSScreen.screens() or [])
+    if not screens:
+        return AppKit.NSScreen.mainScreen()
+    p = AppKit.NSEvent.mouseLocation()
+    frames = [(f.origin.x, f.origin.y, f.size.width, f.size.height) for f in (s.frame() for s in screens)]
+    return screens[M.screen_index(frames, (p.x, p.y))]
+
+
+def screen_key(s) -> tuple:
+    f = s.frame()
+    return (f.origin.x, f.origin.y, f.size.width, f.size.height)
+
+
+def screen_anchor(s=None) -> tuple[float, float]:
+    """(centre x, top y) for the pill on a screen: under the menu bar, or hugging a notch."""
+    s = s or pointer_screen()
     f, vf = s.frame(), s.visibleFrame()
     inset = s.safeAreaInsets().top if hasattr(s, "safeAreaInsets") else 0
     if inset and inset > 0:

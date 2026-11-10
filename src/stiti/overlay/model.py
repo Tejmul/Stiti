@@ -39,14 +39,14 @@ class Look:
     visible: bool
     timer: bool            # needs the 30 Hz level timer (mic / voice reactive)
     source: str | None     # "mic" | "out" | None: which level drives the dots
-    anim: str | None       # render-server animation: "breathe" | "wave" | None
+    anim: str | None       # render-server animation: "shimmer" | "wave" | None
     click_through: bool    # True: clicks pass to the window underneath
 
 
 LOOKS = {
     "hidden": Look(False, False, None, None, True),
-    "idle": Look(True, False, None, "breathe", True),
-    "listening": Look(True, True, "mic", "breathe", True),
+    "idle": Look(True, False, None, "shimmer", True),
+    "listening": Look(True, True, "mic", "shimmer", True),
     "thinking": Look(True, False, None, "wave", False),     # click = stop her (detail → "Checking calendar")
     "speaking": Look(True, True, "out", None, False),       # click = stop her
 }
@@ -91,42 +91,111 @@ def doing_label(kind: str | None) -> tuple[str, str] | None:
     return DOING_LABELS.get(kind or "")
 
 
-# ---------------------------------------------------------------- level smoothing
-class LevelSmoother:
-    """RMS → 0..1 dot swell with a fast attack and slow release (no allocations: floats only).
+# ---------------------------------------------------------------- level meter (Wispr Flow's level path, our numbers)
+class LevelMeter:
+    """RMS (per 40 ms block) → 0..1 dot swell. Behaviour learnt from Wispr Flow's bar (docs/research/re_wispr_flow.md §1):
+    dBFS → adaptive floor (starts −60 dB, follows the quietest level heard, creeps up slowly) with a 20 dB range →
+    150 ms average → frame-rate-independent smoothing 0.85^(dt/16.7 ms) → slew limit 1.6/s → 0.01 steps.
+    Floats + a tiny window only; called from the 30 Hz main-thread tick, never from the audio callback."""
 
-    rms of AEC-cleaned speech is ~0.01–0.1; a noise gate keeps fans/room tone from wobbling the dots."""
+    RANGE_DB, AVG_S, POLE, POLE_DT, SLEW, RISE_DB_S = 20.0, 0.15, 0.85, 1 / 60, 1.6, 0.5
 
-    def __init__(self, gain: float = 9.0, floor: float = 0.004, attack: float = 0.35, release: float = 0.12):
-        self.gain, self.floor, self.attack, self.release = gain, floor, attack, release
-        self.value = 0.0
-
-    def target(self, rms: float) -> float:
-        if not rms > self.floor:                       # also catches NaN
-            return 0.0
-        return min(1.0, math.sqrt((rms - self.floor) * self.gain))    # sqrt: quiet speech still shows
-
-    def step(self, rms: float) -> float:
-        t = self.target(rms)
-        k = self.attack if t > self.value else self.release
-        self.value += (t - self.value) * k
-        if self.value < 1e-3:
-            self.value = 0.0
-        return self.value
+    def __init__(self, floor_min: float = -75.0, floor_max: float = -35.0, floor0: float = -60.0):
+        self.floor_min, self.floor_max, self.floor0 = floor_min, floor_max, floor0
+        self.reset()
 
     def reset(self) -> None:
+        self.floor = min(self.floor_max, max(self.floor_min, self.floor0))
         self.value = 0.0
+        self._win: list[tuple[float, float]] = []
+        self._t: float | None = None
+
+    @staticmethod
+    def db(rms: float) -> float:
+        return 20.0 * math.log10(rms + 1e-10) if rms > 0 else -200.0      # NaN / negative → silence
+
+    def target(self, rms: float) -> float:
+        return min(1.0, max(0.0, (self.db(rms) - self.floor) / self.RANGE_DB))
+
+    def step(self, rms: float, now: float) -> float:
+        dt = 1 / 30 if self._t is None else min(0.25, max(0.0, now - self._t))
+        self._t = now
+        d = self.db(rms)
+        if d < self.floor:                                   # the quietest level heard is the floor …
+            self.floor = max(self.floor_min, d)
+        else:                                                # … which creeps up slowly in a noisier room
+            self.floor = min(self.floor_max, self.floor + self.RISE_DB_S * dt, d)
+        self._win.append((now, self.target(rms)))
+        while self._win and self._win[0][0] < now - self.AVG_S:
+            self._win.pop(0)
+        tgt = sum(v for _, v in self._win) / len(self._win)
+        a = self.POLE ** (dt / self.POLE_DT)
+        v = self.value * a + tgt * (1 - a)
+        lim = self.SLEW * dt
+        v = self.value + max(-lim, min(lim, v - self.value))
+        v = tgt if abs(v - tgt) < 0.01 else round(v, 2)      # 0.01 steps, and it really reaches 0 (timer can idle)
+        self.value = v
+        return v
+
+
+METER = {"mic": dict(floor_min=-75.0, floor_max=-35.0),      # his AEC-cleaned mic: room noise is the floor
+         "out": dict(floor_min=-40.0, floor_max=-25.0)}      # her TTS is digital silence between words
+
+
+def bulge(i: int, n: int = N_DOTS) -> float:
+    """Centre-bulge weight 1 − d²/48 (Wispr's 10 bars), d stretched so our 7 dots fall off like their 10."""
+    d = abs(i - (n - 1) / 2) * (4.5 / ((n - 1) / 2))
+    return 1.0 - d * d / 48.0
 
 
 def dot_scales(level: float, n: int = N_DOTS, gain: float = 1.2) -> list[float]:
     """Round dots swell evenly (bars would squash the caps), the middle ones most."""
-    mid = (n - 1) / 2
-    return [1.0 + level * gain * (1.0 - abs(i - mid) / n) for i in range(n)]
+    return [1.0 + level * gain * bulge(i, n) for i in range(n)]
+
+
+SHIMMER_KEYS = [1.0, 1.2, 1.5, 1.1, 1.3, 1.0]                # idle shimmer, 1 s loop
+SHIMMER_TIMES = [0.0, 0.2, 0.4, 0.8, 0.9, 1.0]
+SHIMMER_STAGGER = 0.1                                        # s per dot, from the centre outward
+
+
+def shimmer(i: int, n: int = N_DOTS) -> tuple[list[float], float]:
+    """Keyframe scales for dot i (bulge-weighted) and its start delay."""
+    w = bulge(i, n)
+    return [1.0 + (k - 1.0) * w for k in SHIMMER_KEYS], SHIMMER_STAGGER * abs(i - (n - 1) / 2)
+
+
+STATE_S, STATE_EASE = 0.1, (0.05, 0.6, 0.4, 0.95)           # state transitions (Flow's default morph)
+MORPH_S, MORPH_EASE = 0.25, (0.4, 0.0, 0.2, 1.0)             # larger morphs (pill width)
 
 
 def changed(a: float, b: float, eps: float = 0.01) -> bool:
     """Skip a Core Animation commit when the swell moved less than this (WindowServer cost)."""
     return abs(a - b) >= eps
+
+
+# ---------------------------------------------------------------- shapes + displays (pure geometry)
+def in_round_rect(x: float, y: float, w: float, h: float, r: float) -> bool:
+    """Point inside a rounded rect (the pill capsule / card). Outside = transparent corner = not ours."""
+    if not (0 <= x <= w and 0 <= y <= h):
+        return False
+    r = min(r, w / 2, h / 2)
+    cx, cy = min(max(x, r), w - r), min(max(y, r), h - r)
+    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r + 1e-6
+
+
+def screen_index(frames: list[tuple[float, float, float, float]], p: tuple[float, float]) -> int:
+    """The display under the pointer, else the nearest one (frames as x, y, w, h)."""
+    best, bd = 0, float("inf")
+    for i, (x, y, w, h) in enumerate(frames):
+        dx = max(x - p[0], 0.0, p[0] - (x + w))
+        dy = max(y - p[1], 0.0, p[1] - (y + h))
+        d = dx * dx + dy * dy
+        if d < bd:
+            best, bd = i, d
+    return best
+
+
+FOLLOW_S = 0.4                                               # re-check the pointer's display while visible
 
 
 # ---------------------------------------------------------------- pill width (doing / confirmation)

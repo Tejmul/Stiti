@@ -63,28 +63,77 @@ check("click-through while idle / listening (never eats a menu-bar click)",
 check("doing labels for every on_ack kind", all(M.doing_label(k) for k in ("calendar", "mail", "plan", "tools", "web"))
       and M.doing_label("weird") is None and M.doing_label(None) is None)
 
-# ================================================================ 2. level smoothing
-print("level smoothing")
-sm = M.LevelSmoother()
-check("silence → 0", sm.step(0.0) == 0.0 and sm.target(0.003) == 0.0)
-check("NaN / negative never crash or swell", sm.target(float("nan")) == 0.0 and sm.target(-1.0) == 0.0)
-check("loud speech saturates at 1", sm.target(0.5) == 1.0)
-check("quiet speech still shows (sqrt curve)", sm.target(0.02) > 0.3, f"{sm.target(0.02):.2f}")
-sm.reset()
-up = [sm.step(0.06) for _ in range(5)]
-check("attack 0.35: ~85 % of the target within 5 frames (~170 ms)", up[0] > 0.2 and up[-1] > 0.85 * sm.target(0.06),
-      f"{up}")
-peak = sm.value
-down = sm.step(0.0)
-check("release is slower than attack", peak - down < up[0], f"fell {peak - down:.2f} vs rose {up[0]:.2f}")
-for _ in range(80):
-    sm.step(0.0)
-check("decays to exactly 0 (no endless tiny commits)", sm.value == 0.0)
-check("bounded 0..1 for any input", all(0.0 <= M.LevelSmoother().step(x) <= 1.0 for x in (0, 1e-9, 0.01, 0.1, 5, 1e9)))
+# ================================================================ 2. level meter (Wispr Flow's level path)
+print("level meter")
+lm = M.LevelMeter(**M.METER["mic"])
+check("dBFS: 0.1 rms = -20 dB, silence / NaN / negative = -200", abs(lm.db(0.1) + 20) < 1e-6
+      and lm.db(0.0) == -200 and lm.db(float("nan")) == -200 and lm.db(-1) == -200)
+check("floor starts at -60 dB with a 20 dB range", lm.floor == -60 and lm.target(0.01) == 1.0
+      and abs(lm.target(10 ** (-50 / 20)) - 0.5) < 1e-6 and lm.target(10 ** (-65 / 20)) == 0.0)
+t = 0.0
+for _ in range(30):
+    t += 1 / 30
+    lm.step(10 ** (-68 / 20), t)                   # quiet room
+check("floor follows the quietest level heard", abs(lm.floor + 68) < 1e-3 and lm.value == 0.0, f"{lm.floor:.1f}")
+for _ in range(60):
+    t += 1 / 30
+    lm.step(10 ** (-68 / 20), t)
+check("a steady room keeps a steady floor", abs(lm.floor + 68) < 1e-3, f"{lm.floor}")
+for _ in range(60):
+    t += 1 / 30
+    lm.step(0.05, t)                                # 2 s of speech
+check("…which creeps up only slowly while he talks (0.5 dB/s)", -67.1 < lm.floor < -66.9, f"{lm.floor:.2f}")
+lm2 = M.LevelMeter(floor_min=-75, floor_max=-35)
+for _ in range(10):
+    lm2.step(1e-9, 0.0)
+check("floor is clamped (AEC digital silence can't push it to -200)", lm2.floor == -75)
+lm = M.LevelMeter(**M.METER["mic"])
+vals, t = [], 0.0
+for _ in range(15):
+    t += 1 / 30
+    vals.append(lm.step(0.05, t))                   # loud speech
+steps = [b - a for a, b in zip([0.0] + vals, vals)]
+check("slew limit: rises ≤ 1.6/s (≈0.053 per 30 fps frame)", max(steps) <= 1.6 / 30 + 0.011, f"{max(steps):.3f}")
+check("rises steadily toward 1 while he talks", vals[-1] > 0.6 and all(b >= a for a, b in zip(vals, vals[1:])), f"{vals}")
+for _ in range(90):
+    t += 1 / 30
+    lm.step(0.0, t)
+check("returns to exactly 0 in silence (the timer can idle)", lm.value == 0.0)
+la, lb = M.LevelMeter(**M.METER["mic"]), M.LevelMeter(**M.METER["mic"])
+ta = tb = 0.0
+la.step(0.02, 0.0)
+lb.step(0.02, 0.0)
+for _ in range(12):
+    ta += 1 / 60
+    la.step(0.02, ta)
+for _ in range(6):
+    tb += 1 / 30
+    lb.step(0.02, tb)
+check("frame-rate independent smoothing (60 vs 30 fps ≈ same)", abs(la.value - lb.value) <= 0.06,
+      f"{la.value} vs {lb.value}")
+check("output always 0..1 in 0.01 steps", all(0 <= v <= 1 and abs(v * 100 - round(v * 100)) < 1e-6 for v in vals))
+check("her voice meter: floor stays within -40..-25 dB", M.METER["out"]["floor_min"] == -40)
 sc = M.dot_scales(1.0)
-check("dots: middle swells most, symmetric, 1.0 at rest",
-      sc[3] == max(sc) and sc[0] == sc[6] and sc[1] == sc[5] and M.dot_scales(0.0) == [1.0] * 7)
+check("dots: centre bulge 1 − d²/48, symmetric, 1.0 at rest",
+      sc[3] == max(sc) and sc[0] == sc[6] and sc[1] == sc[5] and M.dot_scales(0.0) == [1.0] * 7
+      and M.bulge(3) == 1.0 and abs(M.bulge(0) - (1 - 4.5 ** 2 / 48)) < 1e-9)
+keys, delay = M.shimmer(3)
+k0, d0 = M.shimmer(0)
+check("shimmer: 1 s keyframes ×1→1.2→1.5→1.1→1.3→1, 0.1 s per dot from the centre",
+      keys == M.SHIMMER_KEYS and delay == 0.0 and abs(d0 - 0.3) < 1e-9 and max(k0) < 1.5 and k0[0] == k0[-1] == 1.0
+      and M.SHIMMER_TIMES == [0.0, 0.2, 0.4, 0.8, 0.9, 1.0])
+check("state transitions 100 ms on Flow's curve", M.STATE_S == 0.1 and M.STATE_EASE == (0.05, 0.6, 0.4, 0.95))
 check("commit only when the swell moved", not M.changed(1.0, 1.005) and M.changed(1.0, 1.02))
+
+print("shapes + displays")
+check("capsule hit-test: centre in, corners out", M.in_round_rect(84, 20, 168, 40, 20)
+      and not M.in_round_rect(1, 1, 168, 40, 20) and not M.in_round_rect(167, 39, 168, 40, 20)
+      and M.in_round_rect(20, 1, 168, 40, 20) and not M.in_round_rect(-1, 20, 168, 40, 20))
+check("card hit-test: rounded corners out", M.in_round_rect(180, 140, 360, 280, 18) and not M.in_round_rect(2, 2, 360, 280, 18))
+FR = [(0, 0, 1440, 900), (1440, 0, 1920, 1080)]
+check("pointer's display, else the nearest one", M.screen_index(FR, (100, 100)) == 0
+      and M.screen_index(FR, (2000, 500)) == 1 and M.screen_index(FR, (5000, 500)) == 1
+      and M.screen_index(FR, (-50, 10)) == 0 and M.FOLLOW_S == 0.4)
 
 # ================================================================ 3. card layout
 print("card layout")
@@ -191,14 +240,24 @@ dx._init_playback()
 dx.on_mic = lambda x: None
 tone = (0.2 * np.sin(np.arange(4800) / 48000 * 2 * math.pi * 220)).astype(np.float32)
 dx.play(tone, 48000)
-frames = 300                                   # != BLOCK: skips the APM (no sound device / livekit needed)
+frames = 320                                   # != BLOCK: skips the APM (no sound device / livekit needed)
 mic_in = np.full((frames, 1), 0.05, np.float32)
+outs = []
+overlay.level(0.0, 0.0)
+for k in range(5):                             # 1,600 samples < 40 ms: nothing published yet
+    out_buf = np.zeros((frames, 1), np.float32)
+    dx._cb(mic_in, out_buf, frames, None, None)
+    outs.append(out_buf[:, 0].copy())
+check("levels wait for a full 40 ms block", overlay._lv == [0.0, 0.0] and dx._lv_n == 1600)
 out_buf = np.zeros((frames, 1), np.float32)
 dx._cb(mic_in, out_buf, frames, None, None)
-want_out = float(np.sqrt(np.mean(out_buf[:, 0] ** 2)))
-check("out RMS = her voice level", abs(dx.out_rms - want_out) < 1e-5 and dx.out_rms > 0.1, f"{dx.out_rms:.4f}")
+outs.append(out_buf[:, 0].copy())
+allout = np.concatenate(outs)
+want_out = float(np.sqrt(np.mean(allout ** 2)))
+check("out RMS over the 40 ms block = her voice level", abs(dx.out_rms - want_out) < 1e-5 and dx.out_rms > 0.1,
+      f"{dx.out_rms:.4f} vs {want_out:.4f}")
 check("mic RMS = his (cleaned) voice level", abs(dx.mic_rms - 0.05) < 1e-4, f"{dx.mic_rms:.4f}")
-check("published to the overlay", overlay._lv == [dx.mic_rms, dx.out_rms])
+check("published to the overlay, block restarted", overlay._lv == [dx.mic_rms, dx.out_rms] and dx._lv_n == 0)
 dx._cb(np.zeros((0, 1), np.float32), np.zeros((0, 1), np.float32), 0, None, None)
 check("an empty block doesn't divide by zero", True)
 
