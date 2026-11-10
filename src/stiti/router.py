@@ -9,6 +9,9 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
+from typing import Iterator
+
+import httpx
 
 from openai import OpenAI
 
@@ -117,7 +120,9 @@ def _client(p: str) -> OpenAI | None:
             if not account:
                 return None
             url = url.format(account=account)
-        _clients[p] = OpenAI(api_key=key, base_url=url, timeout=20, max_retries=0)
+        # keep TLS connections alive between turns (httpx default drops them after 5 s idle)
+        http = httpx.Client(timeout=20, limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=300))
+        _clients[p] = OpenAI(api_key=key, base_url=url, timeout=20, max_retries=0, http_client=http)
     return _clients[p]
 
 
@@ -172,17 +177,14 @@ def _record(p: str, model: str, tin: int, tout: int, err: str | None = None, coo
        "tt": tin + tout, "cd": cooldown_s, "e": err})
 
 
-def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1,
-             max_tokens: int = 400, temperature: float = 0.6, json_mode: bool = False,
-             tools: list[dict] | None = None, schema: dict | None = None, schema_name: str = "out",
-             reasoning: str = "low") -> dict:
-    """Returns {text, provider, model, ms, tokens_in, tokens_out}. Raises NoProvider if all fail."""
+def _attempts(messages, route, privacy, max_tokens, temperature, json_mode, tools, schema, schema_name,
+              reasoning, errors):
+    """Yield (provider, model, client, kwargs, est) for each usable chain entry, in order."""
     if privacy >= 2:
         raise NoProvider("P2: sensitive content never leaves the Mac")
     chain = [(p, m) for p, m in dict.fromkeys(list(CHAINS[route]) + P0_EXTRA)   # de-dup, keep order
              if PROVIDERS[p].max_privacy >= privacy and is_free(p, m)]
     est = sum(len(str(m.get("content") or "")) for m in messages) // 4 + max_tokens + (300 if tools else 0)
-    errors = []
     for p, model in chain:
         cli = _client(p)
         if cli is None:
@@ -210,20 +212,35 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
             kwargs["response_format"] = {"type": "json_object"}
         if tools:
             kwargs["tools"], kwargs["tool_choice"] = tools, "auto"
+        yield p, model, cli, kwargs, est
+
+
+def _failed(p: str, model: str, e: Exception, errors: list[str]) -> None:
+    status = getattr(e, "status_code", None)
+    retry = 60.0
+    hdrs = getattr(getattr(e, "response", None), "headers", {}) or {}
+    if hdrs.get("retry-after"):
+        try:
+            retry = float(hdrs["retry-after"])
+        except ValueError:
+            pass
+    _record(p, model, 0, 0, f"{status}: {str(e)[:200]}", cooldown_s=retry if status == 429 else 0)
+    errors.append(f"{p}/{model}: {status or type(e).__name__}")
+
+
+def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1,
+             max_tokens: int = 400, temperature: float = 0.6, json_mode: bool = False,
+             tools: list[dict] | None = None, schema: dict | None = None, schema_name: str = "out",
+             reasoning: str = "low") -> dict:
+    """Returns {text, provider, model, ms, tokens_in, tokens_out}. Raises NoProvider if all fail."""
+    errors: list[str] = []
+    for p, model, cli, kwargs, est in _attempts(messages, route, privacy, max_tokens, temperature, json_mode,
+                                                tools, schema, schema_name, reasoning, errors):
         t = time.perf_counter()
         try:
             r = cli.chat.completions.create(**kwargs)
         except Exception as e:
-            status = getattr(e, "status_code", None)
-            retry = 60.0
-            hdrs = getattr(getattr(e, "response", None), "headers", {}) or {}
-            if hdrs.get("retry-after"):
-                try:
-                    retry = float(hdrs["retry-after"])
-                except ValueError:
-                    pass
-            _record(p, model, 0, 0, f"{status}: {str(e)[:200]}", cooldown_s=retry if status == 429 else 0)
-            errors.append(f"{p}/{model}: {status or type(e).__name__}")
+            _failed(p, model, e, errors)
             continue
         msg = r.choices[0].message
         text = _clean((msg.content or "").strip())
@@ -238,6 +255,63 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
         return {"text": text, "tool_calls": calls, "provider": p, "model": model,
                 "ms": (time.perf_counter() - t) * 1000, "tokens_in": tin, "tokens_out": tout}
     raise NoProvider("; ".join(errors) or "no API keys configured (.env)")
+
+
+def stream(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1, max_tokens: int = 400,
+           temperature: float = 0.6, reasoning: str = "low", info: dict | None = None) -> Iterator[str]:
+    """Yield reply text as it arrives (same chain, gates and fallbacks as complete()).
+
+    Falls back to the next provider only before the first token; a mid-stream drop keeps what was said.
+    `info` (if given) is filled with provider, model, first_ms, ms, text. Raises NoProvider if all fail.
+    """
+    info = info if info is not None else {}
+    errors: list[str] = []
+    for p, model, cli, kwargs, est in _attempts(messages, route, privacy, max_tokens, temperature, False,
+                                                None, None, "out", reasoning, errors):
+        t = time.perf_counter()
+        parts: list[str] = []
+        if p == "cloudflare":                      # its gpt-oss stream can carry channel tokens: take it whole
+            try:
+                r = cli.chat.completions.create(**kwargs)
+            except Exception as e:
+                _failed(p, model, e, errors)
+                continue
+            text = _clean((r.choices[0].message.content or "").strip())
+            if text:
+                parts.append(text)
+                info["first_ms"] = (time.perf_counter() - t) * 1000
+                yield text
+        else:
+            try:
+                for ch in cli.chat.completions.create(**kwargs, stream=True):
+                    d = ch.choices[0].delta.content if ch.choices else None
+                    if d:
+                        if not parts:
+                            info["first_ms"] = (time.perf_counter() - t) * 1000
+                        parts.append(d)
+                        yield d
+            except Exception as e:
+                if not parts:
+                    _failed(p, model, e, errors)
+                    continue
+                errors.append(f"{p}/{model}: dropped mid-reply ({type(e).__name__})")
+        text = "".join(parts).strip()
+        _record(p, model, est - max_tokens, len(text) // 4)
+        if not text:
+            errors.append(f"{p}/{model}: empty")
+            continue
+        info.update(text=text, provider=p, model=model, ms=(time.perf_counter() - t) * 1000,
+                    tokens_in=est - max_tokens, tokens_out=len(text) // 4)
+        return
+    raise NoProvider("; ".join(errors) or "no API keys configured (.env)")
+
+
+def warm() -> None:
+    """Open connections + fetch model lists now, so the first real reply doesn't pay TLS/handshake (~0.3–0.6 s)."""
+    import threading
+    for p in PROVIDERS:
+        if _client(p) is not None:
+            threading.Thread(target=_available_models, args=(p,), daemon=True).start()
 
 
 def status() -> list[dict]:
