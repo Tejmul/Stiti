@@ -239,3 +239,17 @@ def phonemize(text: str) -> str | None:
 def warm() -> None:
     """espeak pays ~170 ms the first time it loads each voice; do it at start-up."""
     phonemize("Haan, aaj ka kaam ho gaya.")
+
+
+def evidence(text: str) -> tuple[int, int]:
+    """(clear Hindi words, all words) for STT language choice (Wispr-style counters, 0 MB, < 1 ms): Devanagari
+    tokens + Roman lexicon words that are not also English ("to", "do", "main" don't count)."""
+    words = [t for t in _TOKEN.findall(text or "") if _kind(t) in ("dev", "word")]
+    hi = sum(1 for t in words if _kind(t) == "dev" or (t.lower() in LEX and t.lower() not in AMBIGUOUS))
+    return hi, len(words)
+
+
+def language(text: str) -> str:
+    """'hinglish' or 'en' for one utterance: 2+ clear Hindi words, or 1 in a short line (≥ a third)."""
+    hi, n = evidence(text)
+    return "hinglish" if hi >= 2 or (hi >= 1 and 3 * hi >= n) else "en"
