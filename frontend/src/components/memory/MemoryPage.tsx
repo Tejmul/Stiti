@@ -2,6 +2,7 @@
 // Stiti's memory of him: a still map of his life, then every part of it — editable where it should be.
 // Reads /api/mind (what she knows) and /api/moments (every conversation). Same token model as the chat.
 import { Fragment, useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import Nav from "@/components/Nav";
 import type { Mind } from "@/lib/stiti";
 import { NotAllowed, api, plural } from "@/lib/stiti";
@@ -85,8 +86,9 @@ export default function MemoryPage() {
           <div className="gate__card">
             <p className="label">Not connected</p>
             <h2 id="gate-h"><span className="thin">Open Stiti from</span> <span className="bold">the menu bar.</span></h2>
-            <p>This browser hasn&apos;t been linked yet. Click Stiti in your menu bar → “Open Stiti (chat + memory)”. The
-              link carries a key so only you can see your memory.</p>
+            <p>This page couldn&apos;t link to Stiti. Click Stiti in your menu bar → <b>Open Stiti (chat + memory)</b>. If
+              she isn&apos;t in the menu bar, she isn&apos;t running.</p>
+            <p><Link className="gate__home" href="/">← Back to home</Link></p>
           </div>
         </div>
       )}

@@ -4,8 +4,9 @@
 // Protocol (src/stiti/web/server.py): ← hello{name,llm,history,state} · → say{text} · ← thinking · ← delta{text}… ·
 // ← reply{text,route,domain,provider,ms,used} · ← state{todos,alarms}
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import Link from "next/link";
 import Nav from "@/components/Nav";
-import { api, fmtDay, getToken, NotAllowed, wsUrl, type DayState, type Mind, type Reply } from "@/lib/stiti";
+import { api, ensureToken, fmtDay, NotAllowed, wsUrl, type DayState, type Mind, type Reply } from "@/lib/stiti";
 import Message, { type Msg } from "./Message";
 import SidePanel, { type Brain } from "./SidePanel";
 import type { MindHandle, MindState } from "./MindCanvas";
@@ -99,13 +100,15 @@ export default function ChatApp() {
       }
     };
 
-    const connect = () => {
+    const connect = async () => {
       if (!alive) return;
-      if (!getToken()) {
+      if (!(await ensureToken())) {               // never linked → ask Stiti's own server for the key
+        if (!alive) return;
         setGate(true);
         setMind({ state: "offline", label: "Not connected" });
         return;
       }
+      if (!alive) return;
       const s = (ws.current = new WebSocket(wsUrl()));
       let opened = false;
       s.onopen = () => { opened = true; retry = 400; setGate(false); };
@@ -259,8 +262,9 @@ export default function ChatApp() {
         <div className="gate" role="dialog" aria-modal="true" aria-labelledby="gate-h">
           <div className="gate__card">
             <p className="label">Not connected</p>
-            <h2 id="gate-h"><span className="thin">Open Stiti from</span> <span className="bold">your terminal.</span></h2>
-            <p>This browser hasn&apos;t been linked yet. Run <code>uv run stiti web</code> and open the link it prints — it contains a one-time key so only you can talk to her.</p>
+            <h2 id="gate-h"><span className="thin">Open Stiti from</span> <span className="bold">the menu bar.</span></h2>
+            <p>This page couldn&apos;t link to Stiti. Click Stiti in your menu bar → <b>Open Stiti (chat + memory)</b>. If she isn&apos;t in the menu bar, she isn&apos;t running.</p>
+            <p><Link className="gate__home" href="/">← Back to home</Link></p>
           </div>
         </div>
       )}

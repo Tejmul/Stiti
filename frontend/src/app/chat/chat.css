@@ -155,7 +155,7 @@
 .pg-chat .today-btn { display: none; border: 0; }
 
 /* ------------------------------------------------------------------ not-connected gate */
-.pg-chat .gate { position: fixed; inset: 0; z-index: var(--z-menu); display: grid; place-items: center; padding: var(--pad);
+.pg-chat .gate { position: fixed; inset: 0; z-index: calc(var(--z-nav) - 1); display: grid; place-items: center; padding: var(--pad);
   background: rgba(236, 235, 242, .86); backdrop-filter: blur(8px); animation: chat-fade .4s var(--out) both; }
 .pg-chat .gate__card { max-width: 560px; background: var(--paper-3); border: 1px solid var(--line-2); border-radius: 28px; padding: 36px; }
 .pg-chat .gate__card h2 { font-size: clamp(30px, 4vw, 44px); line-height: 1.05; letter-spacing: -.03em; margin: 10px 0 14px; font-weight: 400; }
@@ -184,3 +184,6 @@
   .pg-chat .receipts::details-content { transition: none; }
   .pg-chat .log { scroll-behavior: auto; }
 }
+
+.pg-chat .gate__home { display: inline-flex; align-items: center; min-height: 44px; font-weight: 500; color: var(--ink); }
+.pg-chat .gate__home:hover { text-decoration: underline; text-underline-offset: 4px; }
