@@ -85,9 +85,9 @@ export function Hero() {
       <div className="container hero__grid">
         <p className="label hero__label"><span className="hero__label-text">YOUR LOCAL AI BUDDY / RUNS ON → YOUR MAC</span></p>
         <h1 className="hero__title">
-          <span className="line"><Split t="Remembers " /><b><Split t="everything." /></b></span>
-          <span className="line"><Split t="Talks like a " /><b><Split t="friend." /></b></span>
-          <span className="line"><Split t="Lives on your " /><b><Split t="Mac." /></b></span>
+          <span className="line"><Split t="Listens." /></span>
+          <span className="line"><Split t="Learns." /></span>
+          <span className="line"><b><Split t="Remembers." /></b></span>
         </h1>
         <div className="hero__foot">
           <div className="hero__intro">
