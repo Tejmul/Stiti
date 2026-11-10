@@ -59,7 +59,8 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - `fastpath/` Hinglish dates + handlers · `life/` planner (CP-SAT), habits, chunker, brief, proactive.
 - `voice/` duplex (AEC3), vad, stt (mlx-whisper small q4), tts (Kokoro int8 + ClauseChunker), turn (Smart Turn), wake,
   prosody, speaker (gapless streamed speech, acks, fillers), loop. Speed design: D18. `farewell.py` goodbyes.
-- `connectors/` eventkit, mail (IMAP read-only), telegram, mac (Spotlight/music/iMessage/web/screen), ocr.
+- `connectors/` eventkit, mail (IMAP read-only), telegram, mac (Spotlight/music/iMessage/web/screen), ocr,
+  live (free news/papers/jobs/web fetch → untrusted LIVE INFO block in the briefing, D21).
 - `tools/` registry (risk tiers, confirm), mcp_bus · `app.py` menubar.
 - **`tutor/`** whiteboard tutor (see §5).
 
@@ -68,7 +69,10 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 |---|---|---|
 | Memory/brain, fast paths, voice, proactive, Mac connectors, backups, app | ✅ built + tested (see `docs/BUILD_LOG.md`) | BUILD_LOG |
 | Key-things intake v2 (`brain/guide.py`, `brain/understanding.py`) | 🟡 engine built; question set + adaptations TODO | `research_notes/Key things to know intake/intake_research.md`, DECISIONS D13 |
-| Whiteboard tutor (`src/stiti/tutor/`) | 🟢 works with the built-in lesson; ⏸ paused by Tejmul (chat first) — see §6 | DECISIONS D14/D15, `research_notes/Whiteboard tutor/` |
+| Whiteboard tutor (`src/stiti/tutor/`) | 🟢 any book (PDF/scanned/EPUB/TXT/MD/DOCX) + any topic, live LLM lessons verified; one-night crash course + FSRS revision (§6) | DECISIONS D14/D15/D19 |
+| Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20) | `docs/research/alarms.md` |
+| Live internet info (`connectors/live.py`) | 🟢 news/tech/AI/papers/placements/web, streamed with sources (D21); NOT verified on the mic | `docs/research/live_info.md` |
+| Always-on app (Stiti.app + LaunchAgent) | 🟢 reinstalled 2026-11-10 pointing at ~/Desktop/Stiti (was broken: old ~/Stiti path) | `install_app.py` |
 | Web app (`src/stiti/web/`) | 🟢 `stiti web`: chat + landing — see §6b | DECISIONS D16 |
 | Cloud LLM router (D17) | 🟢 live with Groq/OpenRouter/Gemini; P1 backup needs a Z.ai or Cloudflare key | `docs/research/free_llm_providers.md` |
 
@@ -91,9 +95,16 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - **Persistence** (`store.py`, migration 006): `tutor_lessons`, `tutor_sessions` (resume cursor, results),
   `study_cards` (FSRS fields), plus one memory episode per lesson. `~/.stiti/tutor.lock` makes the always-on
   voice loop yield the mic. Server: same localhost security model as the web app (§6b).
-- Run: `stiti teach [demo|topic|book.pdf --chapter N] [--type|--silent|--no-board] [--resume]`, `stiti book <pdf>`.
-- Verified: `tests/tutor_eval.py` 27/27. NOT verified: real spoken lesson (mic + AEC), LLM planner/Q&A, FSRS scheduler
-  (cards saved, scheduler not built), offline board bundle. Status: ⏸ paused by Tejmul (chat first).
+- **Any book** (`book.py`): PDF TOC → printed Contents → headings → page units; scanned → lazy Apple-Vision OCR;
+  EPUB/DOCX/HTML via markitdown; TXT/MD → ~2,500-char pseudo-pages + chapter-style detection (Contents deduped).
+- **Crash course** (`course.py`, migration 007, D19): local unit scoring → one course-map LLM call → diagnostic
+  (skip/short/full) → lessons back to back (next written while this one plays) → checkpoints + breaks → final review,
+  course map, cheat sheet, 9 am reminder. **FSRS** (`srs.py`, py-fsrs) drives checkpoints and `--revise`.
+- Planner robustness: per-part relevant sources (Groq 8k TPM), patience + anonymised P0 fallback, router JSON shape check.
+- Run: `stiti teach [demo|topic|book --chapter N]`, `stiti teach --night <book|subject> [--hours 3] [--goal …]`,
+  `--resume-course`, `--revise`, `stiti book <file>`. Voice: "teach me X tonight", "crash course on <book>".
+- Verified: `tutor_eval.py` 27/27, `course_eval.py` 16/16, live lessons (topic + Aho + Darwin/Wells planning), a simulated
+  full night (500× speed). NOT verified: a real spoken night on the mic; offline board bundle.
 
 ## 6b. Web app (`src/stiti/web/`) — backend design
 - **Same brain, new channel:** `/ws` runs each message through `Engine("text").turn()` (one Engine per connection,
@@ -107,12 +118,17 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - Next: browser mic → local whisper; streaming replies; memory search / mood / settings views.
 
 ## 7. Tejmul's pending actions
-1. Symlink command (§1). 2. `uv run stiti backup --show-key` → save the key. 3. Add `ZAI_API_KEY` and/or
+1. (Symlink no longer needed — app reinstalled to the real path.) 2. `uv run stiti backup --show-key` → save the key. 3. Add `ZAI_API_KEY` and/or
 `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` (personal-chat backup) and optionally `NVIDIA_API_KEY`; restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
 6. Try `uv run stiti web` and `uv run stiti teach`. 7. Confirm the `public/actions` icon licence (looks like
 Streamline) before the repo is promoted.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-10 — always-on fix, any book, crash course, alarms (D19, D20):** Stiti.app launcher pointed at the old
+  ~/Stiti → reinstalled; it runs now. Tutor: 4 bugs fixed, any-book loader, one-night crash course + FSRS. Alarms
+  rebuilt (recurrence, ring/snooze by voice, missed policy, AM/PM + saade/sawa/paune), todos remove/clear/restore.
+  Live web/news tools built by a sub-agent (see its research doc `docs/research/live_info.md`). Tests: course 16/16,
+  alarms 23/23. NOT verified on the real mic: a crash-course night, an alarm ring + "band karo".
 - **2026-11-10 — conversation speed + goodbyes (D18):** streamed LLM → first-clause TTS, gapless speaker, persistent
   Kokoro/whisper threads (Kokoro's 700 ms new-thread cost), early STT in the pause, Smart Turn re-checks, warm-up on
   start/wake, instant acks + fillers, warm goodbyes. Web chat streams too. Simulated: ~0.85–1.0 s voice→first audio

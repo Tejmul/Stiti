@@ -215,3 +215,64 @@ voice-to-first-audio ≈ **0.85–1.0 s** (was ≈ 2.3 s): transcript ready 233�
 - **Goodbyes**: "bye / chalo bye / good night" → a warm local goodbye (`farewell.py`, time/mood/language aware,
   no LLM); "shut up / stop / chup" stay silent.
 - `psych.StreamLint` applies the reply rules (guilt words, one question, ≤3 items) per streamed piece.
+
+## D19: Any book + one-night crash course (2026-11-10)
+Research: `docs/research/crash_course.md` (20 sources). Tutor fixes first (tests showed them): per-part source
+selection (Groq's 8k TPM was rejecting every 9k-char prompt), patience + anonymised public-tier fallback, strict JSON
+shape check in the router (Cloudflare returned the wrong shape → empty answers), fast `tutor_answer` route (Q&A 0.7–2.3 s),
+chapter-first `find`, "p.109" citation normalisation.
+- **Any book:** PDF (TOC → printed Contents → headings → page-range units), scanned PDF (Apple Vision OCR, lazy per
+  page), EPUB/DOCX/HTML/PPTX via markitdown, TXT/MD with ~2,500-char pseudo-pages; chapter styles "Chapter 4",
+  "CHAPTER IV", "XII. TITLE", "I\nTITLE", "Part Two"; Contents duplicates dropped (title + Roman→int number);
+  Gutenberg licence stripped. Tested: Aho (PDF), Darwin + Wells (TXT), Wells (EPUB), notes/worksheets, a scanned PDF.
+- **Crash course** (`tutor/course.py`, migration 007): lessons = ⌊(min−30)/20⌋ (2 h → 4, 3 h → 7, cap 10); lesson 1 =
+  whole-book overview. Units scored locally (0.30 foundation · 0.25 centrality · 0.25 goal · 0.20 size); ONE LLM call
+  orders the night + one diagnostic MCQ per lesson (fallback: local ranking). Subject without a book: one syllabus call
+  (importance + prereqs) → topological order. Diagnostic: right + confidence ≥4 → skip, right → short (2 ideas), wrong →
+  full. Night: next lesson written while this one plays; every 2 lessons a checkpoint (FSRS cards due) + 6-min break
+  (every 3rd: 15); stops 15 min before the deadline for the final review; course map (green/amber/red), cheat sheet
+  (`~/.stiti/courses/*.md`), 9 am revision reminder. Only "stop/bas karo" ends a night (a slow writer doesn't).
+- **FSRS:** `fsrs` 6.3.2 (MIT, pure Python); learning steps 10/60 min; wrong→Again, hint/conf≤2→Hard, right→Good,
+  conf 5→Easy; `teach --revise`; exam mode = cards with predicted recall < 0.9 at exam time.
+- Voice: "teach me X tonight", "ek raat mein X sikha do", "crash course on <book name>" (finds the file in
+  Downloads/Documents/Desktop; "this book" = newest), "continue my course", "revise karna hai".
+
+## D20: Alarms, reminders, timers — one structure (2026-11-10)
+Research: `docs/research/alarms.md` (25 sources). Real bugs found in his data: a 9 AM alarm rang at 8:19 PM (Mac was
+off), "kal 2 baje" parsed as 2 AM, reminders without text said "Wake up", alarms never actually rang.
+- `life/alarms.py`: create / list / cancel (by #id, time, words, all) / move / snooze; RRULE recurrence (roz, weekdays,
+  weekends, har somvar…; dateutil). Parser: bare 1–6 baje = PM unless wake/raat/subah; saade/sawa/paune/dedh/dhai,
+  "7 bajne mein 10", Hindi hour words.
+- Firing policy: alarm ≤10 min late rings, 10–30 min → spoken note, >30 → missed (never rung late); timer ≤2 min;
+  reminder ≤12 h ("late:" note after 15 min); missed told once. Recurring re-arm immediately.
+- Ring: tone + voice line through the echo-cancelled duplex (so "band karo" is heard over it), louder each 30 s round;
+  "band karo / uth gaya / stop" dismiss, "5 minute aur / snooze" (default 9, max 3) without the wake word; auto-stop
+  10 min; menubar "⏰ Stop alarm". Quiet hours 23–07: reminders are notification + Telegram, not spoken.
+- Todos: remove ("remove X from my list"), clear (+ "restore my todos"), titles cleaned ("to call the bank" → "call the bank").
+- Tests never touch real Apple Reminders (`STITI_EVENTKIT=off` in run_all).
+
+## D21: Live internet info — news, tech, papers, placements, web (2026-11-10)
+Research + measured latencies: `docs/research/live_info.md` (24 sources measured, 13 systems compared). Question → first streamed token 0.7–1.8 s cold, 0.5–0.95 s cached. Weak spot: general web search (keyless engines captcha-wall this IP); a free Brave/Tavily key would fix it.
+- **Intent by rules, not the LLM** (`connectors/live.py: detect`): world / India / tech / AI / papers(field) /
+  jobs(placements) / topic(product) / search(words) / fresh-fact questions ("who won the last F1 race?"). ~0.05 ms.
+  The exemplar kNN domain is *not* used — it labelled "any new update on Gemini 3?" as `todo` (0.60) and "what's
+  happening with placements?" as `todo` (0.77). Reminders/todos/his files/mail/people never trigger a fetch
+  (lexical guard + the engine checks the words against `person`/`self` entities in the graph, so people from his
+  life are never sent to a search engine). P2 turns and corrections never fetch.
+- **Fetch in parallel, budgeted**: each source ≤ 2.5 s; the turn waits until 1.3 s if it already has ≥ 4 items, else
+  ≤ 2.8 s; late sources keep running and fill the cache. Memory recall + briefing are built **while** sources load.
+- **Cache** in process memory: 10 min news, 15 min jobs/reddit/search, 30 min papers; stale copy (< 6 h) beats
+  nothing when a source fails. `live.warm()` pre-fills world/tech/AI/jobs in the background once per process.
+- **Rank**: recency (half-life 8 h world … 72 h papers) + query-term coverage + popularity (HN points, HF upvotes,
+  number of outlets in the Google News cluster) + the source's own order; near-duplicate headlines merge (other
+  outlets listed as "also"); at most half the items from one source.
+- **Briefing**: a `LIVE INFO` block appended to the compiled briefing (data first, answer rules after): ≤ 60 words,
+  cover items 1–3, name sources, no URLs/lists, never invent, "want more?". Then `router.stream` → voice starts at
+  the first clause. "haan / aur batao" within 5 min → next items, no refetch.
+- **Degraded**: no LLM → the top 3 headlines are read out directly. Nothing fetched → she says she couldn't reach
+  the internet instead of answering from memory as if it were news.
+- **Generic tool path** (registry): `live_news(topic)`, `research_papers(field)`, `web_search(query)` (now the live
+  search; the old ddgs `auto` call returned nothing), `web_read(url)` (Jina Reader → markitdown; public hosts only) —
+  all read-only and `untrusted_output=True`.
+- **Privacy**: only words from his sentence leave the Mac (never memory/profile); generic User-Agent
+  `Stiti/0.1 (…github…)`, no email, no account.
