@@ -11,6 +11,8 @@ long. Questions during the lesson: one small `answer()` call each. ~15–20K tok
 from __future__ import annotations
 
 import json
+import re
+import time
 import threading
 
 from .. import router
@@ -123,10 +125,29 @@ def _sources_block(sources: list[dict] | None, limit_chars: int = 9000) -> str:
     return "SOURCES (cite only these page labels):\n" + "\n".join(out)
 
 
-def _call(system: str, user: str, schema: dict, name: str, max_tokens: int) -> dict:
-    r = router.complete([{"role": "system", "content": system}, {"role": "user", "content": user}],
-                        route="tutor_plan", max_tokens=max_tokens, temperature=0.4, schema=schema,
-                        schema_name=name, reasoning="medium")
+def _call(system: str, user: str, schema: dict, name: str, max_tokens: int, *,
+          route: str = "tutor_plan", reasoning: str = "medium", patience_s: float = 0) -> dict:
+    """Structured LLM call. Personal tier first; then the same prompt WITHOUT his name on the public-only
+    providers (bigger free quota). With patience_s, waits out per-minute free-tier limits instead of failing."""
+    msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+    nm = _name()
+    anon = [{"role": m["role"], "content": m["content"].replace(nm, "the learner") if nm != "your" else m["content"]}
+            for m in msgs]
+    deadline = time.time() + patience_s
+    while True:
+        try:
+            r = router.complete(msgs, route=route, max_tokens=max_tokens, temperature=0.4, schema=schema,
+                                schema_name=name, reasoning=reasoning)
+            break
+        except router.NoProvider as e1:
+            try:
+                r = router.complete(anon, route=route, privacy=0, max_tokens=max_tokens, temperature=0.4,
+                                    schema=schema, schema_name=name, reasoning=reasoning)
+                break
+            except router.NoProvider as e2:
+                if time.time() + 15 > deadline or not re.search(r"gated|429", f"{e1} {e2}"):
+                    raise
+                time.sleep(15)                     # free per-minute windows reset; try again
     text = r["text"].strip()
     if text.startswith("```"):
         text = text.strip("`").split("\n", 1)[1] if "\n" in text else text
@@ -140,7 +161,8 @@ class Planner:
 
     def _fix_pages(self, seg: Segment) -> Segment:
         for c in seg.cues:
-            c.pages = [p for p in (c.pages or []) if p in self.pages] or None
+            norm = [re.sub(r"^(p|pp|page)\.?\s*", "", str(p).strip(), flags=re.I) for p in (c.pages or [])]
+            c.pages = [p for p in dict.fromkeys(norm) if p in self.pages] or None   # "p.109" → "109"
             if c.origin == "book" and not c.pages:
                 c.origin = "general_knowledge"
         return seg
@@ -148,17 +170,42 @@ class Planner:
     def outline(self, topic: str, minutes: int = 15) -> dict:
         return _call(STYLE.format(name=_name()),
                      OUTLINE_PROMPT.format(minutes=minutes, topic=topic, learner=_learner(),
-                                           sources=_sources_block(self.sources)),
-                     OUTLINE_SCHEMA, "outline", 2500)
+                                           sources=_sources_block(self.sources, 7000)),
+                     OUTLINE_SCHEMA, "outline", 2500, patience_s=20)
 
-    def segment(self, out: dict, i: int) -> Segment | None:
+    def _relevant(self, idea: dict, limit_chars: int = 4500) -> list[dict] | None:
+        """Only the source sentences closest to this idea (book order kept): small prompts fit the free
+        per-minute token limits (Groq ~8k TPM), and the model stays on the right pages."""
+        if not self.sources:
+            return None
+        try:
+            import numpy as np
+
+            from .. import embed
+            if not hasattr(self, "_vecs"):
+                txt = [s["text"] for s in self.sources]
+                self._vecs = np.concatenate([embed._embed(txt[b:b + 32]) for b in range(0, len(txt), 32)])
+            q = np.asarray(embed.embed_query(idea.get("title", "") + ". " + " ".join(idea.get("key_points") or []))
+                           .to_numpy(), dtype=np.float32)
+            order = np.argsort(self._vecs @ q)[::-1]
+        except Exception:
+            order = range(len(self.sources))
+        keep, n = [], 0
+        for k in order:
+            n += len(self.sources[k]["text"]) + 10
+            if n > limit_chars:
+                break
+            keep.append(int(k))
+        return [self.sources[k] for k in sorted(keep)]
+
+    def segment(self, out: dict, i: int, patience_s: float = 90) -> Segment | None:
         idea = out["ideas"][i]
         d = _call(STYLE.format(name=_name()),
                   SEGMENT_PROMPT.format(title=out["title"], idea=json.dumps(idea, ensure_ascii=False),
                                         thesis=out["thesis"], ideas=[x["title"] for x in out["ideas"]],
                                         done=[x["title"] for x in out["ideas"][:i]] or "nothing yet",
-                                        learner=_learner(), sources=_sources_block(self.sources)),
-                  SEGMENT_SCHEMA, "segment", 4000)
+                                        learner=_learner(), sources=_sources_block(self._relevant(idea))),
+                  SEGMENT_SCHEMA, "segment", 4000, patience_s=patience_s)
         d["id"], d["type"] = f"t{i + 1}", "teach"
         seg = sanitize_segment(d, i)
         return self._fix_pages(seg) if seg else None
@@ -168,7 +215,7 @@ class Planner:
                   ANSWER_PROMPT.format(lesson=ctx["lesson"], segment=ctx["segment"],
                                        said=" ".join(ctx["last_said"])[-600:], board=ctx["board"] or "(empty)",
                                        sources=_sources_block(self.sources, 4000), question=question),
-                  ANSWER_SCHEMA, "answer", 900)
+                  ANSWER_SCHEMA, "answer", 900, route="tutor_answer", reasoning="low")
         d["ops"] = [o for o in (sanitize_op(x) for x in d.get("ops") or [] if isinstance(x, dict)) if o][:3]
         d["say"] = [s for s in d.get("say") or [] if isinstance(s, str) and s.strip()][:3]
         return d
@@ -229,13 +276,13 @@ def closing(out: dict) -> list[Segment]:
 
 
 def build(topic: str, *, minutes: int = 15, sources: list[dict] | None = None, source: dict | None = None,
-          log=print) -> tuple[Lesson, Planner]:
+          log=print, ideas: int = 3) -> tuple[Lesson, Planner]:
     """Outline now (blocking, one call); teaching segments fill in the background while the opening plays."""
     p = Planner(sources)
     out = p.outline(topic, minutes)
     if len(out.get("ideas") or []) < 1:
         raise ValueError("planner returned no ideas")
-    out["ideas"] = out["ideas"][:3]
+    out["ideas"] = out["ideas"][:max(1, ideas)]
     lesson = Lesson(title=out["title"][:80], topic=topic, segments=opening(out),
                     source=source or {"kind": "topic"}, minutes=minutes,
                     cards=[{"front": c["front"][:160], "back": c["back"][:200], "kind": "fact"}

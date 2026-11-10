@@ -19,7 +19,7 @@ from pathlib import Path
 from ..config import CFG
 
 LOCK = CFG.home / "tutor.lock"
-BOOK_EXTS = {".pdf", ".epub", ".md", ".txt", ".docx", ".html"}
+BOOK_EXTS = {".pdf", ".epub", ".md", ".txt", ".docx", ".html", ".htm", ".pptx", ".rtf"}
 
 
 def tutor_active() -> bool:
@@ -95,7 +95,7 @@ def teach(args: list[str]) -> dict:
     from .player import Tutor
     from .server import BoardServer
     target = next((a for i, a in enumerate(args) if not a.startswith("--")
-                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes"))), None)
+                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes", "--hours", "--goal"))), None)
     mode = "silent" if "--silent" in args else "type" if "--type" in args else "voice"
     board = "--no-board" not in args
     holder: dict = {}
@@ -103,6 +103,8 @@ def teach(args: list[str]) -> dict:
     events = srv.events if srv else queue.Queue()
     print("Stiti is getting ready… (voice, whiteboard)" if mode == "voice" else "Stiti is getting ready…")
     audio = au.make(mode, events, debug="--debug" in args)
+    if "--night" in args or "--resume-course" in args or "--revise" in args:
+        return _course_session(args, target, audio, events, srv, stop_args=args)
     try:
         lesson, planner, start = make_lesson(target, args)
     except SystemExit as e:
@@ -143,6 +145,69 @@ def teach(args: list[str]) -> dict:
     return result
 
 
+def _open_board(srv, args) -> None:
+    if srv:
+        srv.start()
+        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
+        if "--no-open" not in args:
+            srv.open_browser()
+        srv.connected.wait(15)
+
+
+def _course_session(args: list[str], target: str | None, audio, events, srv, stop_args=None) -> dict:
+    """`teach --night <book|subject> [--hours 3] [--goal …]` · `teach --resume-course` · `teach --revise`."""
+    from . import course
+    from .player import Tutor
+    try:
+        if "--revise" in args:
+            lesson, cards = course.revise_lesson()
+            if lesson is None:
+                print("Nothing due for revision right now. 🎉")
+                return {"finished": True}
+            _open_board(srv, args)
+            LOCK.write_text(str(os.getpid()))
+            t = Tutor(lesson, audio=audio, events=events, server=srv)
+            res = t.run()
+            from . import srs
+            for r in res.get("results") or []:
+                if r.get("segment", "").startswith("c"):
+                    srs.review(int(r["segment"][1:]), srs.rating_for(r.get("verdict"), r.get("hints", 0),
+                                                                        r.get("confidence")))
+            print(f"\n✅ Revision: {res['checks_right']}/{res['checks_graded']} right. Next reviews scheduled.")
+            return res
+        if "--resume-course" in args:
+            row = course.load()
+            if not row:
+                print("No unfinished crash course. Try: uv run stiti teach --night <book or subject>")
+                return {"finished": False}
+            cid = row["id"]
+            print(f"Resuming '{row['title']}' at lesson {row['cursor'] + 1}.")
+        else:
+            if not target:
+                print("usage: uv run stiti teach --night <book.pdf|.epub|.txt | \"a subject\"> [--hours 3] [--goal \"…\"]")
+                return {"finished": False}
+            hours = max(1.0, min(4.0, float(_arg(args, "--hours", "3"))))
+            print(f"Planning a one-night crash course on {target!r} ({hours:g} h)…")
+            cid = course.create(target, hours, _arg(args, "--goal"))
+        plan = course.load(cid)["plan"]
+        for k, x in enumerate(plan["lessons"]):
+            print(f"   {k + 1:2}. {x['title']}" + (f"   (p.{x['unit']['label']}+)" if x.get("unit") else ""))
+        _open_board(srv, args)
+        LOCK.write_text(str(os.getpid()))
+        res = course.Night(cid, audio=audio, events=events, server=srv).run()
+        print(f"\n✅ {'Finished' if res['finished'] else 'Paused'} the course: {res['lessons_done']}/{res['lessons']} "
+              f"lessons." + ("" if res["finished"] else " Resume: uv run stiti teach --resume-course"))
+        return res
+    except Exception as e:
+        print(f"Couldn't run the crash course ({type(e).__name__}: {str(e)[:200]}).")
+        return {"finished": False}
+    finally:
+        LOCK.unlink(missing_ok=True)
+        audio.close()
+        if srv:
+            srv.stop()
+
+
 TEACH_RX = __import__("re").compile(
     r"^(?:(?:hey |hi )?stiti,? )?(?:can you |please |pls )?(?:teach me|tutor me|padhao|padha do|sikhao|sikha do|"
     r"mujhe .+ (?:padhao|sikhao|samjhao)|.+ (?:padhao|sikhao|padha do|sikha do)|"
@@ -152,26 +217,88 @@ RESUME_RX = __import__("re").compile(r"\b(continue|resume) (my |the )?(lesson|cl
                                      __import__("re").I)
 
 
-def voice_request(text: str) -> tuple[str | None, bool] | None:
-    """'teach me how DNS works' -> ('how DNS works', False); 'continue my lesson' -> (None, True)."""
+NIGHT_RX = __import__("re").compile(
+    r"\b(tonight|in one night|one night|overnight|crash ?course|ek raat (me|mein|mai)|aaj raat (me|mein|mai|tak)|"
+    r"raat bhar (me|mein)?|in (\d|two|three|four) hours?|cram)\b", __import__("re").I)
+REVISE_RX = __import__("re").compile(r"\b(revise|revision|revise karna|revision karna|revise karao|flashcards?)\b",
+                                     __import__("re").I)
+COURSE_RESUME_RX = __import__("re").compile(r"\b(continue|resume) (my |the )?(crash ?course|course|night)\b|"
+                                            r"course (continue|resume) karo", __import__("re").I)
+BOOK_DIRS = ("~/Downloads", "~/Documents", "~/Desktop", "~/Books")
+
+
+def find_book(name: str) -> str | None:
+    """'the Aho compilers book' → ~/Downloads/Aho - Compilers - ….pdf (filename word overlap, local folders only)."""
+    import re
+    if re.fullmatch(r"(this|that|the|my|new|latest)( new| latest)? (book|pdf|file|ebook|notes)", name.strip().lower()):
+        files = [f for d in BOOK_DIRS if Path(d).expanduser().is_dir() for f in Path(d).expanduser().iterdir()
+                 if f.is_file() and f.suffix.lower() in BOOK_EXTS and f.stat().st_size > 50_000]
+        return str(max(files, key=lambda f: f.stat().st_mtime)) if files else None   # the one he just downloaded
+    words = {w for w in re.findall(r"[a-z0-9]{3,}", name.lower()) if w not in {"the", "book", "pdf", "from", "this",
+                                                                                 "wala", "vali", "wali", "tonight"}}
+    if not words:
+        return None
+    best, score = None, 0.0
+    for d in BOOK_DIRS:
+        root = Path(d).expanduser()
+        if not root.is_dir():
+            continue
+        for f in root.iterdir():
+            if f.suffix.lower() in BOOK_EXTS and f.is_file():
+                fw = set(re.findall(r"[a-z0-9]{3,}", f.stem.lower()))
+                s = len(words & fw) / len(words)
+                if s > score:
+                    best, score = str(f), s
+    return best if score >= 0.6 else None
+
+
+def voice_request(text: str) -> tuple | None:
+    """'teach me how DNS works' -> ('how DNS works', False); 'continue my lesson' -> (None, True);
+    'teach me operating systems tonight' -> ('operating systems', False, 'night'); 'revise karna hai' -> revise."""
     import re
     t = text.strip().rstrip(".!?")
+    if COURSE_RESUME_RX.search(t):
+        return None, True, "night"
+    if REVISE_RX.search(t) and re.search(r"\b(stiti|karna|karao|let'?s|start|my|time)\b", t, re.I):
+        return None, False, "revise"
     if RESUME_RX.search(t):
         return None, True
+    if (m := re.search(r"\bcrash ?course (?:on|of|for|from) (.+)", t, re.I)):
+        return m.group(1).strip(" ,.") or None, False, "night"
     if not TEACH_RX.search(t):
         return None
     topic = re.sub(r"^(?:(?:hey |hi )?stiti,? )?(?:can you |please |pls )?", "", t, flags=re.I)
     topic = re.sub(r"^(teach me|tutor me)( about)?|^mujhe|(padhao|padha do|sikhao|sikha do|samjhao)$|"
                    r"(on|pe) (the )?(white ?board|board)$|^(explain|samjhao)|^(start|open) (the )?(white ?board|tutor)",
                    "", topic, flags=re.I).strip(" ,.")
+    if NIGHT_RX.search(t):
+        topic = NIGHT_RX.sub("", topic or "").strip(" ,.")
+        topic = re.sub(r"\b(in|me|mein|mai|tak|a|the)$", "", topic, flags=re.I).strip(" ,.")
+        return (topic or None), False, "night"
     return (topic or None), False
 
 
-def launch(topic: str | None, resume: bool = False) -> str:
-    """Start a lesson as its own process (voice + board), from the always-on assistant."""
+def launch(topic: str | None, resume: bool = False, mode: str | None = None) -> str:
+    """Start a lesson / crash course / revision as its own process (voice + board), from the always-on assistant."""
     import subprocess
     if tutor_active():
         return "A lesson is already running on the whiteboard."
+    if mode in ("night", "revise"):
+        if mode == "revise":
+            args, msg = ["--revise"], "Revision time! Opening the board."
+        elif resume:
+            args, msg = ["--resume-course"], "Opening your crash course where we stopped."
+        elif not topic:
+            return "Sure! Which book or subject? Say: teach me operating systems tonight."
+        else:
+            book = find_book(topic)
+            args = ["--night", book or topic]
+            msg = (f"Crash course from {Path(book).stem[:40]}! Give me a minute to plan the night."
+                   if book else f"Crash course on {topic} tonight! Give me a minute to plan it.")
+        log = open(CFG.home / "logs" / "tutor.log", "a")
+        subprocess.Popen([sys.executable, "-m", "stiti", "teach", *args], stdout=log, stderr=log,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+        return msg
     from .lesson import demos
     args = ["--resume"] if resume else ([topic] if topic else [])
     if topic and topic not in demos():

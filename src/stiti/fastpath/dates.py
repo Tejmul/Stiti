@@ -19,6 +19,25 @@ REL = re.compile(r"\b(?:in\s+)?(\d+|ek|do|teen|half an?|aadha)\s*(min(?:ute)?s?|
                  r"\s*(?:mein|me|baad|later|from now)?\b", re.I)
 CLOCK = re.compile(r"\b(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a\.m\.|p\.m\.|baje|bajkar|o'?clock)?\b", re.I)
 NUMWORD = {"ek": 1, "do": 2, "teen": 3, "half a": 0.5, "half an": 0.5, "aadha": 0.5}
+HI_HOURS = {"ek": 1, "do": 2, "teen": 3, "char": 4, "chaar": 4, "paanch": 5, "panch": 5, "chhe": 6, "che": 6,
+            "chheh": 6, "saat": 7, "aath": 8, "nau": 9, "das": 10, "dus": 10, "gyarah": 11, "gyaarah": 11,
+            "barah": 12, "baarah": 12}
+WAKE = re.compile(r"\b(alarm|wake|uth|utha|uthana|uthao|jaga|jagana|jagao|subah)\b", re.I)
+
+
+def _hinglish_clock(t: str) -> str:
+    """'saade 6' → 6:30 · 'sawa 7' → 7:15 · 'paune 8' → 7:45 · 'dedh' → 1:30 · 'dhai' → 2:30 · 'saat baje' → 7 baje."""
+    t = re.sub(r"\b(" + "|".join(HI_HOURS) + r")(?=\s*(baje|bajke|bajkar)\b)", lambda m: str(HI_HOURS[m.group(1)]), t)
+    t = re.sub(r"\b(\d{1,2}) bajne (?:mein|me|main) (\d{1,2})\b",           # "7 bajne mein 10" → 6:50
+               lambda m: f"{(int(m.group(1)) - 1) or 12}:{60 - int(m.group(2)):02d} baje", t)
+    t = re.sub(r"\bdedh\b", "1:30", t)
+    t = re.sub(r"\b(dhai|dhaai|adhai)\b", "2:30", t)
+    hour = r"(\d{1,2}|" + "|".join(HI_HOURS) + r")"
+    num = lambda x: int(x) if x.isdigit() else HI_HOURS[x]  # noqa: E731
+    t = re.sub(rf"\b(saade|sadhe|saadhe)\s+{hour}\b", lambda m: f"{num(m.group(2))}:30", t)
+    t = re.sub(rf"\b(sawa|savva|sava)\s+{hour}\b", lambda m: f"{num(m.group(2))}:15", t)
+    t = re.sub(rf"\b(paune|pone)\s+{hour}\b", lambda m: f"{(num(m.group(2)) - 1) or 12}:45", t)
+    return t
 
 
 def now() -> datetime:
@@ -27,7 +46,7 @@ def now() -> datetime:
 
 def parse_when(text: str, ref: datetime | None = None) -> datetime | None:
     ref = ref or now()
-    t = text.lower()
+    t = _hinglish_clock(text.lower())
 
     m = REL.search(t)
     if m and not re.search(r"\b(baje|am|pm)\b", t):
@@ -63,10 +82,13 @@ def parse_when(text: str, ref: datetime | None = None) -> datetime | None:
         h, mi, suf = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").lower()
         if h > 23 or mi > 59:
             continue
-        # a bare number counts only with a suffix or a part-of-day word nearby
-        if not suf and not re.search(r"\b(subah|morning|shaam|evening|raat|night|dopahar|afternoon)\b", t):
+        # a bare number counts only with a suffix, a part-of-day word nearby, or a clock form like 6:30
+        if not suf and not m.group(2) and not re.search(r"\b(subah|morning|shaam|evening|raat|night|dopahar|afternoon)\b", t):
             continue
         hour, minute = h, mi
+        if suf in ("baje", "bajkar", "o'clock", "") and 1 <= h <= 6 and not re.search(
+                r"\b(subah|morning|raat|night|am|a\.m\.)\b", t) and not WAKE.search(t):
+            hour = h + 12            # "kal 2 baje" = 2 PM (nobody means 2 AM without saying raat); wake-ups stay AM
         if suf.startswith("p") and h < 12:
             hour = h + 12
         elif suf.startswith("a") and h == 12:
@@ -91,7 +113,8 @@ def parse_when(text: str, ref: datetime | None = None) -> datetime | None:
     when = datetime(day.year, day.month, day.day, hour, minute or 0, tzinfo=CFG.tz)
     if when <= ref and not explicit_day:
         # ambiguous clock without am/pm/part-of-day: try +12h, else tomorrow
-        if hour < 12 and when + timedelta(hours=12) > ref and not re.search(r"\b(am|subah|morning)\b", t):
+        if hour < 12 and when + timedelta(hours=12) > ref and not re.search(r"\b(am|subah|morning|raat|night|tonight)\b", t) \
+                and not WAKE.search(t):
             when += timedelta(hours=12)
         else:
             when += timedelta(days=1)
