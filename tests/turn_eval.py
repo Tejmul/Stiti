@@ -161,7 +161,8 @@ end = s.speak(1, 1500)
 s.quiet(4000)
 cm = s.commits()
 dt = cm[0][0] - end if cm else None
-check("finished & Smart Turn < 0.5 → wait min_delay (0.6 s)", len(cm) == 1 and 0.58 <= dt <= 0.68, f"{dt}")
+check(f"finished & Smart Turn < 0.5 → wait min_delay ({E.MIN_DELAY_START} s)", len(cm) == 1
+      and E.MIN_DELAY_START - 0.02 <= dt <= E.MIN_DELAY_START + 0.08, f"{dt}")
 
 # "So..." → wait 3 s, then commit as a timed-out fragment, keep it, join the next part
 s = Sim({1: "So...", 2: "I was thinking about the trip."}, pa={1: 0.95, 2: 0.9})
@@ -299,7 +300,7 @@ s.speak(1, 1300)
 s.quiet(1500)
 k = s.kinds()
 cm = s.commits()
-check("2+ words: duck → pause at 900 ms → stop", k[:3] == ["duck", "pause", "stop"], str(k))
+check(f"2+ words: duck → pause at {E.FORCE_PAUSE_MS} ms → stop", k[:3] == ["duck", "pause", "stop"], str(k))
 check("…and it becomes his turn (barged)", len(cm) == 1 and cm[0][1].barged and cm[0][1].overlap)
 
 s = Sim({1: "Stop."}, conf={1: (0.05, -0.2)})
@@ -371,7 +372,7 @@ check("whisper scores are duration-weighted", abs(nsp - 0.4) < 1e-6 and abs(lp +
 print("his pace (EMA, persisted)")
 p = Path(tempfile.mkdtemp()) / "turn_stats.json"
 st = E.TurnStats(p)
-check("starts at 0.6 s", st.min_delay == 0.6)
+check(f"starts at {E.MIN_DELAY_START} s", st.min_delay == E.MIN_DELAY_START)
 for _ in range(30):
     st.immediate_interrupt(2.0)
 check("immediate interruptions push the wait up (EMA α=0.9)", 1.5 < st.min_delay <= 2.1, str(st.min_delay))
@@ -390,7 +391,8 @@ check("persisted to turn_stats.json and reloaded", abs(st2.min_delay - st.min_de
       and st2.pauses == st.pauses and st2.interrupts == st.interrupts and p.exists())
 check("default path is under STITI_HOME", str(E.TurnStats().path).startswith(os.environ["STITI_HOME"]))
 check("confident turns stay fast unless he taught her to wait",
-      E.wait_for("finished", 0.9, 0.6) == 0.0 and abs(E.wait_for("finished", 0.9, 1.0) - 0.4) < 1e-9
+      E.wait_for("finished", 0.9, E.MIN_DELAY_START) == 0.0
+      and abs(E.wait_for("finished", 0.9, E.MIN_DELAY_START + 0.4) - 0.4) < 1e-9
       and E.wait_for("finished", 0.2, 1.0) == 1.0 and E.wait_for("unfinished", 0.9, 0.6) == 3.0
       and E.wait_for("wait", 0.9, 0.6) == 8.0)
 
@@ -584,6 +586,13 @@ check("after 'Anything else?' the loop sees an answer, not a goodbye",
       L._after_offer(off) and not L._after_offer(type("E", (), {"last_reply_text": "Done."})())
       and not any(L._explicit_bye(t) for t in ("that's it", "okay", "bas", "no", "nothing", "not yet")))
 check("…but a real bye still ends it", all(L._explicit_bye(t) for t in ("bye", "okay bye", "good night", "chalo bye")))
+
+# ---- measured on ElevenLabs' live demo (docs/research/re_elevenlabs_live.md)
+check("'I was wondering' / 'baat ye hai ki' + pause → unfinished (EL waited and joined)",
+      all(E.text_state(s) == "unfinished" for s in ("I was wondering", "So I was wondering if", "baat ye hai ki",
+                                                     "Can you tell me")) and E.text_state("Can you tell me the time?") == "finished")
+check("'Mmh, mmh.' / 'hmmm' / 'uh-huh' over her → resume, not stop (EL dropped its answer)",
+      E.barge_verdict("Mmh, mmh.") == "resume" and E.barge_verdict("uh-huh") == "resume" and E.barge_verdict("wait, stop") == "stop")
 
 print(f"turn-taking: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
