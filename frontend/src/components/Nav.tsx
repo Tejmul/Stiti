@@ -5,16 +5,20 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type Page = "home" | "chat" | "memory";
-// The deployed marketing site (STITI_PUBLIC=1 build) has no Chat/Memory — those exist only on the owner's Mac.
+// The marketing site (the landing, in every build) links only to its own sections + GitHub. Chat and Memory are
+// never linked from it; those pages exist only on the owner's Mac, and only they show each other in the nav.
 const PUBLIC = process.env.NEXT_PUBLIC_STITI_PUBLIC === "1";
-const GITHUB = "https://github.com/Tejmul/Stiti";
-const ALL_LINKS: { href: string; label: string; page?: Page }[] = [
+export const GITHUB = "https://github.com/Tejmul/Stiti";
+type NavLink = { href: string; label: string; page?: Page };
+const SITE_LINKS: NavLink[] = [
+  { href: "/#features", label: "Features" },
+  { href: "/#privacy", label: "Privacy" },
+  { href: "/#faq", label: "FAQ" },
+];
+const APP_LINKS: NavLink[] = [
   { href: "/chat", label: "Chat", page: "chat" },
   { href: "/memory", label: "Memory", page: "memory" },
-  { href: "/#abilities", label: "Abilities" },
-  { href: "/#privacy", label: "Privacy" },
 ];
-const LINKS = PUBLIC ? ALL_LINKS.filter((l) => !l.page) : ALL_LINKS;
 
 export function Logo() {
   // A plain letter mark (the old dot-in-a-tilted-ring read as an eye).
@@ -24,6 +28,8 @@ export function Logo() {
 /** `cta` replaces the right-hand button (e.g. the chat page's "Today" toggle). */
 export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode }) {
   const nav = useRef<HTMLElement>(null);
+  const site = PUBLIC || !current || current === "home";      // marketing nav (never Chat/Memory)
+  const LINKS = site ? SITE_LINKS : APP_LINKS;
   const [open, setOpen] = useState(false);
   const [hidden, setHidden] = useState(false);
 
@@ -64,8 +70,8 @@ export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode 
         <button className="nav__menu-btn" type="button" aria-expanded={open} aria-controls="menu" onClick={() => setOpen(!open)}>
           {open ? "CLOSE" : "MENU"}
         </button>
-        {cta ?? (PUBLIC
-          ? <a className="nav__cta" href={GITHUB} target="_blank" rel="noopener">GitHub</a>
+        {cta ?? (site
+          ? <a className="nav__cta" href={GITHUB} target="_blank" rel="noopener">GitHub<span className="sr-only"> (opens in a new tab)</span></a>
           : <Link className="nav__cta" href="/chat">Talk to Stiti</Link>)}
       </nav>
       <div className={`menu${open ? " is-open" : ""}`} id="menu" aria-label="Menu">
@@ -76,7 +82,7 @@ export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode 
             </Link>
           ))}
         </div>
-        <div className="menu__foot">Runs on your Mac · Your memory stays at ~/.stiti</div>
+        <div className="menu__foot">Free · Open source · Lives on your Mac</div>
       </div>
     </>
   );
