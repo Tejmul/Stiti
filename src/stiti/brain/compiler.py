@@ -93,7 +93,8 @@ def standing_profile() -> str:
 def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: str, recent: list[dict],
           memories: list[dict], facts: list[dict], lessons: list[dict], open_loops: str | None,
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None, strategy=None,
-          rule_saved: bool = False, wins: list[str] | None = None) -> tuple[str, int]:
+          rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False) -> tuple[str, int]:
+    """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29)."""
     from . import strategy as strat_mod
     strategy = strategy or strat_mod.make("ACKNOWLEDGE", strat_mod.reply_lang(text, talk_directives))
     soul = _short(_file("SOUL.md", DEFAULT_SOUL), 1400)
@@ -133,6 +134,9 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
         if how:
             parts.append("[HOW TO TALK NOW]\n" + "\n".join(how))
         parts.append(psych.rules_block(strategy, can_do=can_do(min(privacy, 1)), rule_saved=rule_saved))
+        if markers:
+            from .turnmark import RULES
+            parts.append(RULES)
         return "\n\n".join(parts)
 
     mem = list(mem_lines)
