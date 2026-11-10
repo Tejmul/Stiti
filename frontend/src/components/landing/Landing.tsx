@@ -74,7 +74,10 @@ export default function Landing() {
       if (!el) return;
       e.preventDefault();
       e.stopPropagation();
-      if (body.classList.contains("menu-open")) dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));  // Nav closes on Esc
+      if (body.classList.contains("menu-open")) {
+        dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));  // Nav closes on Esc
+        lenis?.start();                                                    // (it was stopped while the menu was open)
+      }
       scrollToEl(el);
     }, { capture: true });
 
@@ -82,7 +85,8 @@ export default function Landing() {
     const shot = $(".shot");
     const anchorField = () => {
       const r = shot.getBoundingClientRect();
-      const rad = MOBILE ? r.width * .6 : Math.min(r.width * .48, innerHeight * .42);
+      const stacked = innerWidth <= 900;            // copy above the shot: keep the halo off the text
+      const rad = MOBILE ? r.width * .6 : Math.min(r.width * (stacked ? .4 : .48), innerHeight * .42);
       field.anchor(r.left + r.width / 2, r.top + r.height * .46, rad);
     };
     anchorField();
