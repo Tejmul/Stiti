@@ -13,7 +13,7 @@ import os
 import subprocess
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import rumps
 
@@ -26,12 +26,15 @@ class StitiApp(rumps.App):
     def __init__(self):
         super().__init__("Stiti", title="…", quit_button=None)
         self.status_item = rumps.MenuItem("Starting up…")
+        self._ring_lock = threading.Lock()
+        self.ringer = None
         self.listen_item = rumps.MenuItem("Listening", callback=self.toggle_listen)
         self.listen_item.state = 1
         self.thinking_item = rumps.MenuItem("—")
         self.emotion_item = rumps.MenuItem("Deep voice emotion", callback=self.toggle_emotion)
         self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "off") != "off")
         self.menu = [self.status_item, self.thinking_item, None,
+                     rumps.MenuItem("⏰ Stop alarm", callback=self.stop_alarm),
                      rumps.MenuItem("Type to Stiti…", callback=self.type_to_stiti),
                      rumps.MenuItem("Quick add todo…", callback=self.quick_todo), None,
                      self.listen_item, self.emotion_item,
@@ -117,26 +120,77 @@ class StitiApp(rumps.App):
             if r["ek_identifier"] in done:
                 q("UPDATE intents SET state='done' WHERE id=%s", (r["id"],))
 
-    def _scheduler(self):
-        from .connectors import telegram
-        from .fastpath.handlers import fire_due
-        from .life import proactive
-        tracker, last_pro = proactive.PresenceTracker(), 0.0
-
-        def notify(msg: str):
-            print(msg, flush=True)
-            telegram.send(msg)
+    def _ring(self, row: dict):
+        """Alarm / timer: ring (tone + voice, louder each round) until 'band karo' / '5 minute aur' / timeout."""
+        from .life.alarms import Ringer
+        with self._ring_lock:                         # two alarms at once ring one after the other
+            r = Ringer(row, loop=self.loop, log=lambda m: print(m, flush=True))
+            self.ringer = r
             if self.loop is not None:
-                threading.Thread(target=self.loop.say, args=(msg.replace("⏰", "").strip(),), daemon=True).start()
+                self.loop.ring_control = r.control
+            subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(row["payload"].get("say", "Alarm"))} '
+                                                 'with title "Stiti ⏰" sound name "Glass"'])
+            try:
+                r.run()
+            finally:
+                if self.loop is not None:
+                    self.loop.ring_control = None
+                self.ringer = None
+
+    def stop_alarm(self, _=None):
+        if getattr(self, "ringer", None) is not None:
+            self.ringer.stop()
+
+    def _fire(self, present: bool):
+        from .connectors import telegram
+        from .life import alarms
+        deliver, missed = alarms.due()
+        for r in deliver:
+            k = r["payload"].get("kind") or r["kind"]
+            msg = r["payload"].get("say", "Reminder")
+            print(f"⏰ [{k}] {msg}", flush=True)
+            late = timedelta(minutes=r.get("late_min", 0))
+            if k in ("alarm", "timer") and late <= alarms.RING_IF_LATE_UNDER:
+                threading.Thread(target=self._ring, args=(r,), daemon=True).start()
+            elif k in ("alarm", "timer"):                       # 10–30 min late: say it, don't blast a ring
+                self._deliver(alarms.late_note(r), "alarm", present)
+                q_done(r)
+            elif k == "reminder":
+                text = alarms.late_note(r) if late > timedelta(minutes=15) else f"Reminder: {msg}"
+                where = self._deliver(text, "reminder", present and not alarms.quiet_now())
+                if where != "voice" and telegram.token() and telegram.owner():
+                    telegram.send(f"⏰ {msg}")
+                q_done(r)
+            else:                                     # check-ins / nudges
+                self._deliver(msg, k, present)
+                q_done(r)
+        if missed:
+            m = alarms.missed_summary(mark=False)
+            if m:
+                subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(m)} with title "Stiti"'])
+                self._missed_pending = True
+
+    def _scheduler(self):
+        from .life import alarms, proactive
+        tracker, last_pro = proactive.PresenceTracker(), 0.0
+        present = True
+        if (m := alarms.missed_summary(mark=False)):     # e.g. the Mac was off this morning
+            print(f"[alarms] {m}", flush=True)
+            self._missed_pending = True
         while not self.stop.is_set():
             try:
-                fire_due(notify=notify)
+                self._fire(present)
+                if getattr(self, "_missed_pending", False) and self.loop is not None and self.loop.awake:
+                    self._missed_pending = False          # tell him once, the next time he talks to her
+                    if (m := alarms.missed_summary()):
+                        threading.Thread(target=self.loop.say, args=(m,), daemon=True).start()
                 if time.time() - last_pro >= 60:
                     last_pro = time.time()
                     self._health()
                     self._sync_reminders()
                     rotate_logs()
                     pres = tracker.sample()
+                    present = bool(getattr(pres, "present", True))
                     busy = self.loop is not None and (self.loop.awake or (self.loop.duplex and self.loop.duplex.playing))
                     for nid, kind, text in proactive.tick(pres, self._deliver, busy=bool(busy)):
                         print(f"[proactive] {kind}: {text}", flush=True)
@@ -231,6 +285,12 @@ class StitiApp(rumps.App):
         self.stop.set()
         time.sleep(0.3)
         rumps.quit_application()
+
+
+def q_done(row: dict) -> None:
+    from .db import q
+    if not row.get("rrule"):
+        q("UPDATE intents SET state='done' WHERE id=%s AND state='fired'", (row["id"],))
 
 
 def rotate_logs(max_mb: int = 10, keep: int = 3) -> None:
