@@ -6,9 +6,8 @@ export const GITHUB = "https://github.com/Tejmul/Stiti";
 export const SITE_NAME = "Stiti";
 export const SITE_TITLE = "Stiti — your AI friend that lives on your Mac";
 export const SITE_DESCRIPTION =
-  "Stiti is a voice friend that lives on your Mac. Say “Hey Stiti” and talk like you would to a person: she remembers " +
-  "what you tell her, sets reminders and alarms, keeps you up to date, notices when you sound tired, and keeps " +
-  "everything on your Mac. Free, no account.";
+  "A voice friend that lives on your Mac. Say “Hey Stiti” and talk: she remembers your life, sets reminders, keeps you " +
+  "up to date and keeps it all on your Mac. Free.";
 export const SITE_KEYWORDS = [
   "Stiti", "AI friend", "voice assistant for Mac", "AI assistant Mac", "personal AI", "private AI assistant",
   "local AI", "on-device AI", "AI that remembers", "voice AI", "reminders", "alarms", "todos", "AI companion",
