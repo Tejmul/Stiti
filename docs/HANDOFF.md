@@ -41,13 +41,16 @@
 ## 2. Runtime layout
 `~/.stiti/` (STITI_HOME): SOUL.md, USER.md & LESSONS.md (two-way synced with Postgres), GRAPH_REPORT.md, graph.html,
 mood.html, exemplars.jsonl, onboarding/intake json, mcp.json, health.json, logs/app.log, backups/*.enc, models/.
-**Stiti.app** (~/Applications, menubar, LaunchAgent `com.tejmul.stiti`) runs `.venv/bin/python -m stiti app`.
+**Stiti.app** (~/Applications, menubar, LaunchAgent `com.tejmul.stiti`) runs `.venv/bin/python -m stiti app`; it
+also serves the web app on 127.0.0.1:7317 (menu: "Open Stiti (chat + memory)"). `~/.stiti/me/resume.md` = his resume
+(ingested). Owner profile set: name/call_me Tejmul, pronouns he.
 Restart after code changes: `echo "---- restart $(date) ----" >> ~/.stiti/logs/app.log; pkill -f "python -m stiti app"`.
 
 ## 3. Commands (`uv run stiti …`)
 chat [--debug] · onboard · voice [--no-aec] [--debug] · ingest <path> [--private] · graph · mood · backup [--show-key] ·
 restore <file> [--into db] · app · install-app · uninstall-app · mcp [approve <name>] · doctor · sleep --now ·
-**teach …** · **book …** (tutor, see §5). Tests: `tests/run_all.sh` (fresh `stiti_test` per suite). CI: `.github/workflows/ci.yml`.
+**teach …** · **book …** (tutor, see §5) · web [--no-open]. Frontend: `cd frontend && pnpm install && pnpm build`
+(Next.js static export → `frontend/out`, served by Python; dev: `pnpm dev` :3017 + `STITI_WEB_DEV=1 uv run stiti web`). Tests: `tests/run_all.sh` (fresh `stiti_test` per suite). CI: `.github/workflows/ci.yml`.
 
 ## 4. Architecture map (src/stiti/) — open a file only when you need it
 - `engine.py` `Engine.turn()` — normalize → decide → emotion → store episode → learning → FAST PATHS (no LLM) → else
@@ -73,7 +76,8 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20) | `docs/research/alarms.md` |
 | Live internet info (`connectors/live.py`) | 🟢 news/tech/AI/papers/placements/web, streamed with sources (D21); NOT verified on the mic | `docs/research/live_info.md` |
 | Always-on app (Stiti.app + LaunchAgent) | 🟢 reinstalled 2026-11-10 pointing at ~/Desktop/Stiti (was broken: old ~/Stiti path) | `install_app.py` |
-| Web app (`src/stiti/web/`) | 🟢 `stiti web`: chat + landing — see §6b | DECISIONS D16 |
+| Web app (`src/stiti/web/` + `frontend/`) | 🟢 Next.js: landing, chat (memory receipts), Memory page — see §6b | DECISIONS D16/D23 |
+| Hinglish voice (`voice/hinglish.py`) | 🟢 Kokoro Hindi voice + code-switch phonemes, WER 68%→~30%; NOT heard on the mic; STT unchanged | DECISIONS D22, `docs/research/hinglish_voice.md` |
 | Cloud LLM router (D17) | 🟢 live with Groq/OpenRouter/Gemini; P1 backup needs a Z.ai or Cloudflare key | `docs/research/free_llm_providers.md` |
 
 ## 6. Whiteboard tutor (`src/stiti/tutor/`) — backend design
@@ -112,10 +116,13 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
   domain, provider, latency, last fast-path action; a `state` push (open todos + upcoming intents) follows each turn.
 - **Localhost security model** (shared with the tutor board): bind 127.0.0.1; Host header check on every request
   (DNS rebinding); Origin + per-install token (`~/.stiti/web_token`, given once in the URL fragment) on WS and API.
-- Endpoints: `/` `/chat` (static), `/ws`, `GET /api/state`, `POST /api/todo/{id}/done`, `/icons/<n>.png`.
-- Static frontend, no build step (ES modules + pinned CDNs). UI conventions live in Claude memory, not here.
-- Verified: `tests/web_eval.py` 12/12. NOT verified: LLM replies in chat (no key); browser voice input.
-- Next: browser mic → local whisper; streaming replies; memory search / mood / settings views.
+- Endpoints: `/` `/chat` `/memory` (Next export in `frontend/out`; 503 "not built" if missing), `/ws`, `GET /api/state`,
+  `POST /api/todo/{id}/done`, `GET /api/mind` + `GET /api/moments?q=&before=` (`web/mind.py`), `POST /api/fact`,
+  `POST /api/fact/{id}/forget` (writes need same Origin; USER.md synced first, re-rendered after), `/icons/<n>.png`.
+- Chat replies carry `used` = `Engine.last_used` (memories/facts/doc sections/lessons handed to the LLM) → receipts.
+- Frontend = Next.js 16 static export (D23); no Node at runtime. UI conventions live in Claude memory, not here.
+- Verified: `tests/web_eval.py` 19/19; a real LLM chat turn with receipts. NOT verified: browser voice input.
+- Next: browser mic → local whisper; settings view; edit people/rules from the Memory page.
 
 ## 7. Tejmul's pending actions
 1. (Symlink no longer needed — app reinstalled to the real path.) 2. `uv run stiti backup --show-key` → save the key. 3. Add `ZAI_API_KEY` and/or
@@ -124,6 +131,12 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 Streamline) before the repo is promoted.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-10 — resume, Hinglish voice, Next.js frontend + Memory page (D22, D23):** resume → clean
+  `~/.stiti/me/resume.md` (ingested) + 12 About-me facts; owner name set. Hinglish TTS: Roman Hinglish was read by the
+  US voice (68% WER) → code-switch phonemes + Kokoro `hf_alpha` (~30%, same latency). Frontend moved to Next.js (3
+  sub-agents ported landing/chat/memory in parallel); old static UI deleted. Memory page + API, memory receipts in
+  chat, Stiti.app serves the web. Logo "eyes" no longer rotate/appear per message. Tests: hinglish 27/27, web 19/19.
+  NOT verified: Hindi voice on the real mic (Kokoro grades it C), Hinglish STT on his real voice (next: record clips).
 - **2026-11-10 — always-on fix, any book, crash course, alarms (D19, D20):** Stiti.app launcher pointed at the old
   ~/Stiti → reinstalled; it runs now. Tutor: 4 bugs fixed, any-book loader, one-night crash course + FSRS. Alarms
   rebuilt (recurrence, ring/snooze by voice, missed policy, AM/PM + saade/sawa/paune), todos remove/clear/restore.
