@@ -9,7 +9,7 @@ import json
 import os
 import re
 import time
-from datetime import datetime
+from datetime import date, datetime
 
 from . import embed, router
 from .brain import compiler, emotion, ingest, lessons, memory, psych
@@ -62,6 +62,28 @@ YES_RX = re.compile(r"^(haan|han|ha|yes|yeah|yep|ok(ay)?|kar do|do it|confirm|su
 GREET_RX = re.compile(r"^(hi|hello|hey|good morning|gm|morning|kya haal|uth gaya|i'?m up|namaste)\b", re.I)
 
 
+_last_hello = ""
+
+
+def hello(name: str | None, now: datetime | None = None) -> str:
+    """A short, human hello on wake — never the same twice in a row."""
+    import random
+    global _last_hello
+    now = now or datetime.now(CFG.tz)
+    n = f" {name}" if name else ""
+    if now.hour < 5:
+        opts = [f"Hey{n}, still up?", f"Hey{n}. Late night?"]
+    elif now.hour < 12:
+        opts = [f"Morning{n}! How are you?", f"Hey{n}, good morning. What's up?"]
+    elif now.hour < 17:
+        opts = [f"Hey{n}, how are you?", f"Hi{n}! What's up?", f"Hey{n}. What's on your mind?"]
+    else:
+        opts = [f"Hey{n}, how was your day?", f"Hi{n}! How's it going?", f"Hey{n}. What's up?"]
+    pick = random.choice([o for o in opts if o != _last_hello] or opts)
+    _last_hello = pick
+    return pick
+
+
 class Engine:
     def __init__(self, channel: str = "text"):
         self.session = memory.start_session(channel)
@@ -71,6 +93,7 @@ class Engine:
         self.onboarding = None                    # active onboarding interview
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
         self.ended = False                                  # text/Telegram: he said bye
+        self.last_offer: tuple[str, float] | None = None   # ("intro", time) — what "turn this off" refers to
         self.clarify = None                                 # asking what he meant after "nahi/galat"
         self.last_action: dict | None = None                # last fast-path write (for undo)
         self.last_turn_id: int | None = None
@@ -121,12 +144,48 @@ class Engine:
         return info.get("text") or "Done.", info
 
     def greet(self) -> str:
-        """Called when woken with no command: offer the intro if she knows nothing yet; else the brief."""
+        """Called when woken with no command. Like a person: "Hey Tejmul, how are you?" (the daily brief once a
+        morning). The intro is offered only if she really knows nothing about him, at most once a week, and never
+        again once he says "turn this off" (owner: she kept asking on every wake)."""
+        from . import profile
+        if self._should_offer_intro():
+            profile.set("intro_offered_at", datetime.now(CFG.tz).date().isoformat(), "system")
+            self.last_offer = ("intro", time.time())
+            return ("Hey! I don't know much about you yet. Whenever you like, say “intro shuru karo” "
+                    "and we'll do a quick intro. Or say “turn this off”.")
+        name = profile.call() if profile.get("name") else None
+        brief = nudge.morning_brief(name=name)
+        return brief or hello(name)
+
+    INTRO_OFF_RX = re.compile(r"\b(turn (it |this |that )?off|switch (it |this |that )?off|band (karo|kar do|kardo)|"
+                              r"stop asking|don'?t ask (me )?(again|that|this)|mat (pucho|poocho)|no more intro)\b", re.I)
+    INTRO_ON_RX = re.compile(r"\b(turn|switch) (the )?intro (offer )?(back )?on\b", re.I)
+
+    def _intro_switch(self, text: str) -> str | None:
+        """"Hey Stiti, turn this off" right after the intro offer (or "turn off the intro" any time)."""
+        from . import profile
+        if self.INTRO_ON_RX.search(text):
+            profile.set("intro_offer", "on", "owner_edit")
+            return "Okay, I'll offer the intro again sometime."
+        recent = self.last_offer and self.last_offer[0] == "intro" and time.time() - self.last_offer[1] < 300
+        if self.INTRO_OFF_RX.search(text) and (recent or re.search(r"\bintro", text, re.I)):
+            profile.set("intro_offer", "off", "owner_edit")
+            self.last_offer = None
+            return "Done. I won't ask about the intro again."
+        return None
+
+    @staticmethod
+    def _should_offer_intro() -> bool:
+        from . import profile
         from .brain import onboarding
-        if not onboarding.done() and not q("SELECT 1 FROM user_directives WHERE status='active' LIMIT 1"):
-            return ("Haan! I don't know much about you yet — want a 3-minute intro? "
-                    "Say “intro shuru karo”.")
-        return nudge.morning_brief() or "Haan, bolo?"
+        if profile.get("intro_offer") == "off" or onboarding.done() or profile.get("name"):
+            return False
+        knows = one("""SELECT count(*) n FROM facts f JOIN entities e ON e.id=f.subj_id
+                       WHERE e.kind='self' AND upper_inf(f.recorded)""")["n"]
+        if knows >= 3 or q("SELECT 1 FROM user_directives WHERE status='active' LIMIT 1"):
+            return False
+        last = profile.get("intro_offered_at")
+        return not last or (datetime.now(CFG.tz).date() - date.fromisoformat(last)).days >= 7
 
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None, *,
              on_delta=None, on_ack=None) -> str:
@@ -161,7 +220,7 @@ class Engine:
 
         # ---- fast paths (no LLM) ----
         low = psych.minimum_viable_day(emo.label)
-        from .brain import onboarding
+        from .brain import instructions, onboarding
         from .life import proactive
         if self.last_nudge and time.time() - self.last_nudge[1] < 180:      # his reaction to her nudge
             proactive.feedback(self.last_nudge[0], "dismissed" if proactive.DISMISS_RX.match(text) else "accepted")
@@ -192,6 +251,10 @@ class Engine:
             reply, self.ended = farewell(text, self.last_mood), True
         elif disabled_kind:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
+        elif switched := self._intro_switch(text):
+            reply = switched
+        elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
+            reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
         elif self.onboarding is not None:
             reply, finished = self.onboarding.answer(text, user_ep)
             if finished:

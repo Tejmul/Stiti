@@ -31,7 +31,7 @@ def record(kind: str, payload: dict | None = None) -> int:
     return one("INSERT INTO nudges(kind, payload) VALUES (%s,%s) RETURNING id", (kind, json.dumps(payload or {})))["id"]
 
 
-def morning_brief(now: datetime | None = None, low_energy: bool = False) -> str | None:
+def morning_brief(now: datetime | None = None, low_energy: bool = False, name: str | None = None) -> str | None:
     """Once per day, on his first message (a natural breakpoint)."""
     now = now or datetime.now(CFG.tz)
     if one("SELECT 1 FROM nudges WHERE kind='morning_brief' AND sent_at >= date_trunc('day', now() AT TIME ZONE %s) AT TIME ZONE %s",
@@ -39,7 +39,7 @@ def morning_brief(now: datetime | None = None, low_energy: bool = False) -> str 
         return None
     greet = "Good morning" if now.hour < 12 else "Hey" if now.hour < 17 else "Good evening"
     fresh = " New week, fresh start." if now.weekday() == 0 else ""
-    parts = [f"{greet}!{fresh}"]
+    parts = [f"{greet}{', ' + name if name else ''}!{fresh}"]
     if low_energy:
         parts.append(handlers.todo_list(limit=1) + " Just that one is enough today.")
     else:
