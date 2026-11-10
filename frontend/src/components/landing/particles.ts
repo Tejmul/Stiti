@@ -57,6 +57,9 @@ export type Field = {
   setFade(v: number): void;
   /** Expanding ring (600 px/s) that kicks the dots outward as it passes. Hero only. */
   ripple(x: number, y: number): void;
+  /** Centre the sphere on (x, y) with radius r (viewport px), e.g. behind the hero's product shot; the dots spring
+   *  there, so moving it while scrolling trails softly. Without a call the sphere keeps its original placement. */
+  anchor(x: number, y: number, r: number): void;
   /** Global dim (e.g. .15 while the menu is open); eased inside the loop. */
   dim(alpha: number): void;
   perf(): { fps: number; ms: number; total: number; drawn: number; mobile: boolean; running: boolean };
@@ -77,6 +80,7 @@ export function createField(cv: HTMLCanvasElement): Field {
   let frames = 0, t = 0, last = 0, raf = 0, liftS = 0, dimT = 1, dimV = 1, fadeV = 1, introT = 0, introX = 0, introY = 0;
   let bcx = 0, bcy = 0, R = 0, SZ = 1;
   let dead = false;
+  let anc: { x: number; y: number; r: number } | null = null;
   const mouse = { x: -1e4, y: -1e4, vx: 0, vy: 0, on: false };
   const rings: { x: number; y: number; t0: number }[] = [];
   const stat = { fps: 60, ms: 0, drawn: 0 };
@@ -88,6 +92,7 @@ export function createField(cv: HTMLCanvasElement): Field {
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     if (mobile) { bcx = W * .5; bcy = Math.min(H * .25, W * .52); R = Math.min(W * .3, H * .19); }
     else { bcx = W * .715; bcy = H * .4; R = Math.min(W * .2, H * .3); }
+    if (anc) { bcx = anc.x; bcy = anc.y; R = anc.r; }
     SZ = mobile ? .72 : 1;
     return mobile ? 2200 : 6000;
   }
@@ -325,6 +330,10 @@ export function createField(cv: HTMLCanvasElement): Field {
       if (REDUCE || !raf) return;
       rings.push({ x, y, t0: performance.now() });
       if (rings.length > 6) rings.shift();
+    },
+    anchor(x, y, r) {
+      anc = { x, y, r }; bcx = x; bcy = y; R = r;
+      if (REDUCE && !raf) start();                    // reduced motion: re-settle once at the new place
     },
     dim(alpha) { dimT = alpha; },
     perf: () => ({ fps: Math.round(stat.fps), ms: +stat.ms.toFixed(2), total: N, drawn: stat.drawn, mobile, running: !!raf }),
