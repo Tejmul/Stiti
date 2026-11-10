@@ -287,9 +287,11 @@ class Tutor:
         """Lazy (LLM) lessons: the next segment is still being written."""
         self.say("One second, I'm preparing the next part.")
         n = len(self._flat())
-        for _ in range(600):
+        for i in range(1600):                         # ≤4 min: free-tier rate limits can make the writer wait
             if len(self._flat()) > n or getattr(self.L, "complete", True):
                 return len(self._flat()) > n
+            if i and i % 300 == 0:
+                self.say(["Almost ready.", "Just a moment more, writing the next part.", "Nearly there."][i // 300 % 3])
             ev = self._next_event(0.15)
             if ev is not None and self._kind(ev)[0] == "end":
                 self.ended = True
@@ -545,7 +547,8 @@ class Tutor:
                                      questions=self.questions, finished=finished, ended=True)
                 if finished:
                     cards = store.save_cards(self.lesson_id, self.L.cards)
-                store.remember(self.L, self.results, self.questions, finished)
+                if self.L.source.get("kind") != "course":      # course glue (map, quiz, break) isn't a memory
+                    store.remember(self.L, self.results, self.questions, finished)
             except Exception as e:
                 self.log(f"   [store] {type(e).__name__}: {e}")
         self.pool.shutdown(wait=False, cancel_futures=True)
