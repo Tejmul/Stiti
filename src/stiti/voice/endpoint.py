@@ -44,14 +44,14 @@ VAD_BAR_SPEAKING = 0.7       # stricter while she talks (echo residue)
 AEC_WARMUP_S = 3.0           # no barge-in right after start-up (LiveKit aec_warmup_duration)
 PLAYBACK_GUARD_S = 0.25      # ... nor in the first 250 ms of each playback
 DUCK_MS = 250                # stage 1: duck her voice
-FORCE_PAUSE_MS = 900         # stage 2: pause her if his words still haven't decided (Hume min_interruption 800)
+FORCE_PAUSE_MS = 700         # stage 2: pause her if his words still haven't decided (Hume min_interruption 800)
 BARGE_QUIET_S = 1.5          # paused/ducked and nothing real came → resume
 CONT_MIN_SPEECH_MS = 300     # continuation grace: this much of his speech after a commit …
 CONT_GRACE_S = 0.9           # … before her first audio or within 0.9 s of it (Bolna incremental_delay)
 PREFIX_TTL_S = 20.0          # a kept fragment ("Mm-hm?") is joined only if he goes on within this
 BYE_MIN_SPEECH_MS = 300      # "bye" gate
 ECHO_TAIL_S = 1.2            # speech that starts this soon after her audio ended is suspect
-MIN_DELAY_START, MIN_DELAY_MIN, MIN_DELAY_MAX = 0.6, 0.5, 3.0
+MIN_DELAY_START, MIN_DELAY_MIN, MIN_DELAY_MAX = 1.0, 0.5, 3.0   # 1.0: measured ElevenLabs waits ~1.4 s (re_elevenlabs_live.md)
 EMA_ALPHA = 0.9
 LEARN_PAUSE_MIN_S = 0.3      # shorter gaps are VAD jitter, not "his pauses"
 
@@ -91,10 +91,25 @@ WAIT_RX = re.compile(
 # an action that still lacks its slot: "remind me", "set an alarm for", "add to"
 SLOT_END_RX = re.compile(r"\b(remind me( to| at| about| on)?|set (an? )?(alarm|timer|reminder)( for| at)?|"
                          r"add( to)?|wake me( up)?( at)?)$")
-BACKCHANNEL_WORDS = {
+BACKCHANNEL_RX = re.compile(r"^(m+h*m*|h+m+|uh-?huh|a+ha+|o+h+|haa+n*(ji)?)$")   # "Mmh, mmh." heard as a stop (measured)
+
+
+class _Backchannels(set):
+    """A word set that also matches "mmh", "hmmm", "uh-huh", "aha", "haanji" spellings (BACKCHANNEL_RX)."""
+    def __contains__(self, w) -> bool:
+        return set.__contains__(self, w) or bool(BACKCHANNEL_RX.match(str(w)))
+
+
+BACKCHANNEL_WORDS = _Backchannels({
     "haan", "han", "ha", "hmm", "hm", "mhm", "mm", "mmhmm", "uh", "huh", "ok", "okay", "yeah", "yes", "yep", "ya",
     "acha", "achha", "accha", "right", "sure", "ji", "theek", "thik", "hai", "sahi", "cool", "nice", "got", "it",
-}
+    "mmh", "mhmm", "hmmm", "mmm", "ohh", "oh", "aha", "haanji", "haan ji", "uh-huh", "uhhuh", "achchha",
+})
+# a sentence that opened but hasn't said its point yet: wait like ElevenLabs did ("I was wondering" + 2.5 s pause)
+UNFINISHED_START_RX = re.compile(r"^(so )?(i was (wondering|thinking)( if| whether| about)?|the thing is|what i mean is|"
+                                 r"can you tell me|could you tell me|i want to (ask|tell you)|i wanted to (ask|say|tell you)|"
+                                 r"baat (ye|yeh) hai( ki)?|mujhe (ye|yeh) (puchna|poochna|kehna) (tha|hai)( ki)?|"
+                                 r"main (ye|yeh) (soch|keh) (raha|rahi) (tha|thi|hoon)( ki)?)$")
 STOP_WORDS = {"stop", "wait", "ruko", "ruk", "bas", "chup", "enough", "no", "nahi", "nope", "suno", "listen", "shh",
               "shush"}
 
@@ -126,6 +141,8 @@ def text_state(t: str) -> str:
         return "unfinished"
     if question and not (len(w) > 1 and w[-1] in HARD_CONNECT):
         return "finished"
+    if UNFINISHED_START_RX.match(s) and not question:
+        return "unfinished"
     tail2 = " ".join(w[-2:])
     if tail2 in FINISHED_TAILS or " ".join(w[-3:]) in FINISHED_TAILS:
         return "finished"
