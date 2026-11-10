@@ -356,3 +356,41 @@ strategy is chosen **locally**; weak free models ignore prompt rules, so the sha
   (`docs/persona/SOUL.jarvis.md` is the version for his own `~/.stiti/SOUL.md`).
 - Cost: 0 new models, 0 MB RAM, < 1 ms strategy + ~2 ms gate. Tests: `tests/persona_eval.py` (the 15 dialogues of §3f,
   offline checks with a fake "bad" LLM + pass@3 on the real free router).
+
+## D28: Personal emotion learning + opt-in local conversation recorder (2026-11-11)
+Owner: "the emotion detection could be trained by using [the system we] build" — Stiti should learn HIS voice from
+real use. Research: `docs/research/personal_emotion.md` (19 sources: emotion2vec/SUPERB frozen-feature heads,
+PAPE/Sridhar-Busso personalization, IFN per-speaker normalization, SER test-time adaptation, cross-modal transfer +
+co-training, complementary labels, noisy labels, active/continual learning, temperature scaling, Hindi/Hinglish
+corpora, VoicePrivacy). No public Hinglish *speech* emotion corpus exists → his own data is the dataset.
+- **Recorder (`learn/recorder.py`, migration 009), default OFF.** Menubar "Record our chats (local)" or
+  `stiti recordings on|off|status|delete [--before DATE]|train`. Per committed voice turn: 16 kHz FLAC in
+  `~/.stiti/recordings/YYYY-MM-DD/` (0700/0600) + a `voice_turns` row (transcript, speech/pause ms, turn state, STT
+  confidence, prosody, generic prosody/emotion2vec reads, voice/text/fused mood, 768-d embedding). One hook line in
+  `voice/loop.py` (background thread; a no-op when OFF). Retention 30 days / 2 GB (`recorder_days`,
+  `recorder_max_gb`): expired audio is deleted, compact features + labels stay. P2 (crisis) turns are never kept.
+  Never uploaded, never on a web page, not in backups. `delete` (no date) also removes the personal models.
+- **Labels from his words, no forms (`learn/labels.py`):** first-person self-reports EN + Hinglish ("I'm so tired",
+  "thak gaya hoon", "tension ho rahi hai") → +1.0 on the turn, +0.5 on ±2 neighbouring turns (≤3 min);
+  corrections ("I'm not angry", "main udaas nahi hoon", "why do you think I'm sad") → NOT-label 1.0, and 0.7 on the
+  previous turn when she had read that mood; text mood ≥0.8 agreeing with the generic voice read → pseudo 0.3;
+  opt-in end-of-day check-in → 0.2 (`daily_checkin`, asking flow not built). Rebuilt nightly from scratch.
+- **Personal heads (`learn/emotion_train.py`, nightly in `brain/sleep.py`):** numpy softmax regression + L2 +
+  class-balanced weights + complementary-label loss for NOT-labels. `e2v`: embedding − his mean → PCA 32 whitened
+  (a 768×768 covariance, not an SVD of all rows). `prosody`: [db, pitch, pitch SD, rate] z-scored on his data (works
+  with emotion2vec OFF). Missing embeddings are filled by a **subprocess** that loads emotion2vec once and exits
+  (measured: 11 s incl. load for a backlog, 1.2 GB peak RSS, returned on exit). Retrain from all kept features each
+  night = full rehearsal, no forgetting.
+- **Gate:** k-fold grouped by day, truth = human-sourced labels only (pseudo-labels agree with generic by
+  construction), macro-F1. Activate only if Δ ≥ 0.05 over the generic predictor of the same turns AND over chance
+  (1/K), more folds won than lost, ≥ 12 eval turns, ≥ 3 days. Otherwise (or if tonight's check fails) → generic.
+  Temperature fitted on out-of-fold logits; live head abstains below max(0.5, 1/K + 0.2).
+  Versioned `~/.stiti/models/personal_emotion/{kind}-vN.npz|json`, `active.json`, `metrics.jsonl`; runs logged in
+  `consolidation_runs` (job `emotion_train`).
+- **Live:** `emotion_model.classify()` now asks for the embedding in the same pass (no extra cost) and uses the
+  active `e2v` head; `prosody.update_and_score()` uses the active `prosody` head; `personal.note/provenance` tells
+  `fuse()` which reads are personal → a calibrated personal read is trusted at conf ≥ 0.55 (generic keeps 0.75);
+  his denial still wins.
+- Cost: 0 new models, live +~10 µs, nightly train ~1.4 s CPU / +~90 MB for 3,000 turns (both heads, 5 folds).
+  Synthetic: activates at personal-signal 0.1 (F1 0.80 vs generic 0.56), stays generic at 0.06 (0.33 vs 0.56) and
+  with no signal. Tests: `tests/emotion_learning_eval.py` 31/31.
