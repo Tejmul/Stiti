@@ -31,7 +31,7 @@ def time_bucket(dt: datetime | None = None) -> str:
             else "evening" if h < 21 else "night")
 
 
-def capture(text: str, *, mood: str | None, source_episode_ids: list[int]) -> tuple[int, str]:
+def capture(text: str, *, mood: str | None, source_episode_ids: list[int], lang: str | None = None) -> tuple[int, str]:
     """Turn an owner correction into an active lesson. Returns (lesson_id, one-line acknowledgement)."""
     t = text.lower()
     trigger: dict = {}
@@ -63,12 +63,12 @@ def capture(text: str, *, mood: str | None, source_episode_ids: list[int]) -> tu
                      VALUES (%s,%s,%s,%s,'owner_explicit','active',0.9,%s,%s) RETURNING id""",
                   (situation, __import__("json").dumps(trigger), guidance, polarity, vec, source_episode_ids))["id"]
     render_md()
+    hindi = lang == "hinglish" if lang else bool(HINGLISH.search(text))
     when = ""
     if "mood" in trigger:
-        when = (f"jab tum {'/'.join(trigger['mood'])} ho, " if HINGLISH.search(text)
-                else f"when you're {'/'.join(trigger['mood'])}, ")
-    ack = (f"Samajh gaya — {when}dhyan rakhunga. (lesson L{lid})" if HINGLISH.search(text)
-           else f"Got it — {when}I'll keep that in mind. (lesson L{lid})")
+        when = (f"jab tum {'/'.join(trigger['mood'])} ho, " if hindi else f"when you're {'/'.join(trigger['mood'])}, ")
+    # short, and feminine Hindi (Stiti is "she"): the saved lesson is real, so "from now on" is an honest promise
+    ack = f"Samajh gayi — {when}dhyan rakhungi." if hindi else f"Got it — {when}noted for next time."
     return lid, ack
 
 
