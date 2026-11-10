@@ -34,6 +34,7 @@ import numpy as np
 from . import endpoint, prosody, stt, turn, wake
 from .duplex import Duplex
 from .. import router
+from ..learn import recorder
 from ..brain.psych import StreamLint
 from .speaker import ACKS, FILLER_AFTER_S, FILLERS, Speaker
 from .tts import TTS, ClauseChunker, chime_audio, sentences, speakable
@@ -251,6 +252,7 @@ class VoiceLoop:
         if pend.cancelled:
             print("Stiti: (dropped — you were still talking)")
             return
+        recorder.on_turn(self.engine, text, audio, c, voice, th)      # opt-in local recorder (D28); no-op when OFF
         if left:
             self._resume = (left, mood)
         if sp.interrupted:

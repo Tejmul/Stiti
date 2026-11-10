@@ -33,12 +33,13 @@ class StitiApp(rumps.App):
         self.thinking_item = rumps.MenuItem("—")
         self.emotion_item = rumps.MenuItem("Deep voice emotion", callback=self.toggle_emotion)
         self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "off") != "off")
+        self.record_item = rumps.MenuItem("Record our chats (local)", callback=self.toggle_recorder)
         self.menu = [self.status_item, self.thinking_item, None,
                      rumps.MenuItem("Open Stiti (chat + memory)", callback=self.open_web),
                      rumps.MenuItem("⏰ Stop alarm", callback=self.stop_alarm),
                      rumps.MenuItem("Type to Stiti…", callback=self.type_to_stiti),
                      rumps.MenuItem("Quick add todo…", callback=self.quick_todo), None,
-                     self.listen_item, self.emotion_item,
+                     self.listen_item, self.emotion_item, self.record_item,
                      rumps.MenuItem("Open mood timeline", callback=lambda _: self._bg(self._mood)),
                      rumps.MenuItem("Open life graph", callback=lambda _: self._bg(self._graph)),
                      rumps.MenuItem("Run sleep job now", callback=lambda _: self._bg(self._sleep)),
@@ -68,6 +69,11 @@ class StitiApp(rumps.App):
         from .voice import stt
         from .voice.loop import VoiceLoop
         self._set_status("Loading memory…")
+        try:
+            from .learn import recorder
+            self.record_item.state = int(recorder.enabled())
+        except Exception:
+            pass
         embed.embed_query("warm up")
         intent._index()
         self._set_status("Loading ears & voice…")
@@ -256,6 +262,12 @@ class StitiApp(rumps.App):
         if text:
             from .fastpath.handlers import todo
             rumps.notification("Stiti", "", todo(f"add todo {text}") or "Couldn't add that.")
+
+    def toggle_recorder(self, item):
+        """D28: opt-in local recorder (default OFF) — his turns stay in ~/.stiti/recordings so she learns his voice."""
+        from .learn import recorder
+        recorder.set_enabled(not item.state)
+        item.state = int(recorder.enabled())
 
     def toggle_emotion(self, item):
         item.state = 0 if item.state else 1
