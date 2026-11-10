@@ -11,7 +11,8 @@
 ## 0. Hard rules from Tejmul (never break)
 1. **Brain ≠ LLM.** Identity/memory/decisions live in Stiti's local Postgres brain; the LLM is a swappable cloud
    "mouth" fed a compiled briefing. No LLM fine-tuning (small local decision models like Laya may be tuned).
-2. **No local LLM, no Ollama — ever.** LLM = free cloud tiers only (Groq, Cerebras, OpenRouter :free, Mistral, Gemini P0).
+2. **No local LLM, no Ollama — ever.** LLM = free cloud tiers only (D17: Groq, Z.ai GLM, Cloudflare, OpenRouter :free,
+   Mistral; NVIDIA + Gemini for public questions only).
 3. **Free only.** Zero cost.
 4. **Postgres** is the store (not SQLite, not ChromaDB).
 5. **Research before building:** ≥10 papers/architectures per feature, comparison table, then decide
@@ -31,7 +32,8 @@
   `rm -r ~/Stiti/research_notes ~/Stiti/.placeholder && rmdir ~/Stiti && ln -s ~/Desktop/Stiti ~/Stiti`
 - Desktop is iCloud-synced (1.8 GB `.venv`) — undecided: move to `~/Projects` or `.venv.nosync`.
 - Untracked `actions/` (PNG assets) is Tejmul's — don't commit or delete.
-- **No `.env` yet → no API keys → no LLM call has ever run.** `.env.example` lists the keys.
+- `.env` exists (Groq, OpenRouter, Gemini keys set 2026-11-10; Z.ai/Cloudflare/NVIDIA slots empty). Real LLM calls
+  verified via the router (voice chain, P0 fallback, tutor strict JSON).
 - Claude Code MCP (`.mcp.json`): playwright, rea (reverse-engineering).
 - Gotchas: zsh doesn't word-split `$VAR` commands; force-push / deleting the working dir are blocked (ask Tejmul);
   CI uses `macos-latest`; `uv run stiti` with no args waits on stdin — always pass a subcommand.
@@ -51,7 +53,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - `engine.py` `Engine.turn()` — normalize → decide → emotion → store episode → learning → FAST PATHS (no LLM) → else
   recall + compiler briefing (≤1,500 tok) + router + psych.lint. Degraded mode answers from memory when no LLM.
 - `decide.py` (exemplar kNN + rule floors; Laya OFF), `embed.py` (EmbeddingGemma-300M 4-bit ONNX, 768-d, ~7 ms),
-  `router.py` (custom free-tier chain, quotas in `llm_usage`, P2 never leaves the Mac), `profile.py` (owner name/pronouns).
+  `router.py` (custom free-tier chain, per-provider `max_privacy`, quotas in `llm_usage`, P2 never leaves the Mac), `profile.py` (owner name/pronouns).
 - `brain/` memory, compiler, lessons, learning, sleep (night job), mdsync, onboarding (old 10-Q), intake (new engine),
   keythings, emotion, psych, ingest (documents/chunks), graphview, moodview, backup.
 - `fastpath/` Hinglish dates + handlers · `life/` planner (CP-SAT), habits, chunker, brief, proactive.
@@ -67,7 +69,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Key-things intake v2 (`brain/guide.py`, `brain/understanding.py`) | 🟡 engine built; question set + adaptations TODO | `research_notes/Key things to know intake/intake_research.md`, DECISIONS D13 |
 | Whiteboard tutor (`src/stiti/tutor/`) | 🟢 works with the built-in lesson; ⏸ paused by Tejmul (chat first) — see §6 | DECISIONS D14/D15, `research_notes/Whiteboard tutor/` |
 | Web app (`src/stiti/web/`) | 🟢 `stiti web`: chat + landing — see §6b | DECISIONS D16 |
-| Anything needing a cloud LLM | ⛔ unverified (no API key) | — |
+| Cloud LLM router (D17) | 🟢 live with Groq/OpenRouter/Gemini; P1 backup needs a Z.ai or Cloudflare key | `docs/research/free_llm_providers.md` |
 
 ## 6. Whiteboard tutor (`src/stiti/tutor/`) — backend design
 - **Pattern: the brain decides, the LLM fills slots.** Code owns lesson shape (warm-up → hook → map → teach ×3 →
@@ -104,12 +106,16 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - Next: browser mic → local whisper; streaming replies; memory search / mood / settings views.
 
 ## 7. Tejmul's pending actions
-1. Symlink command (§1). 2. `uv run stiti backup --show-key` → save the key. 3. Add `GROQ_API_KEY` (+ optional others)
-to `.env`, restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
+1. Symlink command (§1). 2. `uv run stiti backup --show-key` → save the key. 3. Add `ZAI_API_KEY` and/or
+`CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` (personal-chat backup) and optionally `NVIDIA_API_KEY`; restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
 6. Try `uv run stiti web` and `uv run stiti teach`. 7. Confirm the `public/actions` icon licence (looks like
 Streamline) before the repo is promoted.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-10 — free LLM providers (D17):** Tejmul added Groq/OpenRouter/Gemini keys. Researched 17 free providers,
+  measured latency live (Groq Qwen3.8-27B ~190 ms first token). Router: per-provider `max_privacy`, Z.ai/Cloudflare/
+  NVIDIA added, Gemini `models/` ID bug + dead OpenRouter model fixed, OpenRouter `data_collection: deny` on P1.
+  NOT verified: Z.ai/Cloudflare/NVIDIA (no keys yet); full chat turn through Engine with the LLM.
 - **2026-11-10 — whiteboard tutor + web app:** created this HANDOFF + session protocol in CLAUDE.md. Built the
   tutor (§6, D15) then Tejmul switched priority to "normal chat features" → built `stiti web` (§6b, D16) with a
   sub-agent doing the landing page. New: migration 006 (applied to stiti + stiti_test), router `schema=` strict
