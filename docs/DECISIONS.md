@@ -383,8 +383,10 @@ Names are a **biasing** problem, not a model-size problem, so the brain feeds th
   copy → the same audio + glossary prompt goes to **Groq whisper-large-v3** (not turbo: it ignored the glossary and
   echoed the prompt ×3). 700 ms cap; local text kept on timeout/error; the lane cools down 5 s (timeout) / 60 s (error
   or 429); the Groq connection is pre-warmed while local Whisper runs if it was idle > 4 min (a cold call took ~1 s).
-- **Privacy switch:** audio leaves the Mac **only** on escalated turns (~14% on the research set). `STITI_STT_CLOUD=off`
-  (env wins) or owner_profile `stt_cloud=off` keeps all audio local. Key from `.env` via the router's client, never
+- **Privacy switch:** audio leaves the Mac **only** on escalated turns (~14% on the research set) **of an active
+  conversation** (60 s after a voice turn or wake greeting, `stt.mark_active()` from the engine): while she's asleep
+  the mic still transcribes everything for the wake phrase (TV, other people) and none of that goes to the cloud.
+  `STITI_STT_CLOUD=off` (env wins) or owner_profile `stt_cloud=off` keeps all audio local. Key from `.env` via the router's client, never
   printed; each call is counted in `llm_usage` (groq / whisper-large-v3).
 - **Learning words from his corrections (`voice/vocab.py`, Wispr §3 adapted to voice):** "no, I said Tejmul",
   "it's Stiti, not City", "Tejmul, not Tejmal", "spell it T-E-J-M-U-L", "nahi, maine Tejmul bola", and explicit "add

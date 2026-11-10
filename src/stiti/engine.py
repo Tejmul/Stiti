@@ -95,6 +95,7 @@ def hello(name: str | None, now: datetime | None = None) -> str:
 
 class Engine:
     def __init__(self, channel: str = "text"):
+        self.channel = channel
         self.session = memory.start_session(channel)
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
@@ -158,11 +159,18 @@ class Engine:
             tools = [] if tainted else tools   # after untrusted content: answer, don't act
         return info.get("text") or "Done.", info
 
+    def _voice_active(self) -> None:
+        """He's talking to her: the STT cloud second opinion may run (never while she's asleep — D27)."""
+        if self.channel == "voice":
+            from .voice import stt
+            stt.mark_active()
+
     def greet(self) -> str:
         """Called when woken with no command. Like a person: "Hey Tejmul, how are you?" (the daily brief once a
         morning). The intro is offered only if she really knows nothing about him, at most once a week, and never
         again once he says "turn this off" (owner: she kept asking on every wake)."""
         from . import profile
+        self._voice_active()
         if self._should_offer_intro():
             profile.set("intro_offered_at", datetime.now(CFG.tz).date().isoformat(), "system")
             self.last_offer = ("intro", time.time())
@@ -247,6 +255,7 @@ class Engine:
         psych.set_policy(None)          # the voice loop's StreamLint picks up this turn's strategy once it's chosen
         ack = on_ack or (lambda kind: None)
         text = normalize(text)
+        self._voice_active()
         if HOLD_RX.match(text):
             return self._hold(text)
         try:

@@ -196,6 +196,14 @@ def cloud(text, delay=0.05, segs=None):
 stt.reset_context()
 stt_cloud.reset()
 fake_local("Add by milk to my todos.", 0.3, -0.7)
+n = len(calls)
+r = stt.transcribe_ex(speech, cloud_call=cloud("x"))
+check("asleep (no conversation): unsure audio never goes to the cloud", len(calls) == n and r.source == "local")
+eng_v = type("E", (), {"channel": "voice"})()
+from stiti.engine import Engine as _Eng  # noqa: E402
+_Eng._voice_active(eng_v)
+check("a voice turn opens the cloud lane", stt.conversation_active())
+stt.mark_active(600)                                              # keep it open for the slow checks below
 r = stt.transcribe_ex(speech, cloud_call=cloud("Add buy milk to my todos."))
 check("unsure turn → cloud text used", r.text == "Add buy milk to my todos." and r.source == "cloud"
       and r.escalated == "low_conf", str(r))

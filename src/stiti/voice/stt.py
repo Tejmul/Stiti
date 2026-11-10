@@ -49,7 +49,20 @@ ESCALATE_LOGPROB = float(os.getenv("STITI_STT_ESCALATE_LOGPROB", "-0.5"))   # re
 MIN_SPEECH_MS = 500              # Wispr: less speech than this is a blip — never escalated, never "Sorry?"
 CONTEXT_TTL_S = 120              # the previous utterance is context only within one conversation
 CONTEXT_MAX_WORDS = 30
+ACTIVE_S = 60                    # the cloud lane is open only this long after a real turn with him (see mark_active)
 SR = 16000
+_active_until = 0.0
+
+
+def mark_active(seconds: float = ACTIVE_S) -> None:
+    """The engine calls this on every voice turn / wake greeting. While Stiti is asleep the mic still transcribes
+    everything for the wake phrase (TV, other people): that audio must never go to the cloud."""
+    global _active_until
+    _active_until = max(_active_until, time.monotonic() + seconds)
+
+
+def conversation_active() -> bool:
+    return time.monotonic() < _active_until
 
 
 @dataclass
@@ -291,7 +304,7 @@ def transcribe_ex(audio: np.ndarray, *, cloud_call=None) -> STTResult:
         sp = voiced_ms(audio)
         text, reason = decide(loc, sp)
     nsp, lp, source = loc.no_speech_prob, loc.avg_logprob, "local"
-    if reason and stt_cloud.enabled():
+    if reason and conversation_active() and stt_cloud.enabled():
         cp = build_prompt(lang, prev, cloud=True)
         cr = stt_cloud.transcribe(audio, cp, call=cloud_call)
         if accept_cloud(cr, cp, terms):
