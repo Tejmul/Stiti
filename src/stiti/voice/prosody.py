@@ -60,11 +60,33 @@ def update_and_score(feat: dict) -> tuple[str | None, float, float]:
     b["n"] += 1
     BASE.write_text(json.dumps(b))
     arousal = float(np.mean([z.get("db", 0), z.get("pitch", 0), z.get("rate", 0), z.get("pitch_sd", 0)]))
-    if b["n"] < 5:
-        return None, 0.0, arousal
-    cap = 0.6 if b["n"] >= 20 else 0.45
+    label, conf = _rule(b["n"], arousal)
+    from ..learn import personal                 # D28: his own head, only when it beat this rule on his data
+    p = personal.predict("prosody", feat)
+    if p is not None:
+        personal.note(p[0], p[1], "personal")
+        return p[0], p[1], arousal
+    personal.note(label, conf, "generic")
+    return label, conf, arousal
+
+
+def _rule(n: int, arousal: float) -> tuple[str | None, float]:
+    """The generic rule: arousal vs his baseline → stressed / tired / calm."""
+    if n < 5:
+        return None, 0.0
+    cap = 0.6 if n >= 20 else 0.45
     if arousal > 1.0:
-        return "stressed", min(cap, 0.3 + 0.15 * arousal), arousal    # high arousal; text decides angry vs happy
+        return "stressed", min(cap, 0.3 + 0.15 * arousal)    # high arousal; text decides angry vs happy
     if arousal < -1.0:
-        return "tired", min(cap, 0.3 + 0.15 * -arousal), arousal
-    return "calm", 0.3, arousal
+        return "tired", min(cap, 0.3 + 0.15 * -arousal)
+    return "calm", 0.3
+
+
+def generic_label(feat: dict) -> str | None:
+    """What the generic rule says for these features vs the current baseline — read-only (for the recorder)."""
+    b = _load()
+    if b["n"] < 5:
+        return None
+    z = [(feat[k] - b["mean"][k]) / (b["var"].get(k, 1.0) ** 0.5 + 1e-6)
+         for k in ("db", "pitch", "rate", "pitch_sd") if k in feat and k in b["mean"] and not (k == "pitch" and feat[k] == 0)]
+    return _rule(b["n"], float(np.sum(z) / 4))[0]

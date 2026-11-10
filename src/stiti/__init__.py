@@ -197,5 +197,8 @@ def main() -> None:
     elif cmd == "sleep":
         from .brain.sleep import run
         run(verbose=True)
+    elif cmd == "recordings":
+        from .learn.recorder import cli
+        cli(args[1:])
     else:
-        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | voices [try|use <persona> | install] | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open]]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | voices [try|use <persona> | install] | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open] | recordings [status|on|off|delete [--before YYYY-MM-DD]|train]]")
