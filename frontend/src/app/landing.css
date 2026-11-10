@@ -86,7 +86,8 @@ html.landing-has-cursor, html.landing-has-cursor a, html.landing-has-cursor butt
 .pg-landing .hero__quote p::before {                 /* hanging opening mark, in the accent blue */
   content: "“"; position: absolute; right: 100%; top: -.06em; padding-right: .12em; color: var(--blue); font-weight: 600;
 }
-.pg-landing .hero__quote p::after { content: "”"; font-weight: 600; color: var(--blue); }
+.pg-landing .hero__quote b { display: block; }                 /* the punchline always gets its own line */
+.pg-landing .hero__quote b::after { content: "”"; color: var(--blue); }
 .pg-landing .hero__ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: clamp(26px, 4vh, 40px); }
 .pg-landing .hero__facts { margin: 18px 0 0; font-size: 11px; }
 .pg-landing .hero__facts span { color: var(--blue); margin: 0 4px; }
