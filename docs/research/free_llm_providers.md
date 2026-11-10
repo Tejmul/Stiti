@@ -15,6 +15,13 @@ OpenAI-compatible, and safe for personal (P1) context (no training on API data).
 | OpenRouter `nvidia/nemotron-3.5-lightning:free` | — | 2,507 ms | empty reply |
 | Gemini `gemini-flash-lite-latest` | 2,407 ms | 2,408 ms | P0 only (free tier may train) |
 | Gemini `gemini-3.5-flash-lite` | 4,987 ms | 5,061 ms | too slow for voice |
+| NVIDIA `nvidia/nemotron-3.5-lightning-30b-a3b` | 490 ms | 715 ms | P0 fast fallback |
+| NVIDIA `nvidia/nemotron-3.5-bolt-e4b` | 520 ms (304 ms warm) | 532 ms | P0 fast fallback |
+| NVIDIA `nvidia/nemotron-3-ultra-550b-a55b` | 1,021 ms | 1,930 ms | P0 smart fallback |
+| NVIDIA `deepseek-v4.1-flash`, `glm-5.3-flash`, `minimax-m3.1-flash` | — | timeout (40 s) | free pool overloaded |
+| NVIDIA `moonshotai/kimi-k2.6` | — | 404 | listed but not served |
+| Z.ai `glm-4.7-flash` | — | 429 | "temporarily overloaded" |
+| Z.ai `glm-4.5-flash` | 8,006 ms | 8,529 ms | later 19.8 s and 429 → last resort only |
 
 Found while probing: OpenRouter removed `openai/gpt-oss-20b:free` (it was in our chains), and Gemini's `/models`
 returns IDs prefixed `models/`, so the router silently skipped Gemini. Both fixed.
@@ -45,6 +52,9 @@ returns IDs prefixed `models/`, so the router silently skipped Gemini. Both fixe
   Mac (unchanged). Chains list every (provider, model); missing keys and model IDs not in the provider's live `/models`
   list are skipped, so adding a key "just works".
 - OpenRouter requests for P1 turns send `provider.data_collection = "deny"`.
+- **Zero-cost guard** `is_free()`: OpenRouter only `:free` IDs; Z.ai only the exact free list (`glm-5.3-flash` exists
+  but is paid); every chain entry is checked before any call.
+- Z.ai's `/models` omits its free Flash models, so Z.ai skips the model-list check.
 - Voice chain starts with Groq Qwen3.8-27B (measured fastest). Personal backups: Z.ai GLM-4.7-Flash, Cloudflare
   gpt-oss-120b. P0 extras: NVIDIA (DeepSeek/Kimi/Qwen) and Gemini.
 

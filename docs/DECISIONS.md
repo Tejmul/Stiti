@@ -194,4 +194,7 @@ Research + live latency table: `docs/research/free_llm_providers.md` (17 provide
   (retired), Moonshot ($1 top-up), Ollama Cloud (Tejmul's no-Ollama rule), anonymous endpoints (privacy).
 - **Privacy:** each provider has `max_privacy`; P1 turns only go to providers that don't train on API data;
   OpenRouter P1 requests send `data_collection: deny` (in practice its free models then 404 → P0 only).
+- **Zero cost enforced in code:** `router.is_free()` (OpenRouter `:free` only, Z.ai exact free list) filters every chain.
+- **Measured after keys arrived:** NVIDIA Nemotron Lightning/Bolt ~0.3–0.5 s (P0 fallback); Z.ai free GLM overloaded
+  (429 / 8–20 s) → last resort. Personal-chat backup when Groq is down = Cloudflare (needs the account ID).
 - **Why:** with only Groq + OpenRouter, a Groq outage left personal chats with no backup (tested).
