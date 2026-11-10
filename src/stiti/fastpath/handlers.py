@@ -27,8 +27,25 @@ ADD_START = re.compile(r"^(please\s+)?(add|new (todo|task)|naya (task|todo)|todo
 DAYWORDS = re.compile(r"\b(kal|aaj|parso|tomorrow|today|ke liye|for)\b", re.I)
 
 
+REMOVE_RX = re.compile(r"\b(remove|delete|cancel|drop|hata|hatao|nikaal|nikal)\b", re.I)
+CLEAR_RX = re.compile(r"\b(clear|empty|wipe|delete all|remove all|saare hata|sab hata)\b.*\b(todos?|tasks?|list)\b|"
+                      r"\b(todos?|tasks?|list)\b.*\b(clear|khaali|saaf)\b", re.I)
+RESTORE_RX = re.compile(r"\b(restore|bring back|undo clear|wapas laao|wapas la do)\b.*\b(todos?|tasks?|list)\b", re.I)
+
+
 def todo(text: str) -> str | None:
     t = text.strip()
+    if RESTORE_RX.search(t):
+        n = q("""UPDATE tasks SET status='open' WHERE status='cancelled' AND notes = 'cleared'
+                 AND created_at > now() - interval '30 days' RETURNING id""")
+        q("UPDATE tasks SET notes=NULL WHERE notes='cleared' AND status='open'")
+        return f"Restored {len(n)} todo{'s' if len(n) != 1 else ''}." if n else "Nothing to restore."
+    if CLEAR_RX.search(t):
+        n = q("UPDATE tasks SET status='cancelled', notes='cleared' WHERE status='open' RETURNING id")
+        return (f"Cleared {len(n)} todo{'s' if len(n) != 1 else ''}. Say “restore my todos” if that was a mistake."
+                if n else "Your list is already clear.")
+    if REMOVE_RX.search(t) and re.search(r"\b(todos?|tasks?|list|kaam)\b", t, re.I):
+        return _todo_remove(t)
     if ADD_START.search(t):
         return _todo_add(t)
     if DONE_RX.search(t):
@@ -46,6 +63,10 @@ def _todo_add(t: str) -> str | None:
         title = ADD_TRIGGERS.sub("", title).strip(" .:-")
     title = DAYWORDS.sub(" ", title) if parse_when(t) else title
     title = re.sub(r"\s+", " ", title).strip(" .:-")
+    title = re.sub(r"^(to|that|ki|ke)\s+", "", title, flags=re.I)       # "add a task to call the bank"
+    if parse_when(t):                                                   # drop the time words from the title
+        title = re.sub(r"\b(at|by|before|on)?\s*\d{1,2}([:.]\d{2})?\s*(am|pm|baje)\b", " ", title, flags=re.I)
+        title = re.sub(r"\s+", " ", title).strip(" .:-")
     if not title or len(title) < 2:
         return None
     due = parse_when(t)
@@ -65,6 +86,19 @@ def todo_list(limit: int = 3) -> str:
     return f"{total} open. Top {min(limit, total)}: " + "; ".join(items) + "." + more
 
 
+def _todo_remove(text: str) -> str | None:
+    cleaned = re.sub(r"\b(remove|delete|cancel|drop|hata|hatao|do|nikaal|nikal|from|my|the|todo|todos|tasks?|list|"
+                     r"kaam|se|mein|me|please)\b", " ", text, flags=re.I).strip(" .")
+    if not cleaned:
+        return None
+    row = one("""SELECT id, title, similarity(lower(title), lower(%s)) s FROM tasks
+                 WHERE status='open' ORDER BY s DESC LIMIT 1""", (cleaned,))
+    if not row or row["s"] < 0.2:
+        return f"I couldn't find an open task matching “{cleaned}”."
+    q("UPDATE tasks SET status='cancelled' WHERE id=%s", (row["id"],))
+    return f"Removed “{row['title']}” from your list. (task #{row['id']})"
+
+
 def _todo_done(text: str) -> str | None:
     cleaned = re.sub(r"\b(mark|as|done|complete|completed|finish(ed)?|ho gaya|ho gya|kar liya|khatam|the|my|task|todo)\b",
                      " ", text, flags=re.I).strip()
@@ -80,28 +114,9 @@ def _todo_done(text: str) -> str | None:
 
 # ---------------- alarms / reminders / timers ----------------
 def timeish(text: str) -> str | None:
-    t = text.lower()
-    if re.search(r"\b(cancel|delete|hata|band kar).*(alarm|reminder|timer)|(alarm|reminder|timer).*(cancel|hata)", t):
-        return _cancel_next()
-    if re.search(r"\b(my|kitne|which|what|list).*(alarms?|reminders?)\b", t) and not re.search(r"\bset\b", t):
-        return list_intents()
-    when = parse_when(text)
-    if when is None:
-        if re.search(r"\b\d{1,2}\b", t):
-            return "Morning or evening? Say it like “6 am” or “shaam 6 baje”."
-        return None
-    kind = "timer" if "timer" in t else "alarm" if re.search(r"\b(alarm|wake|uth|utha)", t) else "reminder"
-    what = _reminder_text(text) if kind == "reminder" else None
-    payload = {"say": what or ("Timer done!" if kind == "timer" else "Wake up, it's time!"), "kind": kind}
-    dbkind = "alarm" if kind in ("alarm", "timer") else "reminder"
-    row = one("""INSERT INTO intents(kind, fire_at, payload, user_set) VALUES (%s,%s,%s,true) RETURNING id""",
-              (dbkind, when, json.dumps(payload)))
-    if kind != "timer" and os.getenv("STITI_EVENTKIT", "on") != "off":
-        from ..connectors import eventkit
-        eventkit.mirror_intent_async(row["id"])     # rings on iPhone/Watch even if Stiti is off
-    label = {"timer": "Timer", "alarm": "Alarm", "reminder": "Reminder"}[kind]
-    about = f" — “{what}”" if what else ""
-    return f"{label} set for {readback(when)}{about}. (#{row['id']})"
+    """Alarms / reminders / timers → life/alarms.py (create, list, cancel, move, snooze; recurring)."""
+    from ..life import alarms
+    return alarms.handle(text)
 
 
 def _reminder_text(text: str) -> str | None:
@@ -135,18 +150,21 @@ def _cancel_next() -> str:
 
 
 def fire_due(notify=print) -> list[dict]:
-    """Called by the scheduler loop every few seconds. Durable: state lives in Postgres."""
-    rows = q("""UPDATE intents SET state='fired', last_fired_at=now()
-                WHERE state IN ('pending','armed') AND fire_at <= now() RETURNING id, kind, payload""")
-    for r in rows:
+    """Terminal mode (`stiti chat`): announce what's due; missed ones (late past their grace) are only reported.
+    The menubar app uses life/alarms.py directly (real ringing, snooze, voice dismiss)."""
+    from ..life import alarms
+    deliver, missed = alarms.due()
+    for r in deliver:
         msg = r["payload"].get("say", "Reminder")
         notify(f"⏰ {msg}")
-        try:  # macOS banner + built-in voice (free, local). EventKit mirror comes in Phase 5.
+        try:
             subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(msg)} with title "Stiti"'])
             subprocess.Popen(["say", msg])
         except OSError:
             pass
-    return rows
+    if missed and (m := alarms.missed_summary()):
+        notify(f"⏰ {m}")
+    return deliver
 
 
 def control(text: str) -> str | None:

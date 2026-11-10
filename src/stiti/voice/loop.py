@@ -53,6 +53,7 @@ class VoiceLoop:
         self.last_activity = 0.0
         self.duplex: Duplex | None = None
         self.paused = threading.Event()  # menubar "mute"
+        self.ring_control = None         # set while an alarm rings: "band karo" / "5 minute aur" (no wake word needed)
         self._interrupted = threading.Event()
         self._resume: tuple[list[str], str] | None = None
         self.fillers: list[tuple[np.ndarray, int]] = []
@@ -239,6 +240,11 @@ class VoiceLoop:
                 # one pass serves wake check + command; usually already done (started early in the pause)
                 text, ms = (spec or self._stt.submit(stt.transcribe, seg)).result()
                 if not text:
+                    continue
+                if self.ring_control is not None and (said := self.ring_control(text)):
+                    print(f"You: {text}")
+                    self.duplex.stop_playback()
+                    self.say(said)
                     continue
                 engaged = self.awake or now - self.last_activity < 10      # awake, or she just spoke (a nudge)
                 if engaged and (wake.is_stop(text) or wake.is_sleep(text)):
