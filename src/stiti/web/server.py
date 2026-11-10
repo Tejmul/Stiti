@@ -1,4 +1,6 @@
-"""`stiti web` — Stiti's local web app: landing page + chat, served from this Mac only.
+"""`stiti web` — Stiti's local web app (landing, chat, memory), served from this Mac only.
+
+The UI is a Next.js static export in frontend/out (D23); this server adds the API + WebSocket.
 
 Same safety model as the tutor board (D14 §4): bound to 127.0.0.1, Host header checked on every request
 (DNS rebinding), Origin + per-install token checked on the WebSocket and API (cross-site hijacking).
@@ -19,7 +21,7 @@ from pathlib import Path
 
 from ..config import CFG, REPO
 
-STATIC = Path(__file__).parent / "static"
+OUT = REPO / "frontend" / "out"          # Next.js static export (`cd frontend && pnpm build`)
 ICONS = REPO / "public" / "actions"
 PORT = int(os.getenv("STITI_WEB_PORT", "7317"))
 
@@ -78,7 +80,8 @@ class ChatSession:
             return {"type": "reply", "text": reply, "route": dbg.get("route"), "domain": dbg.get("domain"),
                     "mood": dbg.get("mood"), "provider": dbg.get("provider"),
                     "action": self.eng.last_action if dbg.get("route") == "fast_path" else None,
-                    "ms": round((time.perf_counter() - t) * 1000), "ended": self.eng.ended}
+                    "ms": round((time.perf_counter() - t) * 1000), "ended": self.eng.ended,
+                    "used": getattr(self.eng, "last_used", None)}
 
 
 def app():
@@ -91,6 +94,8 @@ def app():
     token = web_token()
     hosts = {f"127.0.0.1:{PORT}", f"localhost:{PORT}"}
     origins = {f"http://{h}" for h in hosts}
+    if os.getenv("STITI_WEB_DEV") == "1":            # `pnpm dev` on :3017 talks to this server (dev only)
+        origins |= {"http://localhost:3017", "http://127.0.0.1:3017"}
 
     def host_ok(h) -> bool:
         return h.get("host") in hosts
@@ -99,13 +104,27 @@ def app():
         t = req.query_params.get("t") or req.headers.get("x-stiti-token", "")
         return secrets.compare_digest(t, token)
 
+    files = {}
+
+    async def built_files(scope, receive, send):
+        """The Next export's assets — or a plain 404 while it isn't built (a fresh clone, CI), never a crash.
+        Checked per request, so building the frontend while Stiti runs just works."""
+        if not OUT.is_dir():
+            return await PlainTextResponse("not found", 404)(scope, receive, send)
+        if "app" not in files:
+            files["app"] = StaticFiles(directory=OUT)
+        return await files["app"](scope, receive, send)
+
     nostore = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
 
     def page(name):
         async def h(req):
             if not host_ok(req.headers):
                 return PlainTextResponse("bad host", 400)
-            return FileResponse(STATIC / name, headers=nostore)
+            f = OUT / name
+            if not f.exists():
+                return PlainTextResponse("Stiti's web app isn't built yet: cd frontend && pnpm install && pnpm build", 503)
+            return FileResponse(f, headers=nostore)
         return h
 
     async def icon(req):
@@ -129,6 +148,39 @@ def app():
         tid = int(req.path_params["id"])
         await asyncio.to_thread(q, "UPDATE tasks SET status='done' WHERE id=%s AND status='open'", (tid,))
         return JSONResponse(await asyncio.to_thread(_state))
+
+    def guard(req, write=False) -> bool:
+        ok = host_ok(req.headers) and tok_ok(req)
+        return ok and (not write or req.headers.get("origin") in origins)
+
+    async def mind_api(req):
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import mind
+        return JSONResponse(await asyncio.to_thread(mind.overview))
+
+    async def moments_api(req):
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import mind
+        return JSONResponse(await asyncio.to_thread(
+            mind.moments, req.query_params.get("q", "")[:200], req.query_params.get("before") or None))
+
+    async def fact_add(req):
+        if not guard(req, write=True):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import mind
+        body = await req.json()
+        try:
+            return JSONResponse(await asyncio.to_thread(mind.add_fact, str(body.get("text", ""))))
+        except ValueError:
+            return JSONResponse({"error": "Write at least a few words."}, 400)
+
+    async def fact_forget(req):
+        if not guard(req, write=True):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import mind
+        return JSONResponse({"ok": await asyncio.to_thread(mind.forget_fact, int(req.path_params["id"]))})
 
     async def ws_chat(ws):
         if not (host_ok(ws.headers) and ws.headers.get("origin") in origins
@@ -166,12 +218,35 @@ def app():
             pass
 
     return Starlette(routes=[
-        Route("/", page("index.html")), Route("/chat", page("chat.html")),
+        Route("/", page("index.html")), Route("/chat", page("chat.html")), Route("/memory", page("memory.html")),
+        Route("/api/mind", mind_api), Route("/api/moments", moments_api),
+        Route("/api/fact", fact_add, methods=["POST"]),
+        Route("/api/fact/{id:int}/forget", fact_forget, methods=["POST"]),
         Route("/icons/{n}.png", icon), Route("/api/state", state),
         Route("/api/todo/{id:int}/done", todo_done, methods=["POST"]),
         WebSocketRoute("/ws", ws_chat),
-        Mount("/static", StaticFiles(directory=STATIC)),
+        Mount("/", built_files),                                     # /_next/*, favicon, fonts
     ])
+
+
+def url() -> str:
+    return f"http://127.0.0.1:{PORT}/chat#t={web_token()}"
+
+
+def serve_in_thread() -> threading.Thread | None:
+    """Stiti.app runs the web app inside its own process (embedder already loaded), so the page is always on
+    while Stiti is. Returns None if the port is taken (e.g. `stiti web` already running)."""
+    import socket
+
+    import uvicorn
+    with socket.socket() as s:
+        if s.connect_ex(("127.0.0.1", PORT)) == 0:
+            return None
+    server = uvicorn.Server(uvicorn.Config(app(), host="127.0.0.1", port=PORT, log_level="warning",
+                                           ws_max_size=1 << 20))
+    th = threading.Thread(target=server.run, name="stiti-web", daemon=True)
+    th.start()
+    return th
 
 
 def run(open_browser: bool = True) -> None:

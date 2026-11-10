@@ -34,6 +34,7 @@ class StitiApp(rumps.App):
         self.emotion_item = rumps.MenuItem("Deep voice emotion", callback=self.toggle_emotion)
         self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "off") != "off")
         self.menu = [self.status_item, self.thinking_item, None,
+                     rumps.MenuItem("Open Stiti (chat + memory)", callback=self.open_web),
                      rumps.MenuItem("⏰ Stop alarm", callback=self.stop_alarm),
                      rumps.MenuItem("Type to Stiti…", callback=self.type_to_stiti),
                      rumps.MenuItem("Quick add todo…", callback=self.quick_todo), None,
@@ -54,6 +55,10 @@ class StitiApp(rumps.App):
         threading.Thread(target=self._boot, daemon=True).start()
         rumps.Timer(self._tick, 2).start()
 
+    def open_web(self, _=None):
+        from .web import server as web
+        subprocess.run(["open", web.url()])
+
     # ---------- background boot ----------
     def _boot(self):
         import numpy as np
@@ -72,6 +77,11 @@ class StitiApp(rumps.App):
             emotion_model.preload_async()
         self._permissions_check()
         threading.Thread(target=self._scheduler, daemon=True).start()
+        try:                                      # web chat + Memory page, always on at 127.0.0.1 while Stiti runs
+            from .web import server as web
+            web.serve_in_thread()
+        except Exception as e:
+            print(f"[web] {e}")
         from .connectors import telegram
         if telegram.token():
             threading.Thread(target=telegram.TelegramBot(Engine).run, args=(self.stop,), daemon=True).start()
