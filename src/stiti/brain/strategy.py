@@ -154,14 +154,14 @@ _LINES = {
     "SOLVE_TECH": "He's frustrated with something broken. One short human reaction (\"Ugh.\"), then the single most "
                   "useful next step. No jokes, no pep talk, no lecture about breaks.",
     "LISTEN": "He's low or venting. Name what happened plainly in one sentence and show you get why it matters. "
-              "Reflect — don't fix. No advice, no tips, no pep talk, no silver linings.",
+              "Reflect — don't fix, and don't repeat his words back. No advice, no tips, no pep talk, no silver linings.",
     "REFRAME": "He's being harsh on himself (all-or-nothing). Don't agree with it and don't gush. Give ONE realistic "
                "reframe backed by a real fact from HIS WINS or MEMORY, in plain words.",
     "ANSWER": "Answer exactly what he asked, first, then stop.",
     "BANTER": "He's in a good mood or joking. Match it with dry, understated wit in one short line. "
               "No exclamation spam, no \"how do you feel\".",
     "ACKNOWLEDGE": "He's telling you something. React briefly and specifically, as a statement. "
-                   "No follow-up question, don't restate what he said.",
+                   "No follow-up question, no advice he didn't ask for, don't restate what he said.",
     "NUDGE": "Point out the one fact that matters, once, politely. Then respect his choice.",
 }
 
@@ -177,6 +177,8 @@ def make(name: str, lang: str = "english", **over) -> Strategy:
     s = Strategy(name, mw, ask, hum, cb, _LINES[name], lang=lang)
     if name == "LISTEN":
         s.advice, s.max_items = False, 0
+    elif name == "ACKNOWLEDGE":
+        s.advice = False                 # MI: advise only when asked
     return replace(s, **over) if over else s
 
 
