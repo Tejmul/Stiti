@@ -207,9 +207,9 @@ class StitiApp(rumps.App):
                         if self.loop is not None:
                             self.loop.engine.last_nudge = (nid, time.time())
                 now = datetime.now(CFG.tz)
-                if now.hour == 3 and self.last_sleep_day != now.date():   # nightly consolidation at 03:00
+                if self._sleep_due(now, busy=bool(busy)):
                     self.last_sleep_day = now.date()
-                    self._sleep()
+                    self._bg(self._sleep)                  # never block alarms while the LLM job runs
             except Exception as e:
                 print(f"[scheduler] {e}", flush=True)
             self.stop.wait(5)
@@ -221,6 +221,19 @@ class StitiApp(rumps.App):
     def _graph(self):
         from .brain.graphview import render
         render(open_browser=True)
+
+    def _sleep_due(self, now, busy: bool) -> bool:
+        """Nightly consolidation (facts, people, his instructions → rules). It used to run only if the Mac was
+        awake at exactly 03:00, so it never ran. Now: at night, or as a catch-up once the last good run is a day
+        old and he's been quiet for 15 min."""
+        if busy or self.last_sleep_day == now.date():
+            return False
+        from .db import one
+        last = one("""SELECT max(finished_at) t FROM consolidation_runs
+                      WHERE job='extract' AND status IN ('ok','partial')""")["t"]
+        stale = last is None or (now - last).total_seconds() > 20 * 3600
+        quiet = self.loop is None or time.time() - getattr(self.loop, "last_activity", 0) > 15 * 60
+        return stale and quiet and (2 <= now.hour <= 6 or last is None or (now - last).total_seconds() > 30 * 3600)
 
     def _sleep(self):
         from .brain.sleep import run
