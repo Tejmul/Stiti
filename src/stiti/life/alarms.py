@@ -23,7 +23,7 @@ from dateutil.rrule import rrulestr
 
 from ..config import CFG
 from ..db import one, q
-from ..fastpath.dates import WAKE, now, parse_when, readback
+from ..fastpath.dates import WAKE, now, parse_when, readback, say_when, second_person
 
 # grace: how late a fire may still be delivered (after that it's "missed", not rung hours later)
 # (research: docs/research/alarms.md — Alexa-style "fire if ≤30 min late, else drop")
@@ -150,13 +150,19 @@ def create(text: str, ref: datetime | None = None) -> str | None:
             eventkit.mirror_intent_async(row["id"])          # also rings on iPhone/Watch if Stiti is off
         except Exception:
             pass
-    name = {"timer": "Timer", "alarm": "Alarm", "reminder": "Reminder"}[kind]
-    rep = f", {_rule_words(rule)}" if rule else ""
-    about = f" — “{label}”" if label else ""
     if kind == "timer":
         mins = round((when - (ref or now())).total_seconds() / 60)
         return f"Timer set for {mins} minute{'s' if mins != 1 else ''} (rings at {when:%I:%M %p}). (#{row['id']})".replace(" 0", " ")
-    return f"{name} set for {readback(when)}{rep}{about}. (#{row['id']})"
+    # spoken confirmation: repeat the key slot, nothing more ("Got it — reminder today at 4 PM: start your resume.")
+    if rule:
+        at = when.strftime("%I:%M %p").lstrip("0").replace(":00", "")
+        slot = f"{_rule_words(rule)} at {at}"
+    else:
+        slot = say_when(when) if (ref is None or ref.date() == now().date()) else readback(when)
+    if kind == "alarm":
+        return f"Done — alarm {slot}. (#{row['id']})"
+    about = f": {second_person(label)}" if label else ""
+    return f"Got it — reminder {slot}{about}. (#{row['id']})"
 
 
 def _upcoming(kinds=("alarm", "reminder")) -> list[dict]:
