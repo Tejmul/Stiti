@@ -184,3 +184,14 @@ Refines D14 after building + testing on this Mac (`src/stiti/tutor/`, `tests/tut
   Martian Mono labels), white glass navbar; particle motion only in the hero (+ the small "mind" in chat).
 - No build step: plain ES modules; GSAP + Lenis from pinned CDNs (free). Icons: owner-supplied pictograms
   (`public/actions`, served at `/icons/<n>.png`).
+
+## D17: Free LLM provider line-up + per-provider privacy (2026-11-10)
+Research + live latency table: `docs/research/free_llm_providers.md` (17 providers compared).
+- **Keep:** Groq (primary; Qwen3.8-27B first for voice, ~190 ms first token), OpenRouter `:free`, Gemini (P0 only).
+- **Add:** Z.ai GLM-4.7-Flash (free, no training on API data → P1 backup), Cloudflare Workers AI (10k neurons/day,
+  P1 backup), NVIDIA NIM (DeepSeek/Kimi/Qwen, evaluation terms → P0 only).
+- **Drop / not free:** Cerebras (card since 2026-07), Hugging Face (no free credits since 2026-10), GitHub Models
+  (retired), Moonshot ($1 top-up), Ollama Cloud (Tejmul's no-Ollama rule), anonymous endpoints (privacy).
+- **Privacy:** each provider has `max_privacy`; P1 turns only go to providers that don't train on API data;
+  OpenRouter P1 requests send `data_collection: deny` (in practice its free models then 404 → P0 only).
+- **Why:** with only Groq + OpenRouter, a Groq outage left personal chats with no backup (tested).
