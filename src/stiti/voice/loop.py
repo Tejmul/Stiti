@@ -3,11 +3,14 @@
 SLEEPING  mic (AEC-cleaned) → VAD → speech segment → whisper → wake phrase?
           "Stiti" / "Hi/Hey/Hello Stiti" / "Wake up baby girl" / "uth jao Stiti" → rising chime → AWAKE
 AWAKE     segment → whisper → engine.turn() → Kokoro, sentence-streamed through the duplex stream.
-STOP      "shut up" / "chup" / "okay" / "chalo" / "bye" / "bas" / "stop" (alone) → she stops at once,
-          falling chime, NO talking — and stays silent (her voice nudges too) until a wake phrase.
+STOP      "shut up" / "chup" / "bas" / "stop" (alone) → she stops at once, falling chime, NO talking — and stays
+          silent (her voice nudges too) until a wake phrase. "bye" / "chalo bye" / "good night" → she says a
+          warm goodbye first (farewell.py), then sleeps.
 Turn-end  Smart Turn v3.2 on a 300 ms pause: finished → answer now; unfinished → wait (≤2 s silence).
 Barge-in  he talks over her ≥450 ms → she stops. If it was only "haan"/"hmm" she resumes her sentence.
-Filler    if a reply takes >0.8 s she says "hmm…" so the silence never feels dead.
+Speed     LLM reply is streamed; she starts at the first clause, next sentence is synthesised while the
+          current one plays (speaker.py). Slow actions get an instant "ek sec, calendar dekhti hoon";
+          anything else silent for >0.9 s gets a "hmm". Connections to the LLM are pre-warmed on wake.
 """
 from __future__ import annotations
 
@@ -16,19 +19,23 @@ import queue
 import random
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
 
 import numpy as np
 
 from . import prosody, stt, turn, wake
 from .duplex import Duplex
-from .tts import TTS, chime_audio, sentences, speakable
+from .. import router
+from ..brain.psych import StreamLint
+from .speaker import ACKS, FILLERS, Speaker
+from .tts import TTS, ClauseChunker, chime_audio, sentences, speakable
 from .vad import FRAME, SR, VAD
 
 AWAKE_TIMEOUT_S = float(os.getenv("STITI_AWAKE_TIMEOUT", "20"))
 BARGE_MS = 450
-PAUSE_CHECK_MS = 300          # ask Smart Turn after this much silence
-FALLBACK_SILENCE_MS = 2000    # end the turn anyway after this much silence
-FILLERS = ["Hmm.", "Ek sec.", "Haan, dekhti hoon."]
+PAUSE_CHECKS_MS = (300, 600, 1000)   # ask Smart Turn at each of these pauses (a "matlab…" pause gets re-checked)
+FALLBACK_SILENCE_MS = 1500           # end the turn anyway after this much silence
+SPEC_STT_MS = 160                    # start transcribing this early in a pause (thrown away if he goes on)
 
 
 class VoiceLoop:
@@ -39,7 +46,8 @@ class VoiceLoop:
         self.vad = VAD()
         self.tts = TTS()
         self.micq: queue.Queue[np.ndarray] = queue.Queue()
-        self.segq: queue.Queue[np.ndarray] = queue.Queue()
+        self.segq: queue.Queue[tuple[np.ndarray, Future | None]] = queue.Queue()
+        self._stt = ThreadPoolExecutor(max_workers=1, thread_name_prefix="whisper")   # one long-lived STT thread
         self.awake = False
         self.silenced = False            # True after a stop word: no voice at all until a wake phrase
         self.last_activity = 0.0
@@ -47,8 +55,11 @@ class VoiceLoop:
         self.paused = threading.Event()  # menubar "mute"
         self._interrupted = threading.Event()
         self._resume: tuple[list[str], str] | None = None
-        self._fillers: list[tuple[np.ndarray, int]] = []
+        self.fillers: list[tuple[np.ndarray, int]] = []
+        self.acks: dict[str, tuple[np.ndarray, int]] = {}
+        self.ack_text = ACKS
         threading.Thread(target=self._prepare_fillers, daemon=True).start()
+        router.warm()
 
     # ---------- audio in: callback only queues; segmentation runs in its own thread ----------
     def _on_mic(self, x16: np.ndarray):
@@ -60,7 +71,8 @@ class VoiceLoop:
         cur: list[np.ndarray] = []
         ring: list[np.ndarray] = []
         silence = speech_ms = 0
-        checked = False
+        checks = 0                                    # how many of PAUSE_CHECKS_MS were asked this pause
+        spec: Future | None = None                    # transcription started early in this pause
         while not stop.is_set():
             try:
                 buf = np.concatenate([buf, self.micq.get(timeout=0.5)])
@@ -81,29 +93,39 @@ class VoiceLoop:
                 if cur:
                     cur.append(f)
                     if p >= 0.5:
-                        silence, checked = 0, False
+                        silence, checks, spec = 0, 0, None   # he kept talking: the early transcript is stale
                         continue
                     silence += 32
+                    if spec is None and silence >= SPEC_STT_MS:
+                        spec = self._stt.submit(stt.transcribe, np.concatenate(cur))
                     end = False
-                    if silence >= PAUSE_CHECK_MS and not checked:
-                        checked = True
-                        try:
-                            end = turn.complete_prob(np.concatenate(cur)) >= 0.5
+                    if checks < len(PAUSE_CHECKS_MS) and silence >= PAUSE_CHECKS_MS[checks]:
+                        checks += 1
+                        try:                          # bar lowers as the pause grows
+                            end = turn.complete_prob(np.concatenate(cur)) >= (0.5, 0.4, 0.3)[checks - 1]
                         except Exception:
                             end = silence >= 800
                     if end or silence >= FALLBACK_SILENCE_MS or len(cur) * 32 > 30000:
-                        self.segq.put(np.concatenate(cur))
-                        cur, silence, checked = [], 0, False
+                        self.segq.put((np.concatenate(cur), spec))
+                        cur, silence, checks, spec = [], 0, 0, None
                 elif p >= 0.5:
                     cur = ring[-10:] + [f]               # ~320 ms pre-roll
                 ring = (ring + [f])[-10:]
 
     # ---------- speaking ----------
     def _prepare_fillers(self):
+        """Pre-synthesise fillers + acknowledgements (and warm Kokoro) so they play with ~0 ms delay.
+        Also load Smart Turn + whisper now: lazily loaded, the first turn-end check stalled ~2.5 s."""
         try:
-            self._fillers = [self.tts.synth(t, "calm") for t in FILLERS]
+            turn.complete_prob(np.zeros(SR, dtype=np.float32))
+            self._stt.submit(stt.transcribe, np.zeros(SR, dtype=np.float32)).result()
+        except Exception as e:
+            print(f"[voice warm-up] {e}")
+        try:
+            self.fillers = [self.tts.synth_on_worker(t, "calm") for t in FILLERS]
+            self.acks = {k: self.tts.synth_on_worker(t, "calm") for k, t in ACKS.items()}
         except Exception:
-            self._fillers = []
+            self.fillers, self.acks = [], {}
 
     def _play(self, audio: np.ndarray, sr: int):
         self.duplex.play(audio, sr)
@@ -118,17 +140,16 @@ class VoiceLoop:
         self._speak(sentences(speakable(text)), mood)
 
     def _speak(self, parts: list[str], mood: str):
+        """Gapless: the next sentence is synthesised while the current one plays."""
         self._interrupted.clear()
         self._resume = None
-        for i, s in enumerate(parts):
-            if self._interrupted.is_set():
-                self._resume = (parts[i - 1:] if i else parts, mood)   # re-say the cut sentence if he only said "haan"
-                break
-            audio, sr = self.tts.synth(s, mood)
-            self._play(audio, sr)
-            if self._interrupted.is_set():
-                self._resume = (parts[i:], mood)
-                break
+        sp = Speaker(self, mood, filler_after=1e9)
+        for s in parts:
+            sp.add(s)
+        sp.close()
+        left = sp.run()
+        if left:
+            self._resume = (left, mood)            # re-say the cut sentence if he only said "haan"
         self.last_activity = time.time()
 
     def _chime(self, up: bool):
@@ -155,17 +176,43 @@ class VoiceLoop:
                 label, conf = deep
             voice = (label, conf) if label else None
             _deep_emotion_async(audio)
-        result: dict = {}
-        th = threading.Thread(target=lambda: result.update(reply=self.engine.turn(text, voice_emotion=voice)))
-        th.start()
-        th.join(0.8)
-        if th.is_alive() and self._fillers:          # thinking out loud instead of dead air
-            self._interrupted.clear()
-            self._play(*random.choice(self._fillers))
-        th.join()
+        self._interrupted.clear()
+        self._resume = None
+        mood = (voice[0] if voice and voice[0] else None) or self.engine.last_mood or "calm"
+        sp, chunker, lint, result = Speaker(self, mood), ClauseChunker(), StreamLint(), {}
+
+        def on_delta(d: str):
+            for piece in chunker.feed(d):
+                if (piece := lint.feed(piece)) is not None:
+                    sp.add(piece)
+
+        def work():
+            try:
+                result["reply"] = self.engine.turn(text, voice_emotion=voice, on_delta=on_delta, on_ack=sp.ack)
+            except Exception as e:
+                result["reply"] = "Sorry, kuch gadbad ho gayi."
+                print(f"[turn] {type(e).__name__}: {e}")
+            try:
+                if self.engine.streamed:
+                    for piece in chunker.flush():
+                        if (piece := lint.feed(piece)) is not None:
+                            sp.add(piece)
+                else:                                   # fast path / tools / offline: whole reply at once
+                    for piece in sentences(speakable(result["reply"])):
+                        sp.add(piece)
+            finally:
+                sp.close()
+
+        threading.Thread(target=work, daemon=True).start()
+        left = sp.run()
+        if left:
+            self._resume = (left, mood)
+        self.last_activity = time.time()
+        print(f"Stiti: {result.get('reply', '…')}")
         if self.debug:
-            print(f"   ↳ {self.engine.last_debug}")
-        self.say(result.get("reply", "Sorry, kuch gadbad ho gayi."), self.engine.last_mood or "calm")
+            ms = lambda x: f"{x:.0f} ms" if x is not None else "—"  # noqa: E731
+            print(f"   ↳ first text {ms(sp.first_text_ms)} → first audio {ms(sp.first_audio_ms)} after turn start"
+                  f" · {self.engine.last_debug}")
 
     def run(self, stop: threading.Event | None = None):
         stop = stop or threading.Event()
@@ -176,9 +223,9 @@ class VoiceLoop:
             self.duplex = d
             while not stop.is_set():
                 try:
-                    seg = self.segq.get(timeout=0.5)
+                    seg, spec = self.segq.get(timeout=0.5)
                 except queue.Empty:
-                    seg = None
+                    seg, spec = None, None
                 now = time.time()
                 if self.awake and now - self.last_activity > AWAKE_TIMEOUT_S and not d.playing:
                     self.awake = False
@@ -189,12 +236,16 @@ class VoiceLoop:
                 if _tutor_active():                     # a whiteboard lesson owns the mic right now
                     self.awake = False
                     continue
-                text, ms = stt.transcribe(seg)          # one pass serves wake check + command
+                # one pass serves wake check + command; usually already done (started early in the pause)
+                text, ms = (spec or self._stt.submit(stt.transcribe, seg)).result()
                 if not text:
                     continue
                 engaged = self.awake or now - self.last_activity < 10      # awake, or she just spoke (a nudge)
                 if engaged and (wake.is_stop(text) or wake.is_sleep(text)):
                     print(f"You: {text}")
+                    if wake.is_goodbye(text) and not self.silenced:
+                        from ..farewell import farewell
+                        self.say(farewell(text, self.engine.last_mood))
                     self.deactivate()
                     continue
                 if self.awake and self._resume and wake.is_backchannel(text):
@@ -209,6 +260,7 @@ class VoiceLoop:
                     if not woke:
                         continue
                     self.awake, self.silenced, self.last_activity = True, False, now
+                    router.warm()                       # reconnect to the LLM while the chime plays
                     self._chime(up=True)
                     if len(rest.split()) >= 2:   # "Hey Stiti, what are my todos" -> handle at once
                         print(f"You: {rest}")
