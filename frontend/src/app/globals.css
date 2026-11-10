@@ -158,6 +158,7 @@ img { max-width: 100%; display: block; }
   display: flex; flex-direction: column; justify-content: space-between; padding: 110px var(--pad) 40px;
 }
 .menu.is-open { clip-path: inset(0); visibility: visible; }
+body.menu-open .nav { z-index: calc(var(--z-menu) + 1); }   /* keep the CLOSE button above the open menu */
 .menu__links a { display: block; overflow: hidden; font-size: clamp(40px, 11vw, 72px); font-weight: 300; line-height: 1.08; }
 .menu__links a span { display: block; transform: translateY(100%); transition: transform .8s var(--expo); }
 .menu.is-open .menu__links a span { transform: translateY(0); }
@@ -168,3 +169,22 @@ img { max-width: 100%; display: block; }
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important;
     transition-duration: .01ms !important; scroll-behavior: auto !important; }
 }
+
+/* "Live demo · Soon" teaser in the nav (owner: replace the meaningless Chat link with a teaser) */
+.nav__soon { position: relative; display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 10px 0 16px;
+  font-size: 16px; font-weight: 450; border-radius: 999px; white-space: nowrap; color: var(--ink); transition: background .3s var(--out); }
+.nav__soon:hover { background: rgba(255, 255, 255, .55); }
+.nav__soon-tag { display: inline-grid; place-items: center; height: 22px; padding: 0 8px; border-radius: 999px;
+  font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--white); background: var(--blue); }
+.menu__soon { font: 500 .3em var(--mono); letter-spacing: .12em; text-transform: uppercase; vertical-align: middle;
+  color: var(--white); background: var(--blue); padding: .5em .9em; border-radius: 999px; }
+
+/* ------------------------------------------------------------------ light, premium material (owner: "the dark blue
+   blocks look like AI, not premium"). Navy stays for TEXT only; filled blocks are white glass with a hairline edge. */
+:root { --glass: rgba(255, 255, 255, .78); --edge: rgba(38, 43, 87, .12); --edge-2: rgba(38, 43, 87, .22);
+  --lift: 0 1px 0 #fff inset, 0 12px 28px -14px rgba(38, 43, 87, .32); }
+.nav__logo { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge), 0 6px 14px -8px rgba(38, 43, 87, .35); }
+.nav__cta { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 1px var(--edge), 0 8px 18px -10px rgba(38, 43, 87, .38); }
+.nav__cta::before { background: rgba(38, 43, 87, .05); }
+.nav__soon-tag { background: rgba(70, 86, 214, .1); color: var(--blue); }
+.menu__soon { background: rgba(70, 86, 214, .1); color: var(--blue); }
