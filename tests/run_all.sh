@@ -34,4 +34,5 @@ run "Hinglish voice (TTS)"          tests/hinglish_eval.py
 run "conversation basics"           tests/conversation_eval.py
 run "persona + psychology (D25)"   tests/persona_eval.py
 run "turn-taking"                   tests/turn_eval.py
+run "desktop overlay (pill + cards)" tests/overlay_eval.py
 exit $fail
