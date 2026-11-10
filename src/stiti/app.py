@@ -17,6 +17,7 @@ from datetime import datetime, timedelta
 
 import rumps
 
+from . import overlay
 from .config import CFG
 
 LOG = CFG.home / "logs"
@@ -33,12 +34,14 @@ class StitiApp(rumps.App):
         self.thinking_item = rumps.MenuItem("—")
         self.emotion_item = rumps.MenuItem("Deep voice emotion", callback=self.toggle_emotion)
         self.emotion_item.state = int(os.getenv("STITI_VOICE_EMOTION", "off") != "off")
+        self.overlay_item = rumps.MenuItem("Show Stiti on screen", callback=self.toggle_overlay)
+        self.overlay_item.state = 1                   # owner_profile overlay=on/off is read in _boot (DB)
         self.menu = [self.status_item, self.thinking_item, None,
                      rumps.MenuItem("Open Stiti (chat + memory)", callback=self.open_web),
                      rumps.MenuItem("⏰ Stop alarm", callback=self.stop_alarm),
                      rumps.MenuItem("Type to Stiti…", callback=self.type_to_stiti),
                      rumps.MenuItem("Quick add todo…", callback=self.quick_todo), None,
-                     self.listen_item, self.emotion_item,
+                     self.listen_item, self.overlay_item, self.emotion_item,
                      rumps.MenuItem("Open mood timeline", callback=lambda _: self._bg(self._mood)),
                      rumps.MenuItem("Open life graph", callback=lambda _: self._bg(self._graph)),
                      rumps.MenuItem("Run sleep job now", callback=lambda _: self._bg(self._sleep)),
@@ -54,6 +57,13 @@ class StitiApp(rumps.App):
         self.last_sleep_day = None
         threading.Thread(target=self._boot, daemon=True).start()
         rumps.Timer(self._tick, 2).start()
+        self._overlay_timer = rumps.Timer(self._overlay_init, 0.2)   # fires on the main thread once NSApp runs
+        self._overlay_timer.start()
+
+    def _overlay_init(self, timer):
+        """Desktop overlay (pill + cards, D26): AppKit objects must be created on the main thread."""
+        timer.stop()
+        overlay.init()
 
     def open_web(self, _=None):
         from .web import server as web
@@ -69,6 +79,7 @@ class StitiApp(rumps.App):
         from .voice.loop import VoiceLoop
         self._set_status("Loading memory…")
         embed.embed_query("warm up")
+        self._overlay_setting()
         intent._index()
         self._set_status("Loading ears & voice…")
         stt.transcribe(np.zeros(16000, dtype=np.float32))
@@ -257,6 +268,32 @@ class StitiApp(rumps.App):
             from .fastpath.handlers import todo
             rumps.notification("Stiti", "", todo(f"add todo {text}") or "Couldn't add that.")
 
+    def _overlay_setting(self):
+        try:
+            from . import profile
+            on = (profile.get("overlay", "on") or "on") != "off"
+        except Exception:
+            on = True
+        if not on:
+            overlay.set_enabled(False)
+            from PyObjCTools import AppHelper
+            AppHelper.callAfter(setattr, self.overlay_item, "state", 0)
+
+    def toggle_overlay(self, item):
+        item.state = 0 if item.state else 1
+        on = bool(item.state)
+        overlay.set_enabled(on)
+        if on and self.loop is not None and self.loop.awake:
+            overlay.set_state("listening")
+
+        def save():
+            try:
+                from . import profile
+                profile.set("overlay", "on" if on else "off", source="menu")
+            except Exception as e:
+                print(f"[overlay] couldn't save the setting: {e}", flush=True)
+        self._bg(save)
+
     def toggle_emotion(self, item):
         item.state = 0 if item.state else 1
         os.environ["STITI_VOICE_EMOTION"] = "emotion2vec" if item.state else "off"
@@ -285,6 +322,8 @@ class StitiApp(rumps.App):
             return
         item.state = 0 if item.state else 1
         (self.loop.paused.clear if item.state else self.loop.paused.set)()
+        if not item.state:
+            overlay.set_state("hidden")               # muted: nothing on screen
 
     def _set_status(self, text: str):
         self.status_item.title = text
@@ -306,6 +345,7 @@ class StitiApp(rumps.App):
 
     def quit(self, _):
         self.stop.set()
+        overlay.set_state("hidden")
         time.sleep(0.3)
         rumps.quit_application()
 
