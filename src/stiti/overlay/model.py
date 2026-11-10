@@ -205,7 +205,9 @@ def layout(card: dict) -> CardLayout | None:
     total = max(len(items), _count_from_title(title) or 0)
     shown = items[:MAX_ROWS]
     eyebrow = {"todos": f"TO-DO · {total} OPEN" if total else "TO-DO",
-               "reminders": "COMING UP", "news": "HEADLINES"}[kind]
+               "reminders": f"REMINDERS · {total}" if total else "REMINDERS", "news": "HEADLINES"}[kind]
+    if kind == "todos" and shown:
+        title = "You have these to complete"         # the owner's words; the count is in the eyebrow
     w = CARD_W.get(kind, CARD_W_DEFAULT)
     rh = NEWS_ROW_H if kind == "news" else ROW_H
     y = PAD + EYEBROW_H + TITLE_H + HEADER_GAP

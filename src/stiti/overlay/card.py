@@ -111,7 +111,10 @@ class Card:
         self._build(lay)
         (x, y), (w, h) = self.frame_for(lay, anchor)
         if self.visible:                     # a new turn replaces the card in place (no stacking, no history)
-            animate_frame(self.panel, ((x, y), (w, h)), 1.0, 0.2)
+            if self.acc.reduce_motion:
+                self.panel.setFrame_display_(((x, y), (w, h)), True)
+            else:
+                animate_frame(self.panel, ((x, y), (w, h)), 1.0, 0.2)
             return
         self.visible = True
         if self.acc.reduce_motion:
@@ -188,15 +191,17 @@ class Card:
             if meta is not None:
                 meta.setFrame_(((x, 25), (rw - x - 8, 15)))
                 rv.addSubview_(meta)
-        else:                                # text … meta (right-aligned, mono)
+        else:                                # text … meta (right-aligned, mono); the shorter one gives way
+            tx = label(r.text, F_TEXT(), ns(M.NAVY))
+            tx.sizeToFit()
             mw = 0.0
             if meta is not None:
                 meta.sizeToFit()
-                mw = min(130.0, meta.frame().size.width)
+                room = rw - x - 8 - 12
+                mw = min(meta.frame().size.width, max(110.0, room - min(tx.frame().size.width, room * 0.55)))
                 meta.setAlignment_(AppKit.NSTextAlignmentRight)
                 meta.setFrame_(((rw - 8 - mw, (r.h - 15) / 2), (mw, 15)))
                 rv.addSubview_(meta)
-            tx = label(r.text, F_TEXT(), ns(M.NAVY))
             tx.setFrame_(((x, (r.h - 18) / 2), (rw - x - 8 - (mw + 12 if mw else 0), 18)))
             rv.addSubview_(tx)
         row = {"view": rv, "icon": icon, "text": tx, "meta": meta}

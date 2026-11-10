@@ -91,8 +91,9 @@ print("card layout")
 TODOS = {"kind": "todos", "title": "5 things to do", "ts": 0, "items": [
     {"id": i, "text": f"Task {i}", "meta": "due today, 4 PM" if i == 1 else ""} for i in range(1, 6)]}
 L5 = M.layout(TODOS)
-check("todos: 5 rows, all tickable, eyebrow with the count",
-      L5.n == 5 and all(r.tickable for r in L5.rows) and L5.eyebrow == "TO-DO · 5 OPEN" and L5.more == 0)
+check("todos: 5 rows, all tickable, count in the eyebrow, 'You have these to complete'",
+      L5.n == 5 and all(r.tickable for r in L5.rows) and L5.eyebrow == "TO-DO · 5 OPEN" and L5.more == 0
+      and L5.title == "You have these to complete")
 check("rows stack top-down without overlap", all(b.y == a.y + a.h for a, b in zip(L5.rows, L5.rows[1:])))
 check("width 360, height fits title + 5 rows", L5.width == 360 and 240 < L5.height < 300, f"{L5.height}")
 check("row_at maps a click to its row", M.row_at(L5, L5.rows[2].y + 5) == 2 and M.row_at(L5, 1) is None)
@@ -101,12 +102,14 @@ L8 = M.layout(many)
 check("≤ 6 rows, then '+N more' (count from the brain's total)", L8.n == 6 and L8.more == 6, f"n={L8.n} more={L8.more}")
 check("'+N more' line adds height", L8.height > M.layout({**many, "title": "8 things to do"}).height - 1)
 empty = M.layout({"kind": "todos", "title": "Nothing on your list", "items": []})
-check("empty list: title only, small card", empty.n == 0 and empty.height < 100 and empty.eyebrow == "TO-DO")
+check("empty list: the brain's title only, small card",
+      empty.n == 0 and empty.height < 100 and empty.eyebrow == "TO-DO" and empty.title == "Nothing on your list")
 news = M.layout({"kind": "news", "title": "AI updates", "items": [{"id": None, "text": "x" * 200, "meta": "HN"}]})
 check("news: 380 wide, not tickable, long headline clipped",
       news.width == 380 and not news.rows[0].tickable and len(news.rows[0].text) <= 90)
 rem = M.layout({"kind": "reminders", "title": "Coming up", "items": [{"id": 3, "text": "Alarm", "meta": "today, 7 AM"}]})
-check("reminders: not tickable (cancel is by voice)", rem.n == 1 and not rem.rows[0].tickable and rem.eyebrow == "COMING UP")
+check("reminders: not tickable (cancel is by voice), eyebrow ≠ title",
+      rem.n == 1 and not rem.rows[0].tickable and rem.eyebrow == "REMINDERS · 1" and rem.title == "Coming up")
 check("todo_added / reminder_set don't open a card (pill confirmation)",
       M.layout({"kind": "todo_added", "items": [{"id": 1, "text": "x"}]}) is None
       and M.layout({"kind": "reminder_set", "items": []}) is None and M.layout({}) is None)
