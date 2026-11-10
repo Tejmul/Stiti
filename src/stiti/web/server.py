@@ -104,6 +104,17 @@ def app():
         t = req.query_params.get("t") or req.headers.get("x-stiti-token", "")
         return secrets.compare_digest(t, token)
 
+    files = {}
+
+    async def built_files(scope, receive, send):
+        """The Next export's assets — or a plain 404 while it isn't built (a fresh clone, CI), never a crash.
+        Checked per request, so building the frontend while Stiti runs just works."""
+        if not OUT.is_dir():
+            return await PlainTextResponse("not found", 404)(scope, receive, send)
+        if "app" not in files:
+            files["app"] = StaticFiles(directory=OUT)
+        return await files["app"](scope, receive, send)
+
     nostore = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "no-referrer"}
 
     def page(name):
@@ -214,7 +225,7 @@ def app():
         Route("/icons/{n}.png", icon), Route("/api/state", state),
         Route("/api/todo/{id:int}/done", todo_done, methods=["POST"]),
         WebSocketRoute("/ws", ws_chat),
-        Mount("/", StaticFiles(directory=OUT, check_dir=False)),     # /_next/*, favicon, fonts
+        Mount("/", built_files),                                     # /_next/*, favicon, fonts
     ])
 
 
