@@ -296,3 +296,20 @@ by `af_heart`/`en-us` sounded foreign (round-trip WER 68%).
   escalation for low-confidence turns.
 
 
+## D23: Web frontend in Next.js (static export), Memory page, memory receipts (2026-11-10)
+Owner asked for the frontend in Next.js and for a page that shows what Stiti knows about him.
+- **Next.js 16 (App Router, TypeScript) in `frontend/`, built with `output: "export"`** into `frontend/out/`. The
+  Python server (`web/server.py`, inside Stiti.app) serves those files plus the API and WebSocket on 127.0.0.1:7317.
+  No Node process runs at runtime, which matters on 8 GB RAM. Next is only a build tool, and the brain stays
+  Python. Fonts come through `next/font` and are self-hosted at build time, so no Google request at runtime. GSAP
+  and Lenis come from npm, not CDNs.
+- **Dev:** `cd frontend && pnpm dev` (:3017) with `STITI_WEB_DEV=1 uv run stiti web`. `/api` is proxied by Next
+  rewrites. The WebSocket goes straight to :7317, whose origin allow-list adds :3017 only with that env var.
+- **Always on:** Stiti.app starts the web server in a thread (`web.serve_in_thread()`). Menu item "Open Stiti
+  (chat + memory)".
+- **Memory page** (`/memory`, data from `web/mind.py`): facts grouped by topic, people, rules and lessons, habits,
+  14-day mood, searchable conversations, files and plans, plus a still SVG map of all of it. The owner can add a
+  fact or forget one (retracted and kept in history). Owner edits to USER.md are synced in first so none are
+  overwritten, then USER.md is re-rendered.
+- **Memory receipts:** `Engine.last_used` records the memories, facts, files and lessons the brain handed the LLM.
+  The chat shows them under each reply ("Remembered 4 things"), so the brain-not-LLM design is visible.
