@@ -180,9 +180,17 @@ export default function Landing() {
         if (el) scrollToEl(el, true);
       };
       const loader = $(".loader");
-      if (reduced) {
+      // The preloader is an intro: once per browser tab. Coming back (e.g. Chat → Abilities) goes straight in.
+      let seen = false;
+      try { seen = sessionStorage.getItem("stiti_intro") === "1"; } catch { /* storage blocked: play it */ }
+      if (reduced || seen) {
         loader.style.display = "none";
-        canvas.style.opacity = "1";
+        if (reduced) canvas.style.opacity = "1";
+        else {
+          field.intro(innerWidth / 2, innerHeight / 2);
+          gsap.to(canvas, { opacity: 1, duration: .8, ease: "power1.out" });
+        }
+        loading = false;
         afterLoad();
         return;
       }
@@ -201,7 +209,11 @@ export default function Landing() {
         .add(() => field.intro(innerWidth / 2, innerHeight / 2), 2.15)
         .to(canvas, { opacity: 1, duration: 1, ease: "power1.out" }, 1.75)
         .to(loader, { yPercent: -100, duration: .9, ease: EXPO }, 2.0)
-        .add(() => { html.classList.remove("landing-loading"); loading = false; lenis?.start(); afterLoad(); }, 2.4)
+        .add(() => {
+          html.classList.remove("landing-loading"); loading = false; lenis?.start(); afterLoad();
+          try { sessionStorage.setItem("stiti_intro", "1"); } catch { /* ignore */ }
+          html.classList.add("intro-seen");
+        }, 2.4)
         .add(() => { loader.style.display = "none"; }, 2.95);
     }, root);
 

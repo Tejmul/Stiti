@@ -269,3 +269,6 @@ html.landing-has-cursor, html.landing-has-cursor a, html.landing-has-cursor butt
   .pg-landing .sayings__viewport { overflow-x: auto; -webkit-mask-image: none; mask-image: none; }
   .pg-landing .row:hover, .pg-landing .point:hover { transform: none; }
 }
+
+/* intro already played in this tab (set before first paint in layout.tsx) */
+html.intro-seen .pg-landing .loader { display: none; }

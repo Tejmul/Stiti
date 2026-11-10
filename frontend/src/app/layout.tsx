@@ -19,7 +19,11 @@ export const viewport: Viewport = { themeColor: "#ecebf2", width: "device-width"
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${hanken.variable} ${martian.variable}`}>
+    <html lang="en" className={`${hanken.variable} ${martian.variable}`} suppressHydrationWarning>
+      <head>
+        {/* Before first paint: if the intro already played in this tab, hide the preloader (no 000% flash). */}
+        <script dangerouslySetInnerHTML={{ __html: `try{if(sessionStorage.getItem("stiti_intro")==="1")document.documentElement.classList.add("intro-seen")}catch(e){}` }} />
+      </head>
       <body>{children}</body>
     </html>
   );
