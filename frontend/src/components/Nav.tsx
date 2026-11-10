@@ -5,20 +5,20 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type Page = "home" | "chat" | "memory";
-const LINKS: { href: string; label: string; page?: Page }[] = [
+// The deployed marketing site (STITI_PUBLIC=1 build) has no Chat/Memory — those exist only on the owner's Mac.
+const PUBLIC = process.env.NEXT_PUBLIC_STITI_PUBLIC === "1";
+const GITHUB = "https://github.com/Tejmul/Stiti";
+const ALL_LINKS: { href: string; label: string; page?: Page }[] = [
   { href: "/chat", label: "Chat", page: "chat" },
   { href: "/memory", label: "Memory", page: "memory" },
   { href: "/#abilities", label: "Abilities" },
   { href: "/#privacy", label: "Privacy" },
 ];
+const LINKS = PUBLIC ? ALL_LINKS.filter((l) => !l.page) : ALL_LINKS;
 
 export function Logo() {
-  return (
-    <svg viewBox="0 0 32 32" fill="none" aria-hidden="true">
-      <circle cx="16" cy="16" r="6.5" fill="currentColor" />
-      <ellipse cx="16" cy="16" rx="14" ry="5.2" stroke="currentColor" strokeWidth="2.2" transform="rotate(-24 16 16)" />
-    </svg>
-  );
+  // A plain letter mark (the old dot-in-a-tilted-ring read as an eye).
+  return <span className="nav__mark" aria-hidden="true">S</span>;
 }
 
 /** `cta` replaces the right-hand button (e.g. the chat page's "Today" toggle). */
@@ -64,7 +64,9 @@ export default function Nav({ current, cta }: { current?: Page; cta?: ReactNode 
         <button className="nav__menu-btn" type="button" aria-expanded={open} aria-controls="menu" onClick={() => setOpen(!open)}>
           {open ? "CLOSE" : "MENU"}
         </button>
-        {cta ?? <Link className="nav__cta" href="/chat">Talk to Stiti</Link>}
+        {cta ?? (PUBLIC
+          ? <a className="nav__cta" href={GITHUB} target="_blank" rel="noopener">GitHub</a>
+          : <Link className="nav__cta" href="/chat">Talk to Stiti</Link>)}
       </nav>
       <div className={`menu${open ? " is-open" : ""}`} id="menu" aria-label="Menu">
         <div className="menu__links">

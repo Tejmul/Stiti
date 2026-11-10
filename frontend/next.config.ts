@@ -9,6 +9,7 @@ const privateAlias = { "@/components/private-pages": "./src/components/private-p
 // STITI_PUBLIC=1 → the deployable site: landing only; /chat and /memory become a "runs on your Mac" page.
 const nextConfig: NextConfig = {
   ...(PUBLIC ? { turbopack: { resolveAlias: privateAlias } } : {}),     // Next 16 builds with Turbopack
+  env: { NEXT_PUBLIC_STITI_PUBLIC: PUBLIC ? "1" : "0" },                // public nav: no Chat/Memory links
   ...(dev ? {} : { output: "export" as const }),
   images: { unoptimized: true },
   trailingSlash: false,
