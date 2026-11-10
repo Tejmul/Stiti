@@ -60,16 +60,18 @@ class ChatSession:
     """One Engine per browser connection; turns are serialised (the Engine is not re-entrant)."""
 
     def __init__(self):
+        from .. import router
         from ..engine import Engine
         self.eng = Engine("text")
+        router.warm()                                     # first reply shouldn't pay the TLS handshake
         self.lock = threading.Lock()
 
-    def turn(self, text: str) -> dict:
+    def turn(self, text: str, on_delta=None) -> dict:
         import time
         with self.lock:
             t = time.perf_counter()
             try:
-                reply = self.eng.turn(text)
+                reply = self.eng.turn(text, on_delta=on_delta)
             except Exception as e:                       # one bad turn never kills the chat
                 reply = f"Something broke on my side ({type(e).__name__}). Try again?"
             dbg = getattr(self.eng, "last_debug", {}) or {}
@@ -145,7 +147,19 @@ def app():
                 msg = json.loads(await ws.receive_text())
                 if msg.get("type") == "say" and isinstance(msg.get("text"), str) and msg["text"].strip():
                     await ws.send_text(json.dumps({"type": "thinking"}))
-                    out = await asyncio.to_thread(sess.turn, msg["text"].strip()[:2000])
+                    loop, pieces = asyncio.get_running_loop(), asyncio.Queue()
+
+                    async def pump():                    # stream the reply word by word, in order
+                        while (d := await pieces.get()) is not None:
+                            await ws.send_text(json.dumps({"type": "delta", "text": d}))
+
+                    pumping = asyncio.create_task(pump())
+                    on_delta = lambda d: loop.call_soon_threadsafe(pieces.put_nowait, d)  # noqa: E731
+                    try:
+                        out = await asyncio.to_thread(sess.turn, msg["text"].strip()[:2000], on_delta)
+                    finally:
+                        pieces.put_nowait(None)
+                        await pumping
                     await ws.send_text(json.dumps(out))
                     await ws.send_text(json.dumps({"type": "state", **await asyncio.to_thread(_state)}))
         except (WebSocketDisconnect, RuntimeError, json.JSONDecodeError):

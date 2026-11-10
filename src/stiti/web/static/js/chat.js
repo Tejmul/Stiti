@@ -7,7 +7,7 @@ const $ = (id) => document.getElementById(id);
 const log = $("log"), input = $("composer-input"), send = $("send"), form = $("composer");
 const mind = createMind($("mind"));
 const TOKEN = token();
-let ws = null, retry = 400, busy = false, lastDay = null, thinkingEl = null;
+let ws = null, retry = 400, busy = false, lastDay = null, thinkingEl = null, streamEl = null;
 
 const MARK = `<svg viewBox="0 0 32 32" fill="none" aria-hidden="true"><circle cx="16" cy="16" r="6.5" fill="currentColor"/><ellipse cx="16" cy="16" rx="14" ry="5.2" stroke="currentColor" stroke-width="2.4" transform="rotate(-24 16 16)"/></svg>`;
 const TICK = `<svg viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.5 8.5l3 3 6-7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
@@ -198,9 +198,23 @@ function handle(m) {
   } else if (m.type === "thinking") {
     showThinking(true);
     setMindState("thinking", "Thinking");
+  } else if (m.type === "delta") {                 // reply streaming in while she writes it
+    if (!streamEl) {
+      showThinking(false);
+      addDay(new Date());
+      streamEl = document.createElement("div");
+      streamEl.className = "msg msg--stiti";
+      streamEl.innerHTML = `<div class="msg__avatar">${MARK}</div><div class="msg__body"><div class="msg__text"></div></div>`;
+      log.appendChild(streamEl);
+      setMindState("thinking", "Talking");
+    }
+    streamEl.querySelector(".msg__text").textContent += m.text;
+    scrollDown();
   } else if (m.type === "reply") {
     showThinking(false);
-    addStiti(m);
+    const streamed = !!streamEl;
+    if (streamEl) { streamEl.remove(); streamEl = null; }
+    addStiti(m, new Date(), !streamed);
     mind.pulse();
     busy = false; send.disabled = !input.value.trim();
     setMindState("idle", m.route === "fast_path" ? "Done" : "Here for you");
