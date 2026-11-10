@@ -274,7 +274,7 @@ class VoiceLoop:
         left = sp.run()
         self.last_activity = time.time()
         overlay.speech_ended()                          # the card's auto-dismiss clock starts now
-        overlay.set_state("listening" if self.awake else "hidden")
+        overlay.set_state("listening" if getattr(self, "awake", False) else "hidden")
         if pend.first_audio_t is None and self.tt.pending is pend:
             self.tt.pending = None                      # nothing was said: nothing to join to
         if pend.cancelled:
