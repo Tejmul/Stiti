@@ -32,4 +32,5 @@ run "alarms, reminders, timers"       tests/alarms_eval.py
 run "live internet info"            tests/live_eval.py
 run "Hinglish voice (TTS)"          tests/hinglish_eval.py
 run "conversation basics"           tests/conversation_eval.py
+run "persona + psychology (D25)"   tests/persona_eval.py
 exit $fail

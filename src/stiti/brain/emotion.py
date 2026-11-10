@@ -43,7 +43,7 @@ class EmotionState:
             parts.append(f"usual mood: {self.baseline}")
         if self.denial:
             parts.append("they say they are NOT feeling that — believe them")
-        return " · ".join(parts) + " (a hint; ask, don't declare)"
+        return " · ".join(parts) + " (a hint: adapt how you talk; don't announce it or ask about feelings)"
 
 
 def baseline() -> str | None:

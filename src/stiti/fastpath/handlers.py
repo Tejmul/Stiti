@@ -11,7 +11,7 @@ import re
 import subprocess
 
 from ..db import one, q
-from .dates import now, parse_when, readback
+from .dates import now, parse_when, readback, say_when, second_person
 
 # ---------------- todos ----------------
 LIST_RX = re.compile(r"\b(what are my|show( me)?|list|kya kya|pending|bacha|baaki|kaunse|my (todos?|tasks)|"
@@ -66,13 +66,14 @@ def _todo_add(t: str) -> str | None:
     title = re.sub(r"^(to|that|ki|ke)\s+", "", title, flags=re.I)       # "add a task to call the bank"
     if parse_when(t):                                                   # drop the time words from the title
         title = re.sub(r"\b(at|by|before|on)?\s*\d{1,2}([:.]\d{2})?\s*(am|pm|baje)\b", " ", title, flags=re.I)
+        title = re.sub(r"\b(at|by|before)\s+\d{1,2}([:.]\d{2})?\b", " ", title, flags=re.I)
         title = re.sub(r"\s+", " ", title).strip(" .:-")
     if not title or len(title) < 2:
         return None
     due = parse_when(t)
     row = one("INSERT INTO tasks(title, due, source) VALUES (%s,%s,'text') RETURNING id", (title, due))
-    extra = f", due {readback(due)}" if due else ""
-    return f"Added: “{title}”{extra}. (task #{row['id']})"
+    extra = f", due {say_when(due)}" if due else ""
+    return f"Got it — added “{second_person(title)}”{extra}. (task #{row['id']})"
 
 
 def todo_list(limit: int = 3) -> str:
@@ -96,7 +97,7 @@ def _todo_remove(text: str) -> str | None:
     if not row or row["s"] < 0.2:
         return f"I couldn't find an open task matching “{cleaned}”."
     q("UPDATE tasks SET status='cancelled' WHERE id=%s", (row["id"],))
-    return f"Removed “{row['title']}” from your list. (task #{row['id']})"
+    return f"Done — removed “{row['title']}”. (task #{row['id']})"
 
 
 def _todo_done(text: str) -> str | None:

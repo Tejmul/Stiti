@@ -325,3 +325,34 @@ Owner rule: "my chat history should not be on the website… that is my data."
   Verified by grepping the build for API paths and personal data.
 - **No personal data in code**, not even as placeholder examples. A sub-agent had used his employer's name in an
   example phrase; it's removed.
+
+## D25: Persona + psychology — the brain picks HOW to reply, code enforces it (2026-11-11)
+Owner: "it behaves like an AI model… asks me random things… Hinglish doesn't suit… I want it like JARVIS." Research:
+`docs/research/jarvis_persona_psychology.md` (21 frameworks + JARVIS transcripts) and the reply rules of
+`docs/research/conversation_turn_taking.md` §3.4. Kang et al. 2024 shows LLMs pick support strategies badly, so the
+strategy is chosen **locally**; weak free models ignore prompt rules, so the shape is **enforced in code**.
+- **`brain/strategy.py`** (rules, < 1 ms): CRISIS · REPAIR · DO · QUIET · SOLVE · LISTEN (+ reframe) · ANSWER · BANTER ·
+  ACKNOWLEDGE, plus NUDGE (late night + an early event, once, then "As you wish."). Each carries a word cap, question
+  yes/no, humour, memory callbacks, advice. Text-only mood switches to LISTEN only with words that show it (text mood
+  is ~50% reliable); the voice mood can. Standing directives change the shape in code ("fewer questions" → no
+  questions; "keep it short" → cap). Logged in `decisions` (`reply_strategy`, `reply_lang`); his next reaction labels
+  it, so a Laya `reply_strategy` head can be calibrated later.
+- **Language decided locally:** an active language directive wins; else Hinglish only if *this* message is clearly
+  Hinglish (≥ 2 Hindi function words and ≥ 25% Hindi tokens); else English. Stiti's Hindi is feminine
+  ("samajh gayi", "karungi"), fixed in code too.
+- **Enforcement (`psych.enforce`, `psych.StreamLint`):** questions dropped when not allowed, generic closers
+  ("anything else?", "how does that sound?") dropped from chat, banned tics (therapy-speak, cheerleading, "as an AI",
+  "I can't see files"), promises ("from now on…") dropped unless a rule was saved this turn, advice dropped while
+  listening, emojis / "!!" / masculine first-person Hindi fixed, cut at the cap. `StreamLint()` reads the turn's policy
+  from the engine thread, so the voice loop needed no change.
+- **Memory gating G1–G8 (`brain/gate.py`):** sim ≥ 0.45 or a shared person/project; free use when he asks; pain only
+  if he raised it; only wins when he's low; nothing minor > 30 days; ≤ 1 unprompted callback/hour and never the same
+  one within 7 days (`episodes.last_volunteered_at`, migration 008 — apply to the real DB too).
+- **Local replies, no LLM:** crisis script with Tele-MANAS 14416 (P2), "Mm?" for "So.", "Nothing about X in my
+  memory.", short goodbyes, "Okay, I'm here." after "Anything else?" + "not yet", silence for "ek sec / let me think"
+  (`skip_turn`). Fast-path confirmations repeat the slot, then "Anything else?" (only after a completed action).
+- **Compiler:** `[THIS TURN]` + `[REPLY RULES]` replace `CONTRACT` (no more "mirror their language mix"), plus a
+  "you CAN read his ingested documents…" line and `[HIS WINS]` for reframes. New JARVIS SOUL default
+  (`docs/persona/SOUL.jarvis.md` is the version for his own `~/.stiti/SOUL.md`).
+- Cost: 0 new models, 0 MB RAM, < 1 ms strategy + ~2 ms gate. Tests: `tests/persona_eval.py` (the 15 dialogues of §3f,
+  offline checks with a fake "bad" LLM + pass@3 on the real free router).

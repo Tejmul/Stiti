@@ -82,8 +82,10 @@ def parse_when(text: str, ref: datetime | None = None) -> datetime | None:
         h, mi, suf = int(m.group(1)), int(m.group(2) or 0), (m.group(3) or "").lower()
         if h > 23 or mi > 59:
             continue
-        # a bare number counts only with a suffix, a part-of-day word nearby, or a clock form like 6:30
-        if not suf and not m.group(2) and not re.search(r"\b(subah|morning|shaam|evening|raat|night|dopahar|afternoon)\b", t):
+        # a bare number counts only with a suffix, a part-of-day word nearby, a clock form like 6:30, or "at 4"
+        # ("remind me at 4 to…": the next sensible 4 — daytime 1–6 means PM — instead of asking "morning or evening?")
+        if not suf and not m.group(2) and not re.search(r"\b(subah|morning|shaam|evening|raat|night|dopahar|afternoon)\b", t) \
+                and not re.search(r"\b(at|by|around|till|until|before)\s+$", t[:m.start()]):
             continue
         hour, minute = h, mi
         if suf in ("baje", "bajkar", "o'clock", "") and 1 <= h <= 6 and not re.search(
@@ -126,3 +128,19 @@ def readback(dt: datetime) -> str:
     rel = {0: "today", 1: "tomorrow"}.get((dt.date() - today).days)
     day = f"{rel}, " if rel else ""
     return f"{day}{dt.strftime('%a %d %b')} at {dt.strftime('%I:%M %p').lstrip('0')}"
+
+
+def say_when(dt: datetime) -> str:
+    """Spoken form for confirmations: "today at 4 PM" · "tomorrow at 7:30 AM" · "Fri 14 Nov at 9 AM"."""
+    days = (dt.date() - now().date()).days
+    day = {0: "today", 1: "tomorrow"}.get(days) or dt.strftime("%a %d %b").replace(" 0", " ")
+    clock = dt.strftime("%I:%M %p").lstrip("0").replace(":00", "")
+    return f"{day} at {clock}"
+
+
+def second_person(s: str) -> str:
+    """"start my resume" → "start your resume" (she reads his words back to him)."""
+    for a, b in ((r"\bmy\b", "your"), (r"\bmyself\b", "yourself"), (r"\bmine\b", "yours"), (r"\bI'?m\b", "you're"),
+                 (r"\bmera\b", "tera"), (r"\bmeri\b", "teri")):
+        s = re.sub(a, b, s, flags=re.I)
+    return s

@@ -41,17 +41,17 @@ def parse(text: str) -> Instruction | None:
     if m:
         lang = (m.group(2) or m.group(3) or "").lower()
         if lang == "english":
-            return Instruction("Reply in English. Use a Hindi word only if he speaks Hindi first.",
-                               "language", "talk_style", "Sure, English from now on.")
+            return Instruction("Reply in English (he asked for it), even if he mixes in Hindi words.",
+                               "language", "talk_style", "Got it. English from now on.")
         if lang in ("hindi", "hinglish"):
             return Instruction("Reply in Hinglish (Hindi + English, in Roman script).",
                                "language", "talk_style", "Theek hai, Hinglish mein baat karte hain.")
     if SHORT_RX.search(t):
         return Instruction("Keep replies short: one or two sentences unless he asks for detail.",
-                           "brevity", "talk_style", "Got it, short and to the point.")
+                           "brevity", "talk_style", "Got it. Short from now on.")
     if FEWER_Q_RX.search(t):
         return Instruction("Don't ask him questions unless you truly need an answer to help; never more than one.",
-                           "questions", "talk_style", "Understood. Fewer questions.")
+                           "questions", "talk_style", "Understood. Fewer questions from now on.")
     if m := DONT_CALL_RX.search(t):
         name = m.group("name").strip()
         return Instruction(f"Never call him “{name}”.", f"dont_call:{name.lower()}", "boundary", "Noted, I won't.")

@@ -48,8 +48,28 @@ def infer_from_turn(text: str, prev_reply: str | None, interrupted: bool = False
     if promote:
         from .lessons import render_md
         render_md()
-        return "Got it — from now on I'll keep it short. 👍"
+        return "Got it — from now on I'll keep it short."
     return None
+
+
+PLAIN = ("Say things simply and plainly, in short everyday words — he didn't follow before", "plain_words")
+
+
+def note_confusion(text: str) -> None:
+    """"I didn't understand" right after her reply: a silent candidate lesson; promoted on the second time (two strikes)."""
+    guidance, key = PLAIN
+    row = one("SELECT id, seen_count, confidence, status FROM lessons WHERE situation=%s AND status<>'retired'",
+              (f"inferred:{key}",))
+    if row is None:
+        vec = embed.embed_docs([f"Any situation. {guidance}"])[0]
+        q("""INSERT INTO lessons(situation, guidance, polarity, source, status, confidence, situation_embedding)
+             VALUES (%s,%s,'do','inferred','candidate',0.6,%s)""", (f"inferred:{key}", guidance, vec))
+        return
+    if row["status"] == "active":
+        return
+    seen, conf = row["seen_count"] + 1, min(0.95, row["confidence"] + 0.15)
+    q("UPDATE lessons SET seen_count=%s, confidence=%s, status=%s WHERE id=%s",
+      (seen, conf, "active" if seen >= 2 and conf >= 0.72 else "candidate", row["id"]))
 
 
 # ---------------- 2. lesson scoring + nightly curation ----------------

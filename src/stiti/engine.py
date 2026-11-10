@@ -12,7 +12,7 @@ import time
 from datetime import date, datetime
 
 from . import embed, router
-from .brain import compiler, emotion, ingest, lessons, memory, psych
+from .brain import compiler, emotion, gate, ingest, lessons, memory, psych, strategy
 from .config import CFG
 from .db import one, q
 from .decide import decide
@@ -60,6 +60,15 @@ TOOL_HINT_RX = re.compile(r"\b(calendar|schedule|meeting|event|mail|email|inbox|
                           r"web|internet|online|google|look ?up|website)\b", re.I)
 YES_RX = re.compile(r"^(haan|han|ha|yes|yeah|yep|ok(ay)?|kar do|do it|confirm|sure)\b", re.I)
 GREET_RX = re.compile(r"^(hi|hello|hey|good morning|gm|morning|kya haal|uth gaya|i'?m up|namaste)\b", re.I)
+# "ek sec", "ruko", "let me think", "hold on": he is thinking — she says NOTHING (ElevenLabs skip_turn)
+HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek second ruko|ruko|ruk jao|ruko zara|wait|wait a (sec|second|minute)|"
+                     r"one (sec|second|minute)|just a (sec|second|minute)|give me a (sec|second|minute)|hold on|hang on|"
+                     r"let me think|soch(ne do| ke batata hoon| ke batati hoon| raha hoon| rahi hoon)|"
+                     r"hmm+,? let me think)[.!…, ]*$", re.I)
+# "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
+NOTHING_RX = re.compile(r"^\s*(no|nope|nah|nahi|nahin|not yet|nothing|nothing else|that'?s (it|all)( for now)?|bas|bas itna|"
+                        r"no thanks|no thank you|all good|i'?m good|abhi nahi|kuch nahi|that'?s it for now|nope that'?s it)[.!]*\s*$", re.I)
+ASKED_NAME_RX = re.compile(r"\b(?:about|remember|yaad hai|of)\s+(?P<name>[A-Z][a-z]{2,20})\b")
 
 
 _last_hello = ""
@@ -109,6 +118,11 @@ class Engine:
         self.last_mood: str | None = None
         self.streamed = False                               # last reply was already delivered via on_delta
         self.live_last: tuple | None = None                 # (LiveResult, next item index, time) for "want more?"
+        self.skip_turn = False                              # last turn was a hold ("ek sec"): the voice loop stays silent
+        self.last_strategy: strategy.Strategy | None = None
+        self.last_reply_full: str | None = None             # before a barge-in truncated it (learning signal)
+        self.crisis_at = 0.0
+        self.nudged: float | None = None                    # when she last pushed back (late night) — once per session
         if os.getenv("STITI_LIVE_WARM", "1") != "0":
             live.warm()                                     # news caches filled in the background, once per process
 
@@ -176,6 +190,18 @@ class Engine:
         return None
 
     @staticmethod
+    def _unknown_name(text: str, user_ep: int) -> str | None:
+        """"Remember what I told you about Riya?" and Riya appears nowhere in the brain → "Riya" (else None)."""
+        m = ASKED_NAME_RX.search(text)
+        if not m or m.group("name").lower() in ("what", "that", "this", "the", "my", "when", "yesterday", "today"):
+            return None
+        name = m.group("name")
+        if gate.entities_in([name]) or one("""SELECT 1 AS x FROM episodes WHERE id <> %s AND speaker='user'
+                                                 AND text ~* %s LIMIT 1""", (user_ep, rf"\m{re.escape(name)}\M")):
+            return None
+        return name
+
+    @staticmethod
     def _should_offer_intro() -> bool:
         from . import profile
         from .brain import onboarding
@@ -188,30 +214,56 @@ class Engine:
         last = profile.get("intro_offered_at")
         return not last or (datetime.now(CFG.tz).date() - date.fromisoformat(last)).days >= 7
 
+    def truncate_last_reply(self, heard_text: str) -> None:
+        """After a barge-in: keep only what he actually HEARD of her last reply (OpenAI conversation.item.truncate /
+        ElevenLabs agent_response_correction), so her memory never claims he heard the rest. Called by the voice loop."""
+        heard = (heard_text or "").strip()
+        if self.last_reply_ep is None or self.last_reply_text is None or heard == self.last_reply_text.strip():
+            return
+        self.last_reply_full = self.last_reply_full or self.last_reply_text
+        text = f"{heard} —(cut off)" if heard else "—(cut off before she spoke)"
+        vec = embed.embed_docs([text])[0]
+        q("UPDATE episodes SET text = %s, embedding = %s WHERE id = %s", (text, vec, self.last_reply_ep))
+        self.last_reply_text = text
+        self.last_interrupted = True
+
+    def _hold(self, text: str) -> str:
+        """"ek sec" / "let me think": store his words, say nothing, keep every other state as it was."""
+        memory.add_episode(self.session, "user", text, importance=1)
+        self.skip_turn = True
+        self.last_debug = {"route": "hold", "strategy": "QUIET"}
+        return ""
+
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None, *,
-             on_delta=None, on_ack=None) -> str:
+             on_delta=None, on_ack=None, now: datetime | None = None) -> str:
         """One turn. on_delta(str) streams an LLM reply as it is written (then self.streamed is True);
         on_ack(kind) fires the moment a slow action starts ("calendar", "mail", "plan", "tools") so the
-        voice can say "ek sec, dekhti hoon" instantly instead of dead air."""
+        voice can say "ek sec, dekhti hoon" instantly instead of dead air. Returns "" with self.skip_turn=True for a
+        hold phrase ("ek sec", "let me think"): say nothing. `now` is for tests (the clock of this turn)."""
         t0 = time.perf_counter()
         self.streamed = False
+        self.skip_turn = False
         self.last_used = None           # what the brain handed the LLM this turn (web "memory receipts")
+        psych.set_policy(None)          # the voice loop's StreamLint picks up this turn's strategy once it's chosen
         ack = on_ack or (lambda kind: None)
         text = normalize(text)
+        if HOLD_RX.match(text):
+            return self._hold(text)
         try:
             from .brain.mdsync import sync
             sync()                      # pick up his edits to USER.md / LESSONS.md (hash check, ~0.1 ms)
         except Exception as e:
             print(f"[mdsync] {e}")
         lat: dict[str, float] = {}
-        now = datetime.now(CFG.tz)
+        now = now or datetime.now(CFG.tz)
+        crisis = strategy.is_crisis(text)       # self-harm words: local script, no LLM, never leaves the Mac
 
         qvec = embed.embed_query(text)
         d = decide(text, qvec)
         lat["decide"] = d.latency_ms
         emo = emotion.fuse(text, d.get("text_emotion"), d.conf.get("text_emotion", 0.0),
                            *(voice_emotion or (None, 0.0)))
-        privacy = d.privacy()
+        privacy = 2 if crisis else d.privacy()
         importance = 7 if REMEMBER_RX.search(text) else 6 if LIFE_RX.search(text) else 3
         user_ep = memory.add_episode(self.session, "user", text, privacy=privacy,
                                      importance=importance, emotion=emo.as_json())
@@ -230,16 +282,53 @@ class Engine:
         if domain in ("chat", "memory") and privacy < 2:
             proactive.maybe_followup(text)
         from .brain import keythings
-        learned = keythings.capture(text, user_ep) if domain not in ("todo", "time", "control") else []
+        learned = keythings.capture(text, user_ep) if domain not in ("todo", "time", "control") and not crisis else []
         from .brain import learning
         from .voice.wake import is_stop
-        undo = bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None
-        corrected = undo or d.is_("is_correction", 0.6)
+        after_offer = bool(re.search(r"anything else\?\s*$", self.last_reply_text or "", re.I)) and bool(NOTHING_RX.match(text))
+        undo = bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None \
+            and not after_offer
+        # "I didn't understand / what language is this" right after her reply = an implicit correction (REPAIR)
+        confused = self.last_reply_text is not None and bool(strategy.CONFUSION_RX.search(text)) \
+            and domain not in ("todo", "time") and not crisis
+        corrected = (undo or d.is_("is_correction", 0.6) or confused) and not crisis
         learning.score_lessons(self.last_lesson_ids, corrected)
         learning.mark_outcome(self.last_turn_id, "corrected" if corrected else "confirmed")
-        inferred_ack = None if d.is_("is_correction", 0.6) else \
-            learning.infer_from_turn(text, self.last_reply_text, interrupted=self.last_interrupted)
-        if self.clarify is not None:
+        inferred_ack = None if d.is_("is_correction", 0.6) or crisis else \
+            learning.infer_from_turn(text, self.last_reply_full if self.last_interrupted and self.last_reply_full
+                                     else self.last_reply_text, interrupted=self.last_interrupted)
+
+        # ---- the reply strategy: decided HERE, by the brain, before any LLM (D25) ----
+        talk = [r["directive"] for r in q(
+            "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style' ORDER BY id")]
+        rule_saved = False
+        if confused and strategy.is_hinglish(self.last_reply_text or "") and not strategy.is_hinglish(text) \
+                and strategy.directive_language(talk) != "english":
+            # her Hinglish lost him and he speaks English: the evidence is clear — English from now on, saved now
+            instructions.apply(instructions.parse("talk in English"), [i for i in (self.last_reply_ep, user_ep) if i])
+            talk = [r["directive"] for r in q(
+                "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style' ORDER BY id")]
+            rule_saved = True
+        elif confused:
+            learning.note_confusion(text)
+
+        def pick(dom: str) -> strategy.Strategy:
+            s = strategy.choose(text, domain=dom, mood=emo.label, mood_conf=emo.conf, arousal=emo.arousal,
+                                corrected=corrected, last_reply=self.last_reply_text, directives=talk,
+                                crisis_recent=time.time() - self.crisis_at < 1800,
+                                pending_offer=(self.last_reply_text or "").rstrip().endswith("?"),
+                                voice_mood=bool(emo.voice_label) and emo.voice_conf >= 0.5)
+            s.allow_promise = rule_saved
+            return s
+
+        strat = pick(domain)
+        from . import farewell as bye
+        if crisis:
+            reply = strategy.crisis_reply(strat.lang)
+            self.crisis_at = time.time()
+        elif after_offer:
+            reply = "Okay, I'm here." if strat.lang == "english" else "Theek hai, main yahin hoon."
+        elif self.clarify is not None:
             reply, self.clarify = self.clarify.answer(text), None
         elif undo:
             note = learning.undo_last(self.last_action)
@@ -247,15 +336,22 @@ class Engine:
             reply = self.clarify.question()
         elif inferred_ack:
             reply = inferred_ack
-        elif is_stop(text) and self.onboarding is None and self.chunker is None and self.woop is None:
-            from .farewell import farewell
-            reply, self.ended = farewell(text, self.last_mood), True
+        elif (is_stop(text) or bye.is_bye(text)) and self.onboarding is None and self.chunker is None and self.woop is None:
+            reply, self.ended = bye.farewell(text, self.last_mood, now), True
+        elif self.nudged and time.time() - self.nudged < 900 and self.last_strategy is not None \
+                and self.last_strategy.name == "NUDGE" and not re.search(r"\b(alarm|remind|timer|todo)\b", text, re.I):
+            reply = strategy.nudge_followup(now)        # one warning only — then "As you wish."
+            strat = strategy.make("DO", strat.lang)
         elif disabled_kind:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
         elif switched := self._intro_switch(text):
             reply = switched
         elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
             reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
+            strat = strategy.make("REPAIR" if corrected else "DO", strat.lang)
+        elif strat.name == "QUIET" and self.onboarding is None and self.chunker is None and self.woop is None \
+                and self.pending is None:
+            reply = strategy.quiet_reply(text, strat.lang, self.last_reply_text)
         elif self.onboarding is not None:
             reply, finished = self.onboarding.answer(text, user_ep)
             if finished:
@@ -320,12 +416,12 @@ class Engine:
             self.woop = psych.Woop()
             reply = self.woop.start()
         elif domain == "feedback" and d.is_("is_correction", 0.6):
-            _, reply = lessons.capture(text, mood=self.last_mood,
+            _, reply = lessons.capture(text, mood=self.last_mood, lang=strat.lang,
                                        source_episode_ids=[i for i in (self.last_reply_ep, user_ep) if i])
         elif learned and len(text.split()) <= 14 and self.onboarding is None:
-            reply = "Noted 👍 — " + ", ".join(learned) + "."
+            reply = "Noted — " + ", ".join(learned) + "."
         elif REMEMBER_RX.search(text) and not text.rstrip().endswith("?") and domain in ("memory", "chat"):
-            reply = "Yaad rakh liya. 👍" if re.search(r"\b(yaad|rakhna|mat|hai)\b", text, re.I) else "Noted — I'll remember that."
+            reply = "Yaad rakh liya." if re.search(r"\b(yaad|rakhna|mat|hai)\b", text, re.I) else "Noted — I'll remember that."
         elif domain == "control":
             reply = handlers.control(text)
         elif domain == "todo":
@@ -336,6 +432,16 @@ class Engine:
         elif domain == "time":
             reply = handlers.timeish(text)
 
+        if reply is None and strat.name == "DO":     # the classifier said todo/time but no fast path took it: talk
+            strat = pick("chat")
+        if reply is None and live_job is None and live_res is None and self.nudged is None and not crisis \
+                and strat.name in ("ACKNOWLEDGE", "BANTER", "ANSWER", "SOLVE") and (nf := strategy.nudge_fact(now)):
+            from . import profile                     # late night + an early event: say the one fact, once
+            reply = strategy.nudge_text(nf, now, profile.call() if profile.get("name") else None)
+            strat, self.nudged = strategy.make("NUDGE", strat.lang), time.time()
+        if live_job is not None or live_res is not None:     # live news/web: read it out, may offer "want more?"
+            strat = strategy.make("ANSWER", strat.lang, max_words=90, ask=True, callbacks=False)
+
         if reply is not None and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
             q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))  # commands aren't memories
 
@@ -345,6 +451,12 @@ class Engine:
             mems = memory.recall(text, qvec, max_privacy=min(privacy, 1) if privacy < 2 else 2, k=8)
             mems = [m for m in mems if m["episode_id"] != user_ep and m["sim"] >= 0.25
                     and m.get("importance", 3) > 1]
+            recent = memory.recent_turns(self.session)[:-1]
+            asked = strategy.asks_about_past(text, domain)
+            # G1–G8: only memories a friend would bring up right now reach the LLM (no random "interview?" quizzes)
+            mems, strat.avoid_terms, _ = gate.filter_memories(
+                mems, text=text, recent_texts=[r["text"] for r in recent if r["speaker"] == "user"][-2:],
+                asked=asked, mood=emo.label, now=now, cap=3 if strat.callbacks else 1)
             seeds = memory.seed_entities(text, [m["episode_id"] for m in mems])
             facts = memory.current_facts(seeds, max_privacy=min(privacy, 1))
             les = lessons.match(qvec, mood=emo.label, bucket=lessons.time_bucket(now))
@@ -358,15 +470,23 @@ class Engine:
                 "docs": list(dict.fromkeys(f"{x['title']}" + (f" › {x['section'].split(' > ')[-1]}" if x.get("section") else "")
                                            for x in docs))[:4],
                 "lessons": [l.get("guidance", "") for l in les[:4]]}
-            talk = [r["directive"] for r in q(
-                "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style'")]
-            loops = None
-            if domain in ("todo", "time"):
+            loops = None                                 # open loops only when he's talking about them (no random
+            if domain in ("todo", "time") and re.search(   # "you have a reminder at 4" in small talk)
+                    r"\b(todos?|tasks?|reminders?|alarms?|kaam|list|plan|pending|deadline|due)\b", text, re.I):
                 loops = handlers.todo_list() + " " + handlers.list_intents()
+            unknown = self._unknown_name(text, user_ep) if asked else None
+            if unknown and any(re.search(rf"\b{unknown}\b", x["text"], re.I) for x in docs):
+                unknown = None
+            if unknown:                                  # honest about a memory gap — no LLM, nothing invented
+                reply = (f"{unknown} ke baare mein mere paas kuch nahi hai." if strat.lang == "hinglish"
+                         else f"Nothing about {unknown} in my memory.")
+                live_job = None
+        if reply is None:
             brief, brief_tokens = compiler.build(
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
-                recent=memory.recent_turns(self.session)[:-1], memories=mems, facts=facts, lessons=les,
-                open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs)
+                recent=recent, memories=mems, facts=facts, lessons=les,
+                open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
+                strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None)
             if live_job is not None:
                 try:
                     live_res = live_job.result(timeout=live.BUDGET_S + 1.5)
@@ -378,6 +498,7 @@ class Engine:
                 brief += "\n\n" + block
                 brief_tokens = (brief_tokens or 0) + len(block) // 4
             use_tools = live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))
+            psych.set_policy(strat)                     # StreamLint enforces this turn's shape on the spoken stream
             try:
                 if on_delta is not None and not use_tools:      # stream: she starts talking at the first clause
                     info = {}
@@ -402,7 +523,10 @@ class Engine:
                     self._offline_said_at = time.time()
                 else:
                     reply = ""
-                if live_res is not None:                # no LLM: read the top headlines out directly
+                if strat.name == "REPAIR":
+                    reply = ("Sorry about that. English from now on." if rule_saved
+                             else "Sorry — let me keep it simpler. Say that once more?")
+                elif live_res is not None:              # no LLM: read the top headlines out directly
                     reply += live.speak(live_res, start_at=live_from)
                 elif docs and (not mems or docs[0]["sim"] > mems[0]["sim"]) and docs[0]["sim"] >= 0.4:
                     d0 = docs[0]
@@ -416,7 +540,18 @@ class Engine:
                     reply = "Hmm, that one I can't answer right now — but I've noted it."
                 info = {"error": str(e)}
 
-        reply = psych.lint(reply)
+        if route == "llm" and not (self.pending is not None and reply.startswith("Should I go ahead")):
+            reply = psych.enforce(reply, strat)         # strategy shape, banned tics, questions, promises — in code
+            if mems and not strategy.asks_about_past(text, domain):
+                gate.mark_volunteered(reply, mems)      # G4 clocks start only for memories she actually used
+        else:
+            reply = psych.lint(reply)
+        m = re.search(r"\((task )?#(\d+)\)", reply)   # ids stay internal (undo); never spoken or shown
+        self.last_action = ({"type": "task" if m.group(1) else "intent", "id": int(m.group(2))}
+                            if m and route == "fast_path" else None)
+        reply = psych.EMOJI.sub("", re.sub(r"\s*\((task |lesson )?#?L?\d+\)", "", reply)).strip()
+        if route == "fast_path" and m and re.match(r"(Got it|Done|Timer set)\b", reply) and not reply.endswith("?"):
+            reply += " Anything else?"                  # confirm-and-close: only after a completed action
         reply_ep = memory.add_episode(self.session, "stiti", reply, origin="agent", privacy=privacy)
         lat["total"] = (time.perf_counter() - t0) * 1000
         turn = one("""INSERT INTO turns(session_id, user_episode_id, reply_episode_id, route, provider, model, privacy,
@@ -430,13 +565,12 @@ class Engine:
                 q("""INSERT INTO decisions(turn_id, question, answer, confidence, acted, laya_version)
                      VALUES (%s,%s,%s,%s,%s,%s)""",
                   (turn["id"], qn, d.answers[qn], d.conf.get(qn, 0.0), True, d.source))
+        strategy.log(turn["id"], strat)                 # labels for a future Laya reply_strategy head
         memory.touch(recalled_ids)
         lessons.mark_applied(lesson_ids)
-        m = re.search(r"\((task )?#(\d+)\)", reply)
-        self.last_action = ({"type": "task" if m.group(1) else "intent", "id": int(m.group(2))}
-                            if m and route == "fast_path" else None)
         self.last_turn_id, self.last_lesson_ids = turn["id"], lesson_ids
         self.last_reply_text, self.last_user_text, self.last_route = reply, text, route
+        self.last_reply_full, self.last_strategy = None, strat
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)
@@ -447,6 +581,7 @@ class Engine:
             self.last_card = None
         self.last_user_ep, self.last_reply_ep, self.last_mood = user_ep, reply_ep, emo.label
         self.last_debug = {"domain": str(domain), "domain_conf": round(d.conf.get("domain", 0), 2), "mood": str(emo.label), "mood_conf": round(emo.conf, 2),
+                           "strategy": strat.name, "lang": strat.lang,
                            "privacy": privacy, "route": route, "provider": info.get("provider"),
                            "latency_ms": {k: round(v) for k, v in lat.items()},
                            "live": None if live_res is None else {
