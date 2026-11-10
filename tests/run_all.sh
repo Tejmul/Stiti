@@ -34,4 +34,5 @@ run "Hinglish voice (TTS)"          tests/hinglish_eval.py
 run "conversation basics"           tests/conversation_eval.py
 run "persona + psychology (D25)"   tests/persona_eval.py
 run "turn-taking"                   tests/turn_eval.py
+run "STT his words + Indian voice (D27)" tests/stt_voice_eval.py
 exit $fail
