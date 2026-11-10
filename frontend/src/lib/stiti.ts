@@ -84,7 +84,7 @@ export function fmtDay(d: Date): string {
 export type Fact = { id: number; text: string; group: string; mine: boolean; since: string | null };
 export type Mind = {
   name: string | null;
-  counts: { facts: number; people: number; rules: number; habits: number; docs: number; moments: number; conversations: number; since: string | null };
+  counts: { facts: number; people: number; rules: number; habits: number; docs: number; since: string | null };
   facts: Fact[];
   people: { id: number; kind: string; name: string; summary: string | null; facts: string[] }[];
   directives: { id: number; category: string; text: string }[];
@@ -98,8 +98,8 @@ export type Mind = {
   alarms: { id: number; kind: string; at: string; repeats: boolean; text: string }[];
   courses: { title: string; status: string; at: string }[];
 };
-export type Moment = { id: number; who: "you" | "stiti"; text: string; at: string; mood: string | null };
-export type Used = { memories: { text: string; at: string }[]; facts: string[]; docs: string[]; lessons: string[] } | null;
+/** `memories` is a count: past conversations are never sent to a page, only how many were recalled. */
+export type Used = { memories: number; facts: string[]; docs: string[]; lessons: string[] } | null;
 export type Reply = {
   type: "reply"; text: string; route?: string; domain?: string; mood?: string; provider?: string;
   action?: { type: string; id: number } | null; ms?: number; ended?: boolean; used?: Used;

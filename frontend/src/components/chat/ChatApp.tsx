@@ -1,7 +1,7 @@
 "use client";
 // Stiti chat client. One WebSocket to the local server; every message goes through the same Engine
 // as voice/terminal, so this is the same Stiti with the same memory.
-// Protocol (src/stiti/web/server.py): ← hello{name,llm,history,state} · → say{text} · ← thinking · ← delta{text}… ·
+// Protocol (src/stiti/web/server.py): ← hello{name,llm,state} · → say{text} · ← thinking · ← delta{text}… ·
 // ← reply{text,route,domain,provider,ms,used} · ← state{todos,alarms}
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
@@ -15,7 +15,8 @@ const SUGGEST = ["What's on my todo list?", "Remind me to drink water in 1 hour"
                  "Add call mom to my todos"];
 const EMPTY: DayState = { todos: [], alarms: [] };
 
-type Hello = { type: "hello"; name: string | null; llm: boolean; history?: { who: "you" | "stiti"; text: string; ts: string }[]; state?: DayState };
+// No chat history is ever sent to the page (owner's privacy rule) — the thread shows this visit only.
+type Hello = { type: "hello"; name: string | null; llm: boolean; state?: DayState };
 type Incoming = Hello | { type: "thinking" } | { type: "delta"; text: string } | Reply | ({ type: "state" } & DayState);
 
 export default function ChatApp() {
@@ -39,7 +40,7 @@ export default function ChatApp() {
   const mindRef = useRef<MindHandle>(null);
   const nextId = useRef(1);
   const streamId = useRef<number | null>(null);
-  const jump = useRef(true);                         // next scroll is instant (history load)
+  const jump = useRef(true);                         // next scroll is instant
   const knowsTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
@@ -59,7 +60,6 @@ export default function ChatApp() {
         jump.current = true;
         setName(m.name);
         setBrain(m.llm ? "on" : "off");
-        setMsgs((m.history || []).map((h) => ({ id: nextId.current++, who: h.who, text: h.text, at: new Date(h.ts), animate: false })));
         setHelloed(true);
         setSuggest(true);
         setThinking(false);

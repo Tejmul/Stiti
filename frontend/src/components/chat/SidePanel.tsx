@@ -60,7 +60,6 @@ function Knows({ knows }: { knows: Mind | null }) {
   const bits = [
     c.facts && plural(c.facts, "fact"),
     c.people && plural(c.people, "person", "people"),
-    c.moments && plural(c.moments, "message"),
     c.docs && plural(c.docs, "file"),
   ].filter(Boolean);
   const facts = knows.facts.slice(0, 3);

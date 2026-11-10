@@ -1,6 +1,6 @@
 "use client";
 // Stiti's memory of him: a still map of his life, then every part of it — editable where it should be.
-// Reads /api/mind (what she knows) and /api/moments (every conversation). Same token model as the chat.
+// Reads /api/mind (what she knows). Conversations are never shown on a page (owner's privacy rule). Same token model as the chat.
 import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import Nav from "@/components/Nav";
@@ -8,7 +8,6 @@ import type { Mind } from "@/lib/stiti";
 import { NotAllowed, api, plural } from "@/lib/stiti";
 import About from "./About";
 import LifeMap from "./LifeMap";
-import Moments from "./Moments";
 import Rail, { type RailItem } from "./Rail";
 import { Files, Habits, Mood, People, Plans, Rules } from "./Sections";
 
@@ -34,7 +33,6 @@ export default function MemoryPage() {
     { id: "rules", label: "How to talk to you", n: c?.rules },
     { id: "habits", label: "Habits", n: c?.habits },
     { id: "mood", label: "Mood" },
-    { id: "moments", label: "Conversations", n: c?.moments },
     { id: "files", label: "Files", n: c?.docs },
     { id: "plans", label: "Plans" },
   ];
@@ -73,7 +71,6 @@ export default function MemoryPage() {
               <Rules d={mind} />
               <Habits d={mind} />
               <Mood d={mind} />
-              <Moments total={mind.counts.moments} />
               <Files d={mind} />
               <Plans d={mind} />
             </div>
@@ -98,8 +95,7 @@ export default function MemoryPage() {
 
 function Stats({ c }: { c: Mind["counts"] }) {
   const since = c.since ? new Date(c.since).toLocaleDateString([], { day: "numeric", month: "short" }) : null;
-  const parts = [plural(c.facts, "fact"), plural(c.people, "person", "people"), plural(c.moments, "message"),
-    plural(c.conversations, "conversation"), plural(c.docs, "file"), plural(c.rules, "rule")];
+  const parts = [plural(c.facts, "fact"), plural(c.people, "person", "people"), plural(c.docs, "file"), plural(c.rules, "rule")];
   const all = since ? [...parts, `since ${since}`] : parts;
   return (
     <>

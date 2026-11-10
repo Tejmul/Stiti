@@ -5,24 +5,12 @@ import type { Used } from "@/lib/stiti";
 
 const cut = (s: string, n = 140) => (s.length > n ? s.slice(0, n).replace(/\s+\S*$/, "") + "…" : s);
 
-function relDay(iso: string): string {
-  const d = new Date(iso);
-  if (isNaN(+d)) return "";
-  const a = new Date(); a.setHours(0, 0, 0, 0);
-  const b = new Date(d); b.setHours(0, 0, 0, 0);
-  const days = Math.round((+a - +b) / 864e5);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days} days ago`;
-  if (days < 35) return `${Math.round(days / 7)} wk ago`;
-  return d.toLocaleDateString([], { month: "short", year: d.getFullYear() === a.getFullYear() ? undefined : "numeric", day: "numeric" });
-}
-
 export default function Receipts({ used }: { used?: Used }) {
   if (!used) return null;
-  const { memories = [], facts = [], docs = [] } = used;
+  const { facts = [], docs = [] } = used;
+  const memories = typeof used.memories === "number" ? used.memories : 0;   // a count, never the words
   const lessons = (used.lessons || []).filter(Boolean);
-  const n = memories.length + facts.length + docs.length + lessons.length;
+  const n = memories + facts.length + docs.length + lessons.length;
   if (!n) return null;
   const onToggle = (e: React.SyntheticEvent<HTMLDetailsElement>) => {
     const el = e.currentTarget;
@@ -37,14 +25,10 @@ export default function Receipts({ used }: { used?: Used }) {
         Remembered {n} {n === 1 ? "thing" : "things"}
       </summary>
       <div className="receipts__body">
-        {memories.length > 0 && (
+        {memories > 0 && (
           <section className="receipts__group">
             <h3>Earlier conversations</h3>
-            <ul>
-              {memories.map((m, i) => (
-                <li key={i}><span>{cut(m.text)}</span> <time dateTime={m.at}>{relDay(m.at)}</time></li>
-              ))}
-            </ul>
+            <p className="receipts__private">{memories} recalled. Kept private, so they&apos;re not shown here.</p>
           </section>
         )}
         {facts.length > 0 && (

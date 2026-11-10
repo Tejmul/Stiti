@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import ChatApp from "@/components/chat/ChatApp";
+import { ChatPage } from "@/components/private-pages";
 import "./chat.css";
 
 export const metadata: Metadata = {
@@ -8,5 +8,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <ChatApp />;
+  return <ChatPage />;
 }

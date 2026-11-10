@@ -24,7 +24,7 @@ export function People({ d }: { d: Mind }) {
           ))}
         </div>
       ) : (
-        <Empty say={["my sister Ayesha lives in Pune", "Rohan is my teammate at MVRX", "I grew up in Guwahati"]}>
+        <Empty say={["my sister Ayesha lives in Pune", "Rohan is my teammate at work", "I grew up in Guwahati"]}>
           No one yet. Mention people and places the way you&apos;d tell a friend, and Stiti links them to everything you
           say about them. The nightly sleep job files them here.
         </Empty>
