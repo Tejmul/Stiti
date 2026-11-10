@@ -1,6 +1,6 @@
 "use client";
 // Stiti landing — motion ported from the original static/js/landing.js: Lenis smooth scroll + GSAP/ScrollTrigger,
-// preloader (counter → logo dot collapses → sphere blooms), hero timeline, hero-only particles, scroll reveals,
+// sphere bloom intro, hero timeline, hero-only particles, scroll reveals,
 // marquees, smooth anchors. Everything below the hero is still and clean (owner rule); reduced motion = no motion.
 // No redirect to /chat anywhere here (the original had none either): the landing always stays the landing.
 import { useEffect, useRef } from "react";
@@ -11,7 +11,6 @@ import Nav from "@/components/Nav";
 import { prefersReducedMotion } from "@/lib/stiti";
 import { createField } from "./particles";
 import { EXPO, OUT } from "./ease";
-import Preloader from "./Preloader";
 import Cursor from "./Cursor";
 import { Hero, Body, Footer } from "./Sections";
 
@@ -173,48 +172,21 @@ export default function Landing() {
         on(vp, "mouseleave", () => gsap.to(sy, { timeScale: 1, duration: .5, ease: "power2.in", overwrite: true }));
       }
 
-      // -------------------------------------------------------------- preloader (0 → 2.4 s), then the hero plays
+      // -------------------------------------------------------------- intro: the sphere blooms, then the hero plays
+      // (no preloader screen — owner: "the 100% loading animation is the worst")
       const afterLoad = () => {
         tl.play();
         const el = byHash(location.hash);
         if (el) scrollToEl(el, true);
       };
-      const loader = $(".loader");
-      // The preloader is an intro: once per browser tab. Coming back (e.g. Chat → Abilities) goes straight in.
-      let seen = false;
-      try { seen = sessionStorage.getItem("stiti_intro") === "1"; } catch { /* storage blocked: play it */ }
-      if (reduced || seen) {
-        loader.style.display = "none";
-        if (reduced) canvas.style.opacity = "1";
-        else {
-          field.intro(innerWidth / 2, innerHeight / 2);
-          gsap.to(canvas, { opacity: 1, duration: .8, ease: "power1.out" });
-        }
-        loading = false;
-        afterLoad();
-        return;
+      loading = false;
+      if (reduced) {
+        canvas.style.opacity = "1";
+      } else {
+        field.intro(innerWidth / 2, innerHeight / 2);
+        gsap.to(canvas, { opacity: 1, duration: 1, ease: "power1.out" });
       }
-      scrollTo(0, 0);
-      html.classList.add("landing-loading");
-      lenis?.stop();
-      const num = $(".loader__num"), line = $(".loader__line"), logo = $(".loader__logo");
-      const o = { v: 0 };
-      gsap.timeline()
-        .fromTo(logo, { opacity: 0, scale: .8 }, { opacity: 1, scale: 1, duration: 1.2, ease: OUT }, 0)
-        .to(o, { v: 100, duration: 1.8, ease: "power2.inOut", onUpdate: () => { num.textContent = String(Math.round(o.v)).padStart(3, "0") + "%"; } }, 0)
-        .fromTo(line, { scaleX: 0 }, { scaleX: 1, duration: 1.8, ease: "power2.inOut" }, 0)
-        .to([num, line], { opacity: 0, y: -40, duration: .4, ease: OUT }, 1.8)
-        // handoff: the logo's dot collapses and the sphere blooms out of that exact point
-        .to(logo, { scale: .25, opacity: 0, duration: .35, ease: EXPO }, 1.72)
-        .add(() => field.intro(innerWidth / 2, innerHeight / 2), 2.15)
-        .to(canvas, { opacity: 1, duration: 1, ease: "power1.out" }, 1.75)
-        .to(loader, { yPercent: -100, duration: .9, ease: EXPO }, 2.0)
-        .add(() => {
-          html.classList.remove("landing-loading"); loading = false; lenis?.start(); afterLoad();
-          try { sessionStorage.setItem("stiti_intro", "1"); } catch { /* ignore */ }
-          html.classList.add("intro-seen");
-        }, 2.4)
-        .add(() => { loader.style.display = "none"; }, 2.95);
+      afterLoad();
     }, root);
 
     document.fonts?.ready.then(() => { if (alive) ScrollTrigger.refresh(); });
@@ -234,18 +206,14 @@ export default function Landing() {
         if (t) clearTimeout(t);
         gsap.ticker.lagSmoothing(500, 33);
       }
-      html.classList.remove("landing-loading", "landing-page");
+      html.classList.remove("landing-page");
       history.scrollRestoration = prevRestoration;
-      const loader = $(".loader"), num = $(".loader__num");
-      loader.style.display = "";
-      num.textContent = "000%";
       canvas.style.opacity = "";
     };
   }, []);
 
   return (
     <div className="pg-landing" ref={rootRef}>
-      <Preloader />
       <canvas className="field" aria-hidden="true" />
       <Cursor />
       <Nav current="home" />
