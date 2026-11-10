@@ -3,12 +3,12 @@
 // Hides on scroll down, returns on scroll up; pointer sheen follows the cursor; full-screen menu on mobile.
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { GITHUB } from "@/lib/site";
 
 type Page = "home" | "chat" | "memory";
 // The marketing site (the landing, in every build) links only to its own sections + GitHub. Chat and Memory are
 // never linked from it; those pages exist only on the owner's Mac, and only they show each other in the nav.
 const PUBLIC = process.env.NEXT_PUBLIC_STITI_PUBLIC === "1";
-export const GITHUB = "https://github.com/Tejmul/Stiti";
 type NavLink = { href: string; label: string; page?: Page };
 const SITE_LINKS: NavLink[] = [
   { href: "/#features", label: "Features" },
