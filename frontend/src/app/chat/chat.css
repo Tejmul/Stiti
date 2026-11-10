@@ -187,3 +187,5 @@
 
 .pg-chat .gate__home { display: inline-flex; align-items: center; min-height: 44px; font-weight: 500; color: var(--ink); }
 .pg-chat .gate__home:hover { text-decoration: underline; text-underline-offset: 4px; }
+
+.pg-chat .receipts__private { margin: 0; color: var(--ink-2); }

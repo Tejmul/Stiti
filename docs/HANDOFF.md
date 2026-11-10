@@ -117,9 +117,11 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - **Localhost security model** (shared with the tutor board): bind 127.0.0.1; Host header check on every request
   (DNS rebinding); Origin + per-install token (`~/.stiti/web_token`, given once in the URL fragment) on WS and API.
 - Endpoints: `/` `/chat` `/memory` (Next export in `frontend/out`; 503 "not built" if missing), `/ws`, `GET /api/state`,
-  `POST /api/todo/{id}/done`, `GET /api/mind` + `GET /api/moments?q=&before=` (`web/mind.py`), `POST /api/fact`,
+  `POST /api/todo/{id}/done`, `GET /api/link` (same-origin key), `GET /api/mind` (`web/mind.py`), `POST /api/fact`,
   `POST /api/fact/{id}/forget` (writes need same Origin; USER.md synced first, re-rendered after), `/icons/<n>.png`.
-- Chat replies carry `used` = `Engine.last_used` (memories/facts/doc sections/lessons handed to the LLM) → receipts.
+- Chat replies carry `used` = `Engine.last_used` (memory COUNT + facts/doc sections/lessons handed to the LLM) → receipts.
+- **Privacy (D24): no conversation text is ever sent to a page** (no history on open, no conversations API). Public
+  site: `STITI_PUBLIC=1 pnpm build` (landing only; chat/memory code aliased out).
 - Frontend = Next.js 16 static export (D23); no Node at runtime. UI conventions live in Claude memory, not here.
 - Verified: `tests/web_eval.py` 19/19; a real LLM chat turn with receipts. NOT verified: browser voice input.
 - Next: browser mic → local whisper; settings view; edit people/rules from the Memory page.

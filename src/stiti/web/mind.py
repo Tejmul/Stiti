@@ -1,5 +1,6 @@
 """Read-only views of Stiti's brain for the web Memory page, plus the two owner edits it allows
-(tell Stiti a fact, forget a fact). Postgres stays the source; USER.md is re-rendered after each edit
+(tell Stiti a fact, forget a fact). Conversations are NEVER exposed here (owner rule: chat history stays in the
+brain, not on a page). Postgres stays the source; USER.md is re-rendered after each edit
 so the markdown and the page never disagree. Only privacy < 2 rows are shown (P2 never leaves the brain)."""
 from __future__ import annotations
 
@@ -68,9 +69,7 @@ def overview() -> dict:
         rows = sorted([r for r in mood_rows if r["day"] == d], key=lambda r: -r["n"])
         mood.append({"day": d.isoformat(), "label": rows[0]["label"] if rows else None,
                      "n": sum(r["n"] for r in rows), "mix": {r["label"]: r["n"] for r in rows}})
-    counts = one("""SELECT (SELECT count(*) FROM episodes WHERE speaker IN ('user','stiti') AND privacy < 2) AS moments,
-                           (SELECT count(*) FROM sessions) AS conversations,
-                           (SELECT min(occurred_at) FROM episodes) AS since""")
+    counts = one("SELECT min(occurred_at) AS since FROM episodes")
     todos = q("""SELECT id, title, due FROM tasks WHERE status='open' AND parent_id IS NULL
                  ORDER BY due NULLS LAST, created_at DESC LIMIT 20""")
     alarms = q("""SELECT id, kind, fire_at, rrule, COALESCE(payload->>'say', payload->>'text') AS text FROM intents
@@ -79,8 +78,7 @@ def overview() -> dict:
     return {
         "name": profile.name() if profile.get("name") else None,
         "counts": {"facts": len(facts), "people": len(people), "rules": len(directives) + len(lessons),
-                   "habits": len(habits), "docs": len(docs), "moments": counts["moments"],
-                   "conversations": counts["conversations"], "since": _iso(counts["since"])},
+                   "habits": len(habits), "docs": len(docs), "since": _iso(counts["since"])},
         "facts": [{"id": f["id"], "text": f["fact_text"], "group": group_of(f["fact_text"]),
                    "mine": f["origin"] == "owner_edit", "since": _iso(f["since"])} for f in facts],
         "people": [{"id": p["id"], "kind": p["kind"], "name": p["name"], "summary": p["summary"],
@@ -99,22 +97,6 @@ def overview() -> dict:
                     "text": a["text"] or ""} for a in alarms],
         "courses": [{"title": c["title"], "status": c["status"], "at": _iso(c["updated_at"])} for c in courses],
     }
-
-
-def moments(query: str = "", before: str | None = None, limit: int = 60) -> list[dict]:
-    """Conversation history, newest first; optional keyword search (full-text, then substring)."""
-    args: list = []
-    where = "speaker IN ('user','stiti') AND privacy < 2"
-    if before:
-        where += " AND occurred_at < %s"
-        args.append(before)
-    if query.strip():
-        where += " AND (tsv @@ plainto_tsquery('simple', %s) OR text ILIKE %s)"
-        args += [query.strip(), f"%{query.strip()}%"]
-    rows = q(f"""SELECT id, speaker, text, occurred_at, emotion->>'label' AS mood FROM episodes WHERE {where}
-                 ORDER BY occurred_at DESC LIMIT %s""", (*args, min(limit, 200)))
-    return [{"id": r["id"], "who": "you" if r["speaker"] == "user" else "stiti", "text": r["text"],
-             "at": r["occurred_at"].isoformat(), "mood": r["mood"] if r["speaker"] == "user" else None} for r in rows]
 
 
 def add_fact(text: str) -> dict:

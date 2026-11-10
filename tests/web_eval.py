@@ -54,8 +54,8 @@ check("WebSocket refuses a wrong token", refused)
 
 with c.websocket_connect(f"/ws?t={tok}", headers=origin) as ws:
     hello = ws.receive_json()
-    check("hello carries history, state and brain status", hello["type"] == "hello" and "history" in hello
-          and "todos" in hello["state"] and isinstance(hello["llm"], bool))
+    check("hello carries state and brain status — and NO chat history (privacy)", hello["type"] == "hello"
+          and "history" not in hello and "todos" in hello["state"] and isinstance(hello["llm"], bool))
     ws.send_json({"type": "say", "text": "add water the plants to my todos"})
     assert ws.receive_json()["type"] == "thinking"
     r = ws.receive_json()
@@ -96,8 +96,14 @@ c.post(f"/api/fact/{new['id']}/forget", headers={"x-stiti-token": tok, **origin}
 mind = c.get("/api/mind", headers={"x-stiti-token": tok}).json()
 check("forgotten fact is gone (kept in history)", all(f["id"] != new["id"] for f in mind["facts"])
       and "filter coffee" not in (CFG.home / "USER.md").read_text())
-hits = c.get("/api/moments?q=plants", headers={"x-stiti-token": tok}).json()
-check("conversation search finds earlier messages", any("plants" in m["text"] for m in hits), str(hits)[:200])
+check("no API exposes conversations (privacy)", c.get("/api/moments", headers={"x-stiti-token": tok}).status_code == 404
+      and "water the plants" not in str(c.get("/api/mind", headers={"x-stiti-token": tok}).json()))
+from stiti.engine import Engine  # noqa: E402
+eng = Engine("text")
+eng.turn("what did I ask you to remember about the plants?")
+used = eng.last_used
+check("receipts carry a COUNT of recalled conversations, never their words",
+      used is None or (isinstance(used["memories"], int) and "plants" not in str(used.get("facts", ""))), str(used)[:200])
 
 print(f"web: {ok}/{ok + fail} checks passed")
 raise SystemExit(1 if fail else 0)
