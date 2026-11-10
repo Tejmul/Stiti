@@ -6,6 +6,7 @@ Model IDs are checked against each provider's /models list on first use.
 """
 from __future__ import annotations
 
+import json
 import re
 import time
 from dataclasses import dataclass
@@ -67,6 +68,9 @@ CHAINS = {
                    ("cloudflare", "@cf/openai/gpt-oss-120b"), ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
                    ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("mistral", "mistral-small-latest")],
 }
+CHAINS["tutor_answer"] = [("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"),
+                          ("cloudflare", "@cf/openai/gpt-oss-120b"), *NV_FAST,
+                          ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("zai", "glm-4.7-flash")]
 # providers/models with strict json_schema (constrained decoding); others get json_object + validation
 STRICT_SCHEMA = {("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
                  ("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b")}
@@ -177,6 +181,18 @@ def _record(p: str, model: str, tin: int, tout: int, err: str | None = None, coo
        "tt": tin + tout, "cd": cooldown_s, "e": err})
 
 
+def _shape_ok(text: str, schema: dict) -> bool:
+    """Structured output sanity: parses as a JSON object and has every required top-level key."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = t.strip("`").split("\n", 1)[-1]
+    try:
+        d = json.loads(t[t.find("{"): t.rfind("}") + 1])
+    except ValueError:
+        return False
+    return isinstance(d, dict) and all(k in d for k in schema.get("required", []))
+
+
 def _attempts(messages, route, privacy, max_tokens, temperature, json_mode, tools, schema, schema_name,
               reasoning, errors):
     """Yield (provider, model, client, kwargs, est) for each usable chain entry, in order."""
@@ -210,6 +226,10 @@ def _attempts(messages, route, privacy, max_tokens, temperature, json_mode, tool
                                          "json_schema": {"name": schema_name, "strict": True, "schema": schema}}
         elif json_mode or schema is not None:
             kwargs["response_format"] = {"type": "json_object"}
+            if schema is not None:                     # no constrained decoding here: spell the shape out
+                hint = "Reply with ONE JSON object matching this JSON Schema exactly (all required keys):\n" + \
+                       json.dumps(schema, separators=(",", ":"))[:6000]
+                kwargs["messages"] = list(messages) + [{"role": "system", "content": hint}]
         if tools:
             kwargs["tools"], kwargs["tool_choice"] = tools, "auto"
         yield p, model, cli, kwargs, est
@@ -251,6 +271,9 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
         _record(p, model, tin, tout)
         if not text and not calls:
             errors.append(f"{p}/{model}: empty")
+            continue
+        if schema is not None and not _shape_ok(text, schema):
+            errors.append(f"{p}/{model}: wrong JSON shape")
             continue
         return {"text": text, "tool_calls": calls, "provider": p, "model": model,
                 "ms": (time.perf_counter() - t) * 1000, "tokens_in": tin, "tokens_out": tout}
