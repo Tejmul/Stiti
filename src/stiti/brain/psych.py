@@ -53,6 +53,28 @@ def lint(text: str, max_items: int = 3) -> str:
     return out.strip()
 
 
+class StreamLint:
+    """lint() for a reply that is spoken sentence by sentence while it streams (same rules, applied per piece)."""
+
+    BULLET = re.compile(r"^\s*([-*•]|\d+[.)])\s+")
+
+    def __init__(self, max_items: int = 3):
+        self.max_items, self.items, self.questions = max_items, 0, 0
+
+    def feed(self, piece: str) -> str | None:
+        for rx, rep in GUILT:
+            piece = re.sub(rx, rep, piece, flags=re.I)
+        if self.BULLET.match(piece):
+            self.items += 1
+            if self.items > self.max_items:
+                return None                                  # extra list items: not spoken
+        if "?" in piece:
+            if self.questions:
+                piece = piece.replace("?", ".")              # at most one question per reply
+            self.questions += piece.count("?")
+        return piece
+
+
 def minimum_viable_day(mood: str | None) -> bool:
     return mood in ("tired", "sad", "stressed")
 

@@ -72,6 +72,7 @@ class Engine:
         self.last_user_ep: int | None = None
         self.last_reply_ep: int | None = None
         self.last_mood: str | None = None
+        self.streamed = False                               # last reply was already delivered via on_delta
 
     def _llm(self, brief: str, text: str, qvec, privacy: int, use_tools: bool) -> tuple[str, dict]:
         """LLM call with an optional tool loop (≤3 rounds, risk-gated, taint-aware)."""
@@ -113,8 +114,14 @@ class Engine:
                     "Say “intro shuru karo”.")
         return nudge.morning_brief() or "Haan, bolo?"
 
-    def turn(self, text: str, voice_emotion: tuple[str, float] | None = None) -> str:
+    def turn(self, text: str, voice_emotion: tuple[str, float] | None = None, *,
+             on_delta=None, on_ack=None) -> str:
+        """One turn. on_delta(str) streams an LLM reply as it is written (then self.streamed is True);
+        on_ack(kind) fires the moment a slow action starts ("calendar", "mail", "plan", "tools") so the
+        voice can say "ek sec, dekhti hoon" instantly instead of dead air."""
         t0 = time.perf_counter()
+        self.streamed = False
+        ack = on_ack or (lambda kind: None)
         text = normalize(text)
         try:
             from .brain.mdsync import sync
@@ -165,7 +172,8 @@ class Engine:
         elif inferred_ack:
             reply = inferred_ack
         elif is_stop(text) and self.onboarding is None and self.chunker is None and self.woop is None:
-            reply, self.ended = "Theek hai, bye! 👋 Jab chahiye, bula lena.", True
+            from .farewell import farewell
+            reply, self.ended = farewell(text, self.last_mood), True
         elif disabled_kind:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
         elif self.onboarding is not None:
@@ -196,14 +204,17 @@ class Engine:
             from .tutor import launch
             reply = launch(*tr)
         elif CAL_RX.search(text):
+            ack("calendar")
             from .connectors import eventkit
             reply = eventkit.speak_events(eventkit.today_events())
         elif (m := music_fastpath(text)) is not None:
             reply = m
         elif MAIL_RX.search(text):
+            ack("mail")
             from .connectors import mail
             reply = mail.speak_unread(mail.unread())
         elif PLAN_RX.search(text):
+            ack("plan")
             plan = planner.plan_day()
             planner.accept(plan)
             reply = planner.speak_plan(plan, low_energy=low)
@@ -262,8 +273,20 @@ class Engine:
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=memory.recent_turns(self.session)[:-1], memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs)
+            use_tools = domain == "tool" or bool(TOOL_HINT_RX.search(text))
             try:
-                reply, info = self._llm(brief, text, qvec, privacy, use_tools=domain == "tool" or bool(TOOL_HINT_RX.search(text)))
+                if on_delta is not None and not use_tools:      # stream: she starts talking at the first clause
+                    info = {}
+                    for piece in router.stream([{"role": "system", "content": brief}, {"role": "user", "content": text}],
+                                               privacy=privacy, info=info):
+                        self.streamed = True
+                        on_delta(piece)
+                    reply = info["text"]
+                    lat["first_token"] = info.get("first_ms", 0)
+                else:
+                    if use_tools:
+                        ack("tools")
+                    reply, info = self._llm(brief, text, qvec, privacy, use_tools=use_tools)
                 route = "llm"
                 lat["llm"] = info["ms"]
             except router.NoProvider as e:
