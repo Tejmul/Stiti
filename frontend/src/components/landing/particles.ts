@@ -91,7 +91,7 @@ export function createField(cv: HTMLCanvasElement): Field {
     mobile = W < 760 || !FINE;
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
     if (mobile) { bcx = W * .5; bcy = Math.min(H * .25, W * .52); R = Math.min(W * .3, H * .19); }
-    else { bcx = W * .715; bcy = H * .4; R = Math.min(W * .2, H * .3); }
+    else { bcx = W * .715; bcy = H * .53; R = Math.min(W * .2, H * .3); }   // level with the headline, clear of the nav
     if (anc) { bcx = anc.x; bcy = anc.y; R = anc.r; }
     SZ = mobile ? .72 : 1;
     return mobile ? 2200 : 6000;
