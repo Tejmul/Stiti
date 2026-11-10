@@ -77,6 +77,9 @@ mdir = MODELS if (MODELS / "kokoro-v1.0.int8.onnx").exists() else REAL_MODELS
 if (mdir / "kokoro-v1.0.int8.onnx").exists() and (mdir / "voices-v1.0.bin").exists():
     from stiti.voice import models
     models.DIR = mdir                                                 # run_all uses a temp STITI_HOME
+    real_goonj = Path.home() / ".stiti" / "models" / "goonj"          # …so point at his installed goonj voice too,
+    if not models.GOONJ_DIR.exists() and real_goonj.exists():        # or the test grades the af_heart fallback
+        models.GOONJ_DIR = real_goonj
     from stiti.voice.tts import TTS
     tts = TTS()
     tts.synth_on_worker("Warm up.")
