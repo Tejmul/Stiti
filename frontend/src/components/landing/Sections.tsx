@@ -1,5 +1,4 @@
 // Landing markup (ported from the original static/index.html). Pure markup — all motion is wired in Landing.tsx.
-import Link from "next/link";
 import { Fragment, type CSSProperties } from "react";
 import Split from "./Split";
 
@@ -13,12 +12,16 @@ function Arrow() {
   );
 }
 
-function StartTalking({ big, reveal }: { big?: boolean; reveal?: boolean }) {
+export const GITHUB = "https://github.com/Tejmul/Stiti";
+
+// The marketing site's one action until the app ships (a live demo link comes later).
+function GitHubButton({ big, reveal }: { big?: boolean; reveal?: boolean }) {
   return (
-    <Link className={`btn btn--primary${big ? " btn--big" : ""}`} href="/chat" data-reveal={reveal || undefined}>
-      <span>Start talking</span>
+    <a className={`btn btn--primary${big ? " btn--big" : ""}`} href={GITHUB} target="_blank" rel="noopener"
+       data-reveal={reveal || undefined}>
+      <span>View on GitHub</span>
       <Arrow />
-    </Link>
+    </a>
   );
 }
 
@@ -85,10 +88,12 @@ export function Hero() {
       <div className="container hero__grid">
         <p className="label hero__label"><span className="hero__label-text">YOUR LOCAL AI BUDDY / RUNS ON → YOUR MAC</span></p>
         <h1 className="hero__title">
-          <span className="line"><Split t="Listens." /></span>
-          <span className="line"><Split t="Learns." /></span>
-          <span className="line"><b><Split t="Remembers." /></b></span>
+          {/* remembers everything · talks like a friend · lives on your Mac (and your data never leaves it) */}
+          <span className="line"><Split t="Never " /><b><Split t="forgets." /></b></span>
+          <span className="line"><Split t="Always " /><b><Split t="listens." /></b></span>
+          <span className="line"><Split t="Never " /><b><Split t="leaves." /></b></span>
         </h1>
+        <div className="hero__ctas hero__ctas--under"><GitHubButton /></div>
         <div className="hero__foot">
           <div className="hero__intro">
             <div className="hero__strip label">
@@ -108,10 +113,7 @@ export function Hero() {
               <li>MEMORY: POSTGRES</li><li className="sep" aria-hidden="true">⋅</li>
               <li>THINKING: ANY FREE LLM</li>
             </ul>
-            <div className="hero__ctas">
-              <StartTalking />
-              <a className="btn btn--ghost" href="#memory"><span>How she remembers</span></a>
-            </div>
+
           </div>
         </div>
       </div>
@@ -191,7 +193,7 @@ export function Body() {
             ))}
           </ul>
           <div className="privacy__cta" data-reveal>
-            <StartTalking />
+            <GitHubButton />
           </div>
         </div>
       </section>
@@ -215,7 +217,7 @@ export function Body() {
         <div className="container cta__inner">
           <p className="label" data-reveal>READY WHEN YOU ARE</p>
           <h2 className="cta__title"><span className="thin"><Split t="Say hi to" /></span> <b><Split t="Stiti." /></b></h2>
-          <StartTalking big reveal />
+          <GitHubButton big reveal />
           <p className="label cta__run" data-reveal>Or run <code>uv run stiti voice</code> and just talk.</p>
         </div>
       </section>
@@ -227,7 +229,7 @@ export function Footer() {
   return (
     <footer className="foot">
       <div className="container foot__inner">
-        <a className="foot__gh" href="https://github.com/Tejmul/Stiti" rel="noopener"><span>GitHub</span></a>
+        <a className="foot__gh" href={GITHUB} target="_blank" rel="noopener"><span>GitHub</span></a>
         <span>© 2026 Stiti · open source</span>
         <span>Runs on your Mac · ~/.stiti</span>
       </div>
