@@ -276,3 +276,23 @@ Research + measured latencies: `docs/research/live_info.md` (24 sources measured
   all read-only and `untrusted_output=True`.
 - **Privacy**: only words from his sentence leave the Mac (never memory/profile); generic User-Agent
   `Stiti/0.1 (…github…)`, no email, no account.
+
+## D22: Hinglish voice — Kokoro Hindi voice + code-switch phonemizer (2026-11-10)
+Research + measurements: `docs/research/hinglish_voice.md` (18 TTS and 15 STT options compared). Roman Hinglish read
+by `af_heart`/`en-us` sounded foreign (round-trip WER 68%).
+- **TTS** (`voice/hinglish.py`): every word is tagged Hindi or English. A ~650-spelling Roman→Devanagari lexicon of
+  everyday Hinglish words is used; words that are also English (to, do, main, me, hi, the…) follow the nearest
+  clear word in the same clause (Hinglish puts English words into a Hindi sentence frame). Hindi runs go through
+  espeak `hi` and English runs through `en-us`. The joined phonemes go to Kokoro's Hindi voice
+  (`STITI_HI_VOICE`, default `hf_alpha`, `off` disables) with `is_phonemes=True`. Plain English (fewer than
+  2 Hindi words and under a third of the line) returns None and keeps `af_heart` exactly as before.
+- Measured on the M2: round-trip WER 68% → 26–32%. First clause has a median of ~245 ms, the same as English. G2P
+  takes 0.06 ms because the two espeak backends are cached; phonemizer's default rebuilt a backend on every call
+  (~70 ms). The model is unchanged, so RAM is unchanged.
+- Known limits: English words in a Hinglish line keep a US accent. One reply can switch voice between an English
+  chunk and a Hinglish chunk. Spellings outside the lexicon are read as English. Next steps: Lekhani (0.88 MB) for
+  those spellings, then goonj-1-82M (Kokoro fine-tune with Indian-English voices).
+- **STT unchanged for now.** Next: record real clips, then A/B Oriserve Hindi2Hinglish-Swift and add a Groq turbo
+  escalation for low-confidence turns.
+
+
