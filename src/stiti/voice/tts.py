@@ -1,5 +1,11 @@
-"""Text-to-speech: Kokoro-82M INT8 ONNX (~88 MB). Sentence streaming; mood -> voice speed.
+"""Text-to-speech: Kokoro-82M-family INT8 ONNX. Sentence streaming; mood -> voice speed.
 
+D27: Stiti's voice is **goonj-1-82M** (a Kokoro fine-tune trained on Indian-English speech; Apache-2.0), exported to
+ONNX int8 (114 MB, `stiti voices install`), run by the same `kokoro_onnx` runtime: English with an Indian accent,
+first clause ~270 ms (af_heart: 291 ms). Pick a persona with STITI_VOICE=goonj:<persona> or the owner_profile key
+`voice` (`stiti voices use en_tara`); default goonj:en_priya. ONE voice per reply: Hindi words inside a line still go
+through hinglish.py (Hindi phonemes for lexicon words) but are spoken by the same persona — never a switch to the
+stock Hindi voices he called "not suitable". Without the goonj files Stiti falls back to Kokoro `af_heart`.
 No emotion control in Kokoro, so mood comes through pace + wording (report §TTS).
 """
 from __future__ import annotations
@@ -11,8 +17,11 @@ import threading
 import numpy as np
 import sounddevice as sd
 
-from . import hinglish
+from . import hinglish, models
 from .models import path
+
+DEFAULT_VOICE = "goonj:en_priya"     # Stiti is "she"; the owner hasn't picked a persona yet (`stiti voices`)
+FALLBACK_VOICE = "af_heart"          # stock Kokoro (American) when the goonj files are missing
 
 SPEED_FOR_MOOD = {"stressed": 0.95, "angry": 0.95, "sad": 0.92, "tired": 0.92, "happy": 1.06, "calm": 1.0}
 _EMOJI = re.compile("[\U0001F300-\U0001FAFF☀-➿]")
@@ -26,6 +35,29 @@ def speakable(text: str) -> str:
     return re.sub(r"\s+", " ", t).strip()
 
 
+def voice_setting() -> str:
+    """STITI_VOICE wins, then owner_profile `voice`, then the default."""
+    v = os.getenv("STITI_VOICE")
+    if not v:
+        try:
+            from .. import profile
+            v = profile.get("voice")
+        except Exception:
+            v = None
+    return (v or DEFAULT_VOICE).strip()
+
+
+def resolve(setting: str | None = None, ready: bool | None = None) -> tuple[str, str]:
+    """'goonj:en_tara' → ('goonj', 'en_tara'); 'goonj' → default persona; 'af_heart' → ('kokoro', 'af_heart').
+    goonj without its files → ('kokoro', af_heart)."""
+    s = (setting if setting is not None else voice_setting()) or DEFAULT_VOICE
+    ready = models.goonj_ready() if ready is None else ready
+    if s.lower().startswith("goonj"):
+        persona = s.split(":", 1)[1].strip() if ":" in s else DEFAULT_VOICE.split(":", 1)[1]
+        return ("goonj", persona or DEFAULT_VOICE.split(":", 1)[1]) if ready else ("kokoro", FALLBACK_VOICE)
+    return "kokoro", s
+
+
 def sentences(text: str) -> list[str]:
     """Sentence chunks; a long first sentence is split at its first comma so first audio comes sooner."""
     parts = [p for p in re.split(r"(?<=[.!?।])\s+", text) if p.strip()]
@@ -36,12 +68,21 @@ def sentences(text: str) -> list[str]:
 
 
 class TTS:
-    def __init__(self):
+    def __init__(self, voice: str | None = None):
         from kokoro_onnx import Kokoro
-        self.k = Kokoro(str(path("kokoro-v1.0.int8.onnx")), str(path("voices-v1.0.bin")))
-        self.voice = os.getenv("STITI_VOICE", "af_heart")
+        self.engine, self.voice = resolve(voice)
+        if self.engine == "goonj":
+            self.k = Kokoro(str(models.GOONJ_DIR / models.GOONJ_MODEL), str(models.GOONJ_DIR / models.GOONJ_VOICES))
+            if self.voice not in self.k.voices:
+                print(f"[tts] no goonj persona {self.voice!r}; using {DEFAULT_VOICE}")
+                self.voice = DEFAULT_VOICE.split(":", 1)[1]
+        else:
+            self.k = Kokoro(str(path("kokoro-v1.0.int8.onnx")), str(path("voices-v1.0.bin")))
+            if self.voice not in self.k.voices:
+                self.voice = FALLBACK_VOICE
         self.lang = os.getenv("STITI_VOICE_LANG", "en-us")
-        self.hi_voice = os.getenv("STITI_HI_VOICE", "hf_alpha")    # Hinglish lines (D22); "off" = always English
+        # Hindi words get Hindi phonemes (D22) but the SAME voice speaks the whole line; "off" = English phonemes only
+        self.hindi_phonemes = os.getenv("STITI_HI_VOICE", "on") != "off"
         self._stop = threading.Event()
         self.speaking = False
         # Kokoro pays ~700 ms of setup the first time it runs in any new thread (measured on the M2), so all
@@ -49,18 +90,22 @@ class TTS:
         from concurrent.futures import ThreadPoolExecutor
         self._worker = ThreadPoolExecutor(max_workers=1, thread_name_prefix="kokoro")
         self._worker.submit(self.synth, "Warm up.", "calm")
-        self._worker.submit(self.synth, "Haan, ho gaya.", "calm")   # warms espeak 'hi' + the Hindi voice
+        self._worker.submit(self.synth, "Haan, ho gaya.", "calm")   # warms espeak 'hi' (Hindi-word phonemes)
 
     def synth_on_worker(self, text: str, mood: str = "calm") -> tuple[np.ndarray, int]:
         """synth() on the persistent Kokoro thread (no per-thread warm-up cost)."""
         return self._worker.submit(self.synth, text, mood).result()
 
+    @property
+    def name(self) -> str:
+        return f"goonj:{self.voice}" if self.engine == "goonj" else self.voice
+
     def synth(self, text: str, mood: str = "calm") -> tuple[np.ndarray, int]:
-        """Hinglish → Hindi voice with mixed hi/en-us phonemes (hinglish.py); plain English → the normal voice."""
+        """One voice for everything: Hinglish → mixed hi/en-us phonemes (hinglish.py), plain English → en-us."""
         speed = SPEED_FOR_MOOD.get(mood, 1.0)
-        ph = hinglish.phonemize(text) if self.hi_voice != "off" else None
+        ph = hinglish.phonemize(text) if self.hindi_phonemes else None
         if ph:
-            return self.k.create(ph, voice=self.hi_voice, speed=speed, is_phonemes=True)
+            return self.k.create(ph, voice=self.voice, speed=speed, is_phonemes=True)
         return self.k.create(text, voice=self.voice, speed=speed, lang=self.lang)
 
     def say(self, text: str, mood: str = "calm") -> bool:
