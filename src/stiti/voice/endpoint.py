@@ -50,6 +50,7 @@ CONT_MIN_SPEECH_MS = 300     # continuation grace: this much of his speech after
 CONT_GRACE_S = 0.9           # … before her first audio or within 0.9 s of it (Bolna incremental_delay)
 PREFIX_TTL_S = 20.0          # a kept fragment ("Mm-hm?") is joined only if he goes on within this
 BYE_MIN_SPEECH_MS = 300      # "bye" gate
+BLIP_MS = 500                # less speech than this AND an unsure transcript = a blip: ignored, never "Sorry?" (Wispr)
 ECHO_TAIL_S = 1.2            # speech that starts this soon after her audio ended is suspect
 MIN_DELAY_START, MIN_DELAY_MIN, MIN_DELAY_MAX = 1.0, 0.5, 3.0   # 1.0: measured ElevenLabs waits ~1.4 s (re_elevenlabs_live.md)
 EMA_ALPHA = 0.9
@@ -291,10 +292,17 @@ class Commit:
 
     @property
     def text(self) -> str | None:
-        """Prefix + what he said; "" for noise (an empty transcript never re-sends a kept fragment)."""
+        """Prefix + what he said; "" for noise (an empty transcript never re-sends a kept fragment) and for a blip:
+        under 0.5 s of speech that Whisper wasn't sure about (a cough, a tap: Wispr drops these instead of asking)."""
         if self.res is None:
             return None
-        return join_text(self.prefix, self.res.text) if (self.res.text or "").strip() else ""
+        if not (self.res.text or "").strip() or self.blip:
+            return ""
+        return join_text(self.prefix, self.res.text)
+
+    @property
+    def blip(self) -> bool:
+        return 0 < self.speech_ms < BLIP_MS and bool(getattr(self.res, "unclear", False)) and not self.barged
 
     def __len__(self) -> int:
         return len(self.audio)
@@ -497,13 +505,14 @@ class TurnTaker:
                    timed_out=timed_out, speech_ms=self.speech_ms, start_t=self.start_t, end_t=self.last_speech_t,
                    commit_t=now, overlap=self.overlap, barged=self.barged, reprompted=self.reprompted,
                    replaces=self.replaces)
-        if self.ts == "noise":
+        noise = self.ts == "noise" or (c.res is not None and c.blip)
+        if noise:
             pass                                                   # keep any fragment for his real words
         elif timed_out and self.ts == "unfinished" and not self.reprompted and c.text:
             self.prefix, self.prefix_t, self.reprompted = c.text, now, True   # "Mm-hm?" — keep it for the rest
         else:
             self.prefix, self.reprompted = "", False
-        if self.ts != "noise":
+        if not noise:
             self.replaces = None
         self.stats.committed()
         self._reset()

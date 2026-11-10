@@ -356,3 +356,64 @@ strategy is chosen **locally**; weak free models ignore prompt rules, so the sha
   (`docs/persona/SOUL.jarvis.md` is the version for his own `~/.stiti/SOUL.md`).
 - Cost: 0 new models, 0 MB RAM, < 1 ms strategy + ~2 ms gate. Tests: `tests/persona_eval.py` (the 15 dialogues of §3f,
   offline checks with a fake "bad" LLM + pass@3 on the real free router).
+
+## D27: Hearing his words, speaking Indian English — STT glossary + cloud second opinion, goonj voice (2026-11-11)
+Owner: it mishears him ("Tejmul" → "Tejmal", "Newton School" → "Newton's Club") and the Hinglish/Hindi voice is "not
+suitable"; he wants English with an Indian accent people understand. Research: `docs/research/stt_tts_indian_english.md`
+(22 STT engines, 18 TTS options, measured on this M2) + `docs/research/re_wispr_flow.md` ("What Stiti should copy").
+Names are a **biasing** problem, not a model-size problem, so the brain feeds the ears; the model stays whisper-small q4.
+- **Glossary from the brain (`voice/glossary.py`):** owner name/call_me, proper nouns in `USER.md` (by frequency),
+  top graph entities, ingested document titles, + fixed words every user says (Stiti, todos, resume, placements, DSA,
+  GitHub, cursor). Near-duplicates of a better-ranked term are dropped, so a misheard fact (USER.md had "Tejmal …
+  Newton's Club of Technology") can't teach the wrong spelling. ≤ 40 terms / ~150 tokens, most important last,
+  refreshed in the background every 5 min. P2 terms never go to the cloud.
+- **Prompt (`stt.build_prompt`):** `Glossary: …` + the **previous utterance** of this conversation (Wispr
+  `prev_asr_text`; same-utterance speculative passes are recognised by an audio fingerprint) + a short English block
+  and a short Hinglish block, ordered by the **language prior** (previous utterance's language from
+  `hinglish.language()`: romanized-Hindi word counters, 0 MB). Both blocks always stay: an English-only prompt
+  *translates* Hinglish (63% WER). The previous utterance sits before the examples: at the end it cost 8.6 → 12.2% when
+  he switched language (9.9% before the examples).
+- **Snap to glossary:** consonant skeleton + phonetic folding (sch→sk, c→k, z→s, v→w…), ratio ≥ 0.8, same first sound,
+  anchor word for multi-word names; never rewrites a dictionary word (macOS word list + simple stemming), a Hinglish
+  lexicon word or another glossary term. < 0.1 ms.
+- **Guards + escalation (`stt.decide`, `voice/stt_cloud.py`):** a transcript that repeats a clause ×3 or lists glossary
+  terms is not speech; a run of prompt words is accepted only when Whisper is confident ("Hey Stiti" is in the prompt
+  and is the most common thing he says). Unsure text (avg_logprob < −0.5), empty text while Silero heard ≥ 0.5 s of
+  speech, Whisper's own no-speech filter firing on real speech (it dropped "Add buy milk to my todos") or an unsure prompt
+  copy → the same audio + glossary prompt goes to **Groq whisper-large-v3** (not turbo: it ignored the glossary and
+  echoed the prompt ×3). 700 ms cap; local text kept on timeout/error; the lane cools down 5 s (timeout) / 60 s (error
+  or 429); the Groq connection is pre-warmed while local Whisper runs if it was idle > 4 min (a cold call took ~1 s).
+- **Privacy switch:** audio leaves the Mac **only** on escalated turns (~14% on the research set) **of an active
+  conversation** (60 s after a voice turn or wake greeting, `stt.mark_active()` from the engine): while she's asleep
+  the mic still transcribes everything for the wake phrase (TV, other people) and none of that goes to the cloud.
+  `STITI_STT_CLOUD=off` (env wins) or owner_profile `stt_cloud=off` keeps all audio local. Key from `.env` via the router's client, never
+  printed; each call is counted in `llm_usage` (groq / whisper-large-v3).
+- **Learning words from his corrections (`voice/vocab.py`, Wispr §3 adapted to voice):** "no, I said Tejmul",
+  "it's Stiti, not City", "Tejmul, not Tejmal", "spell it T-E-J-M-U-L", "nahi, maine Tejmul bola", and explicit "add
+  'Zonuly' to your vocabulary" / "remember the word X". Rules, < 1 ms, no LLM. The heard form comes from the correction
+  ("not City") or from the closest-sounding span of his previous utterance. A correction only teaches a name or a rare
+  word ("no, I said milk" and "call Rahul not Raju" are not word corrections). Saved to `~/.stiti/vocab.json` (local,
+  readable, editable); the term goes to the top of the glossary immediately and the heard form becomes an exact
+  rewrite before the fuzzy snap — unless it is an ordinary single word ("City" is never rewritten elsewhere). The
+  engine answers with a fast-path "Got it — Tejmul, not Tejmal." (no LLM, not treated as an undo or a talk-style
+  lesson).
+- **Blips:** < 0.5 s of speech that Whisper wasn't sure about is ignored (`endpoint.Commit.text`), not answered with
+  "Sorry?" (Wispr). Sure short words ("haan", "stop") still count.
+- **Voice = goonj-1-82M** (Kokoro fine-tune trained on Indian-English personas, Apache-2.0), ONNX int8 (114 MB) in
+  `~/.stiti/models/goonj/`, same `kokoro_onnx` runtime. `STITI_VOICE=goonj:<persona>` or owner_profile `voice`; default
+  `goonj:en_priya` (female; the owner hasn't picked yet — `stiti voices`, `stiti voices try en_tara`, `stiti voices use
+  en_tara`). **One voice per reply:** Hindi words still get Hindi phonemes (D22 lexicon) but the same persona speaks
+  the whole line; the stock Hindi voices (`hf_alpha`) are never used. `STITI_HI_VOICE=off` = English phonemes only.
+  Missing files → Kokoro `af_heart`. No hosted ONNX exists, so `stiti voices install` runs `scripts/goonj_export.py`
+  in a throwaway `uv run --with kokoro torch …` env (or `--from <dir>` copies an existing export).
+- **Measured (M2 8 GB, 110 synthetic Indian-accent clips, 5 voices, 20 dB SNR, end to end through `transcribe_ex`):**
+  whisper-small q4 WER **12.4% → 7.7% local** (owner terms 64 → 81/90, silent drops 2 → 0, commands 5.1%, Hinglish
+  16.2%) → **6.8% with the Groq second opinion** (82/90; 15/110 turns escalated, on those errors 28 → 15 words).
+  STT p50 278 → 280 ms, p90 381 → 594 ms (escalated turns 576–1,100 ms: play the "hmm" filler).
+  Voice: first clause p50 230 ms (af_heart) vs 223–233 ms (goonj), RSS 279 → 336–349 MB (+57–70 MB).
+  Caveat: synthetic speech; re-run on his real voice (research Next steps). An early prompt draft that reused test
+  sentences scored ~2 points better than it really was; the shipped example lines are not in the test set.
+- Tests: `tests/stt_voice_eval.py` (144 checks: glossary, correction learning (parsing + next-turn effect + engine
+  reply), snap cases + untouched words, Hinglish detection, context,
+  prompt-copy, decision table, mocked Groq incl. timeout/echo/privacy switch, blips, goonj selection/fallback/one voice,
+  live Groq call when a key exists, WER regression on the research clips when present).

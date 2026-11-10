@@ -117,6 +117,13 @@ def doctor():
     for s in router.status():
         scope = "personal + public" if s["personal"] else "public questions only"
         print(f"{ok(s['key'])} {s['provider']:10} API key {'set' if s['key'] else 'missing'}  ({scope})")
+    from .voice import stt_cloud
+    from .voice.tts import resolve, voice_setting
+    eng, v = resolve(voice_setting())
+    voice_line = f"goonj:{v} (Indian English)" if eng == "goonj" else f"{v} — `stiti voices install` for Indian English"
+    print(f"{ok(eng == 'goonj')} Voice: {voice_line}")
+    print(f"{ok(True)} STT cloud second opinion (Groq whisper-large-v3 on unsure turns): {stt_cloud.setting()}"
+          f"{'' if stt_cloud.has_key() else ' (no Groq key → local only)'}  · switch: STITI_STT_CLOUD=on|off")
     if any(s["key"] for s in router.status()):
         try:
             r = router.complete([{"role": "user", "content": "Reply with just: ok"}], max_tokens=20)
@@ -184,8 +191,11 @@ def main() -> None:
         book_cmd(args)
     elif cmd == "doctor":
         doctor()
+    elif cmd == "voices":
+        from .voice.voices import cli as voices_cli
+        voices_cli(args)
     elif cmd == "sleep":
         from .brain.sleep import run
         run(verbose=True)
     else:
-        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open]]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | voices [try|use <persona> | install] | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open]]")
