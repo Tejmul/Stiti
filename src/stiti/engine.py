@@ -286,7 +286,11 @@ class Engine:
         from .brain import learning
         from .voice.wake import is_stop
         after_offer = bool(re.search(r"anything else\?\s*$", self.last_reply_text or "", re.I)) and bool(NOTHING_RX.match(text))
-        undo = bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None \
+        from .voice import vocab
+        # "no, I said Tejmul" / "spell it T-E-J-M-U-L" / "add Zonuly to your vocabulary": she misheard a WORD (D27) —
+        # learn it for the ears; it's not an undo of her last action and not a lesson about how she talks
+        taught = None if crisis else vocab.parse(text, self.last_user_text)
+        undo = not taught and bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None \
             and not after_offer
         # "I didn't understand / what language is this" right after her reply = an implicit correction (REPAIR)
         confused = self.last_reply_text is not None and bool(strategy.CONFUSION_RX.search(text)) \
@@ -294,7 +298,7 @@ class Engine:
         corrected = (undo or d.is_("is_correction", 0.6) or confused) and not crisis
         learning.score_lessons(self.last_lesson_ids, corrected)
         learning.mark_outcome(self.last_turn_id, "corrected" if corrected else "confirmed")
-        inferred_ack = None if d.is_("is_correction", 0.6) or crisis else \
+        inferred_ack = None if d.is_("is_correction", 0.6) or crisis or taught else \
             learning.infer_from_turn(text, self.last_reply_full if self.last_interrupted and self.last_reply_full
                                      else self.last_reply_text, interrupted=self.last_interrupted)
 
@@ -328,6 +332,9 @@ class Engine:
             self.crisis_at = time.time()
         elif after_offer:
             reply = "Okay, I'm here." if strat.lang == "english" else "Theek hai, main yahin hoon."
+        elif taught:
+            vocab.add(taught.term, taught.heard, taught.source)
+            reply = vocab.confirm(taught)
         elif self.clarify is not None:
             reply, self.clarify = self.clarify.answer(text), None
         elif undo:
