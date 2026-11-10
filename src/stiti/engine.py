@@ -12,8 +12,9 @@ import time
 from datetime import date, datetime
 
 from . import embed, router
-from .brain import compiler, emotion, gate, ingest, lessons, memory, psych, strategy
+from .brain import compiler, emotion, gate, ingest, lessons, memory, psych, strategy, turnmark
 from .config import CFG
+from . import db
 from .db import one, q
 from .decide import decide
 from .fastpath import handlers
@@ -72,6 +73,11 @@ ASKED_NAME_RX = re.compile(r"\b(?:about|remember|yaad hai|of)\s+(?P<name>[A-Z][a
 
 
 _last_hello = ""
+SPEC_DOMAINS = ("chat", "memory")       # only plain LLM chat turns are ever started speculatively (D29)
+
+
+class NotSpeculable(Exception):
+    """This turn can't be started before he has surely finished (a fast path / action / flow): run it normally."""
 
 
 def hello(name: str | None, now: datetime | None = None) -> str:
@@ -94,8 +100,16 @@ def hello(name: str | None, now: datetime | None = None) -> str:
 
 
 class Engine:
+    NotSpeculable = NotSpeculable
+
     def __init__(self, channel: str = "text"):
+        self.channel = channel
         self.session = memory.start_session(channel)
+        self.last_marker: str | None = None                # ● ◐ ○ the LLM opened its last reply with (turnmark.py)
+        self.incomplete_at = 0.0                            # when a reply was last dropped as ◐/○
+        self._spec = False                                  # inside a speculative turn (D29)
+        self._held: db.Held | None = None                   # its uncommitted DB writes
+        self._snap: dict | None = None                      # engine state before it
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
@@ -234,13 +248,106 @@ class Engine:
         self.last_debug = {"route": "hold", "strategy": "QUIET"}
         return ""
 
+    # ---------------- speculative turns (D29: LiveKit preemptive generation / Pipecat SpeculationGate) ----------------
+    def spec_block(self, text: str) -> str | None:
+        """Why this text must NOT be started speculatively (None = it's a plain chat turn). Pure checks only — no
+        writes — so a fast path / action / flow / correction never runs before he has surely finished."""
+        from . import farewell as bye
+        from .brain import instructions, learning, onboarding
+        from .life import habits, proactive
+        from .voice.wake import is_stop
+        t = normalize(text)
+        now = time.time()
+        if self._held is not None or self._spec:
+            return "busy"
+        if any(x is not None for x in (self.pending, self.clarify, self.onboarding, self.chunker, self.woop)):
+            return "flow"
+        if (self.last_nudge and now - self.last_nudge[1] < 180) or (self.nudged and now - self.nudged < 900):
+            return "nudge"
+        if self.last_interrupted:
+            return "learning"                       # "she was cut off" feeds a brevity lesson (writes LESSONS.md)
+        if self.live_last and live.MORE_RX.match(t):
+            return "live"
+        checks = (HOLD_RX.match(t), strategy.is_crisis(t), learning.UNDO_RX.match(t), learning.SHORTER_RX.search(t),
+                  strategy.CONFUSION_RX.search(t), NOTHING_RX.match(t), is_stop(t), bye.is_bye(t),
+                  proactive.DISABLE_RX.search(t), self.INTRO_OFF_RX.search(t), self.INTRO_ON_RX.search(t),
+                  onboarding.START_RX.search(t), chunker.START_RX.search(t), psych.WOOP_START.search(t),
+                  CAL_RX.search(t), MAIL_RX.search(t), PLAN_RX.search(t), GREET_RX.search(t), REMEMBER_RX.search(t),
+                  TOOL_HINT_RX.search(t), habits.NEW_RX.search(t), habits.DONE_RX.search(t),
+                  re.search(r"\b(habits?|alarm|remind|timer|todos?|task)\b", t, re.I))
+        if any(checks):
+            return "action"
+        from .connectors.mac import MUSIC_RX
+        if MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None:
+            return "action"
+        if live.detect(t, known=_names_his_person) is not None:
+            return "live"
+        return None
+
+    def _speculate(self, text: str, voice_emotion, on_delta, now) -> str:
+        """Run the turn with every DB write held in one transaction and the engine state snapshotted. The caller
+        then calls speculation_commit() (it was right: the turn is stored exactly as a normal one) or
+        speculation_discard() (he went on talking: no episode, no turn, no lesson score, state as before)."""
+        why = self.spec_block(text)
+        if why:
+            raise NotSpeculable(why)
+        snap = {k: v for k, v in vars(self).items() if k not in ("session", "last_nudge")}
+        held = db.Held()
+        self._spec = True
+        try:
+            with held:
+                reply = self.turn(text, voice_emotion, on_delta=on_delta, on_ack=lambda kind: None, now=now)
+        except BaseException:
+            self._spec = False
+            held.rollback()
+            self._restore(snap)
+            raise
+        self._spec = False
+        self._held, self._snap = held, snap
+        return reply
+
+    def speculation_commit(self) -> None:
+        h, self._held, self._snap = self._held, None, None
+        if h is not None:
+            h.commit()
+
+    def speculation_discard(self) -> None:
+        h, snap = self._held, self._snap
+        if h is None:
+            return
+        try:
+            h.rollback()
+        finally:
+            self._restore(snap)
+
+    def _restore(self, snap: dict | None) -> None:
+        if snap is not None:
+            for k in [k for k in vars(self) if k not in snap and k not in ("session", "last_nudge")]:
+                delattr(self, k)
+            vars(self).update(snap)
+        self._held = self._snap = None
+
+    def _incomplete(self, user_ep: int, mark: str) -> str:
+        """◐ / ○: he hadn't finished. Say nothing; the voice loop keeps his words and joins what he says next
+        (that joined turn stores the whole thought, so this fragment is kept out of recall)."""
+        q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))
+        self.last_marker, self.skip_turn, self.incomplete_at = mark, True, time.time()
+        self.last_turn_id, self.last_lesson_ids = None, []      # scored once already; the joined turn won't redo it
+        self.last_debug = {"route": "incomplete", "marker": mark, "strategy": "QUIET"}
+        return ""
+
     def turn(self, text: str, voice_emotion: tuple[str, float] | None = None, *,
-             on_delta=None, on_ack=None, now: datetime | None = None) -> str:
+             on_delta=None, on_ack=None, now: datetime | None = None, speculative: bool = False) -> str:
         """One turn. on_delta(str) streams an LLM reply as it is written (then self.streamed is True);
         on_ack(kind) fires the moment a slow action starts ("calendar", "mail", "plan", "tools") so the
         voice can say "ek sec, dekhti hoon" instantly instead of dead air. Returns "" with self.skip_turn=True for a
-        hold phrase ("ek sec", "let me think"): say nothing. `now` is for tests (the clock of this turn)."""
+        hold phrase ("ek sec", "let me think"): say nothing. `now` is for tests (the clock of this turn).
+        speculative=True (voice, D29): run it before he has surely finished — raises NotSpeculable for anything but a
+        plain chat turn, and holds every DB write until speculation_commit() / speculation_discard()."""
+        if speculative:
+            return self._speculate(text, voice_emotion, on_delta, now)
         t0 = time.perf_counter()
+        self.last_marker = None
         self.streamed = False
         self.skip_turn = False
         self.last_used = None           # what the brain handed the LLM this turn (web "memory receipts")
@@ -251,7 +358,8 @@ class Engine:
             return self._hold(text)
         try:
             from .brain.mdsync import sync
-            sync()                      # pick up his edits to USER.md / LESSONS.md (hash check, ~0.1 ms)
+            if not self._spec:          # (a speculative turn leaves his files alone)
+                sync()                  # pick up his edits to USER.md / LESSONS.md (hash check, ~0.1 ms)
         except Exception as e:
             print(f"[mdsync] {e}")
         lat: dict[str, float] = {}
@@ -264,6 +372,9 @@ class Engine:
         emo = emotion.fuse(text, d.get("text_emotion"), d.conf.get("text_emotion", 0.0),
                            *(voice_emotion or (None, 0.0)))
         privacy = 2 if crisis else d.privacy()
+        if self._spec and (crisis or privacy >= 2 or str(d.get("domain", "chat")) not in SPEC_DOMAINS
+                           or d.is_("is_correction", 0.5)):
+            raise NotSpeculable(f"domain {d.get('domain')}")
         importance = 7 if REMEMBER_RX.search(text) else 6 if LIFE_RX.search(text) else 3
         user_ep = memory.add_episode(self.session, "user", text, privacy=privacy,
                                      importance=importance, emotion=emo.as_json())
@@ -481,12 +592,21 @@ class Engine:
                 reply = (f"{unknown} ke baare mein mere paas kuch nahi hai." if strat.lang == "hinglish"
                          else f"Nothing about {unknown} in my memory.")
                 live_job = None
+        if self._spec and (reply is not None or live_job is not None or live_res is not None):
+            raise NotSpeculable("not a plain chat turn")         # (only DB writes so far: rolled back)
+        mark = None
         if reply is None:
+            # voice: the LLM also says whether he had finished (● ◐ ○). Not on the web, not for tools, not for a
+            # question, and not twice in a row (a weak model that always says ◐ must never silence her)
+            markers = (self.channel == "voice" and on_delta is not None and not text.rstrip().endswith("?")
+                       and time.time() - self.incomplete_at > 30 and not (
+                           live_job is None and live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))))
             brief, brief_tokens = compiler.build(
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=recent, memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
-                strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None)
+                strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
+                markers=markers)
             if live_job is not None:
                 try:
                     live_res = live_job.result(timeout=live.BUDGET_S + 1.5)
@@ -498,22 +618,34 @@ class Engine:
                 brief += "\n\n" + block
                 brief_tokens = (brief_tokens or 0) + len(block) // 4
             use_tools = live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))
+            if self._spec and (use_tools or on_delta is None):
+                raise NotSpeculable("tools")
             psych.set_policy(strat)                     # StreamLint enforces this turn's shape on the spoken stream
             try:
                 if on_delta is not None and not use_tools:      # stream: she starts talking at the first clause
                     info = {}
+                    ms = turnmark.MarkerStream()             # the marker is never spoken: strip it as it streams
                     for piece in router.stream([{"role": "system", "content": brief}, {"role": "user", "content": text}],
                                                privacy=privacy, info=info):
+                        piece = ms.feed(piece)
+                        if ms.incomplete:
+                            break                            # ◐ / ○: stop the LLM, say nothing
+                        if piece:
+                            self.streamed = True
+                            on_delta(piece)
+                    tail = "" if ms.incomplete else ms.flush()
+                    if tail and not ms.incomplete:
                         self.streamed = True
-                        on_delta(piece)
-                    reply = info["text"]
+                        on_delta(tail)
+                    mark = ms.marker
+                    reply = "" if ms.incomplete else info["text"]
                     lat["first_token"] = info.get("first_ms", 0)
                 else:
                     if use_tools:
                         ack("tools")
                     reply, info = self._llm(brief, text, qvec, privacy, use_tools=use_tools)
                 route = "llm"
-                lat["llm"] = info["ms"]
+                lat["llm"] = info.get("ms", 0.0)
             except router.NoProvider as e:
                 route = "degraded"
                 if privacy >= 2:
@@ -540,6 +672,12 @@ class Engine:
                     reply = "Hmm, that one I can't answer right now — but I've noted it."
                 info = {"error": str(e)}
 
+        if route == "llm":
+            m2, reply = turnmark.split(reply or "")
+            mark = mark or m2
+            if turnmark.is_incomplete(mark) and markers:
+                return self._incomplete(user_ep, mark)
+            self.last_marker = mark
         if route == "llm" and not (self.pending is not None and reply.startswith("Should I go ahead")):
             reply = psych.enforce(reply, strat)         # strategy shape, banned tics, questions, promises — in code
             if mems and not strategy.asks_about_past(text, domain):
