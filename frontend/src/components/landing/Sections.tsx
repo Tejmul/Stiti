@@ -1,5 +1,6 @@
 // Landing markup: what Stiti DOES (not how she works). Pure markup — motion is wired in Landing.tsx / MacShot.tsx.
 // Every example line is generic; nothing here is about a real person.
+import StartButton from "./StartDialog";
 import type { CSSProperties, ReactNode } from "react";
 import { GITHUB, QUOTE } from "@/lib/site";
 import MacShot from "./MacShot";
@@ -7,25 +8,8 @@ import Split from "./Split";
 
 const icon = (n: number) => ({ "--icon": `url(/icons/${n}.png)` }) as CSSProperties;
 
-function Arrow() {
-  return (
-    <svg className="btn__arrow" viewBox="0 0 26 12" aria-hidden="true">
-      <path d="M0 6h24M19 1l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    </svg>
-  );
-}
 
 // The site's one action until the app ships (a live demo link comes later).
-function GitHubButton({ big }: { big?: boolean }) {
-  return (
-    <a className={`btn btn--primary${big ? " btn--big" : ""}`} href={GITHUB} target="_blank" rel="noopener">
-      <span>View on GitHub</span>
-      <span className="sr-only"> (opens in a new tab)</span>
-      <Arrow />
-    </a>
-  );
-}
-
 /** A tiny two-line exchange: what you say → what she says. */
 function Say({ you, her }: { you: string; her: string }) {
   return (
@@ -56,7 +40,7 @@ export function Hero() {
           <figure className="hero__quote">
             <blockquote><p><span className="thin">{QUOTE.lead}</span> <b>{QUOTE.punch}</b></p></blockquote>
           </figure>
-          <div className="hero__ctas"><GitHubButton /></div>
+          <div className="hero__ctas"><StartButton /></div>
           <p className="label hero__facts">Free <span aria-hidden="true">·</span> No account <span aria-hidden="true">·</span> Stays on your Mac</p>
         </div>
         <div className="hero__shot"><MacShot /></div>
@@ -261,7 +245,7 @@ export function Footer() {
       <div className="container foot__cta">
         <p className="label" data-reveal>READY WHEN YOU ARE</p>
         <p className="foot__title"><span className="thin"><Split t="Say hi to" /></span> <b><Split t="Stiti." /></b></p>
-        <GitHubButton big />
+        <StartButton big />
         <p className="label foot__soon">A live demo is coming soon.</p>
       </div>
       <div className="container foot__bar">
