@@ -313,3 +313,15 @@ Owner asked for the frontend in Next.js and for a page that shows what Stiti kno
   overwritten, then USER.md is re-rendered.
 - **Memory receipts:** `Engine.last_used` records the memories, facts, files and lessons the brain handed the LLM.
   The chat shows them under each reply ("Remembered 4 things"), so the brain-not-LLM design is visible.
+
+## D24: Privacy — conversations never shown in the UI; separate public build (2026-11-10)
+Owner rule: "my chat history should not be on the website… that is my data."
+- **No conversation text leaves the brain for a page.** `/api/moments` and the Memory page's conversation list are
+  removed. Chat no longer preloads history (`hello` has no `history`), so each visit starts fresh.
+  `Engine.last_used["memories"]` is now a count, so receipts say "4 recalled — kept private". Facts, files and rules
+  can still be shown, since he can see and edit those in USER.md anyway.
+- **Public site = `STITI_PUBLIC=1 pnpm build`.** A Turbopack alias swaps `@/components/private-pages` for stand-ins:
+  `/chat` and `/memory` render "This part lives on your own Mac", and the chat/memory code is not in the bundle.
+  Verified by grepping the build for API paths and personal data.
+- **No personal data in code**, not even as placeholder examples. A sub-agent had used his employer's name in an
+  example phrase; it's removed.
