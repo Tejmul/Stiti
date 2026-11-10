@@ -455,3 +455,43 @@ corpora, VoicePrivacy). No public Hinglish *speech* emotion corpus exists → hi
 - Cost: 0 new models, live +~10 µs, nightly train ~1.4 s CPU / +~90 MB for 3,000 turns (both heads, 5 folds).
   Synthetic: activates at personal-signal 0.1 (F1 0.80 vs generic 0.56), stays generic at 0.06 (0.33 vs 0.56) and
   with no signal. Tests: `tests/emotion_learning_eval.py` 31/31.
+
+## D29: Feels-human real time — preemptive reply, pre-warm, ● ◐ ○ markers, media pause (2026-11-11)
+Research: `docs/research/conversation_turn_taking.md` §3–§4 (LiveKit preemptive generation, Pipecat ● ◐ ○ +
+`SpeculationGate`), `elevenlabs_conversation_re.md` §4 item 10 (speculative turn), `re_elevenlabs_live.md` (EL speaks
+≈ 0.2 s after it commits → the reply is already in flight), `re_wispr_flow.md` (GET /warmup on the first audio chunk;
+`shouldPauseAudio`). Code: `voice/realtime.py`, `voice/media.py`, `brain/turnmark.py`, `db.Held`, `engine.turn(speculative=)`.
+- **Preemptive reply.** `TurnTaker` emits `speculate` the moment the early transcript (160 ms + STT) reads *finished*
+  — before the commit lands (0 s after it when Smart Turn is sure, up to `min_delay` = 1.0 s when it isn't). The engine
+  turn starts then: the LLM streams into a **buffer, nothing is played**. Commit with the same words → the buffer goes
+  to the Speaker at once and the stream continues live. He goes on (`unspeculate`) or the commit goes elsewhere (bye,
+  backchannel, wake, a different text) → dropped: stream aborted, DB rolled back, engine state restored. So it can
+  never cause a false reply: playback still waits for the same commit as before.
+- **Only plain chat is speculated.** `engine.spec_block()` (pure checks, no writes) refuses fast paths, actions,
+  flows (WOOP, chunker, onboarding, pending "haan"), corrections, live/web, tools, music, holds, goodbyes; the engine
+  re-checks the domain (chat/memory only) and refuses again before the LLM. A fast path is never run early, so there is
+  nothing to undo (the continuation-grace `undo_last` path stays as it was).
+- **No trace from a discarded speculation.** `engine.turn(speculative=True)` runs inside `db.Held` — one transaction
+  on its own connection; every `q()/one()` of that thread goes to it — plus a snapshot of the engine state.
+  `speculation_commit()` makes it a normal turn (same rows as without speculation); `speculation_discard()` rolls back
+  episodes, turn, decisions, lesson scores, facts and restores `last_*`. USER.md/LESSONS.md are never touched by a
+  speculation (no mdsync, no lesson/directive paths). LLM quota rows are written outside it (`db.unheld`) so rate
+  limits stay honest. Budget: one speculation per pause, ≤ 6 dropped per minute (Groq free 30 RPM).
+- **Pre-warm.** His speech starting while she's awake → `router.warm()`: de-duplicated (one per 20 s, never two at
+  once), one `GET /models` on the first voice provider so its TLS connection is hot when the turn lands.
+- **● ◐ ○ markers (voice only).** `[TURN MARKER]` rules at the end of the brief (compiler `markers=True`); the engine
+  strips the marker from the stream (`MarkerStream`, split-anywhere safe, lookalike glyphs, "[●]") and from the stored
+  reply, so it never reaches speech, memory, history, USER/LESSONS or the web. ◐/○ → the LLM is stopped, nothing is
+  said, the fragment episode is kept out of recall, the loop keeps his words as the TurnTaker prefix (joined to what
+  he says next) and says "Mm-hm?" after 5 s (◐) / 10 s (○). Missing/garbled → ●. Never for questions ("?"), tools,
+  the web, or a turn right after a ◐ (a weak model that always answers ◐ can't silence her).
+- **Media pause.** On wake, Spotify / Apple Music that is *actually playing* is paused (AppleScript `is running` first
+  — never launches an app); on sleep (+1 s for the chime) or 20 s idle, only what she paused is resumed, and only if
+  it's still paused (he started something himself → left alone). `owner_profile media_pause=on|off` (default on).
+- **Measured (real Groq `qwen3.8-27b`, throwaway DB, 10 chat turns, speculation 0.64 s before the commit = the
+  simulated min_delay case):** commit → first reply text **median 530 → 0 ms** (mean 488 → 71 ms; median gain per
+  turn 378 ms). Simulated with the TurnTaker: unsure audio (waits min_delay) ≈ −380 ms; confident audio (commits as
+  soon as the transcript is in) ≈ −35 ms — never slower. Markers: 9/9 complete sentences got ● (0 false drops; the
+  question got no rules by design), 4/4 LLM-judged fragments got ◐/○.
+- **Cost:** 0 new models, 0 MB RAM; a held transaction costs 3–7 ms to open (off the critical path); a dropped
+  speculation costs one free LLM request. loop.py: 7 one-line call sites. Tests: `tests/realtime_eval.py`.

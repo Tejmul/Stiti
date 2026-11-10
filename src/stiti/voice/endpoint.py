@@ -349,6 +349,8 @@ class TurnTaker:
         self.replaces: Pending | None = None
         self.barge: str | None = None          # None | "ducked" | "paused"
         self.run_ms = 0                        # consecutive speech
+        self.rt_events = False                 # also emit speech_start / speculate / unspeculate (voice/realtime.py)
+        self._speculated = False
         self._reset()
 
     # ----- segment state
@@ -358,6 +360,7 @@ class TurnTaker:
         self.spec = self.res = self.pa = self.ts = self.wait_s = None
         self.start_t = self.last_speech_t = 0.0
         self.overlap = self.barged = False
+        self._speculated = False
 
     @property
     def busy(self) -> bool:
@@ -395,6 +398,9 @@ class TurnTaker:
                     self.stats.observe_pause(self.silence_ms / 1000)     # he paused and went on: we waited right
                 self.silence_ms = 0
                 self.spec = self.res = self.pa = self.ts = self.wait_s = None   # the early transcript is stale
+                if self._speculated:                                         # … and so is a reply started on it
+                    self._speculated = False
+                    ev.append(("unspeculate", self.start_t))
                 self.speech_ms += FRAME_MS
                 self.last_speech_t = now
             else:
@@ -406,6 +412,8 @@ class TurnTaker:
             self.speech_ms, self.silence_ms = FRAME_MS, 0
             self.start_t = self.last_speech_t = now
             self.overlap = playing
+            if self.rt_events:
+                ev.append(("speech_start", now))
         self.ring = (self.ring + [frame])[-PREROLL_FRAMES:]
         if self.pending is not None and not self.cur and self.pending.expired(now):
             self.pending = None
@@ -491,14 +499,26 @@ class TurnTaker:
         if self.res is not None and self.ts is None:
             heard = (self.res.text or "").strip()
             self.ts = text_state(join_text(self.prefix, heard)) if heard else "noise"   # the loop drops noise
+        pre = self._speculate()
         if self.ts is not None and self.wait_s is None and self.pa is not None:
             self.wait_s = wait_for(self.ts, self.pa if self.pa >= 0 else None, self.stats.min_delay)
             self._say(f"pause {self.silence_ms} ms: text={self.ts} audio={self.pa:.2f} → wait {self.wait_s:.2f}s")
         if self.wait_s is not None and self.silence_ms >= self.wait_s * 1000:
-            return self._commit(now, timed_out=self.ts in ("unfinished", "wait"))
+            return pre + self._commit(now, timed_out=self.ts in ("unfinished", "wait"))
         if self.spec is not None and self.res is None and self.silence_ms >= WAIT_PHRASE_S * 1000:
             return self._commit(now, timed_out=False)          # STT stuck: hand it over, the loop waits for it
-        return []
+        return pre
+
+    def _speculate(self) -> list:
+        """D29 preemptive reply: the early transcript is in and reads finished → the loop may start the LLM now
+        (buffered, never played before the commit). Once per pause; not while she talks, not on a continuation."""
+        if (not self.rt_events or self._speculated or self.ts != "finished" or self.overlap or self.barge
+                or self.replaces is not None or self.res is None):
+            return []
+        self._speculated = True
+        text = join_text(self.prefix, (self.res.text or "").strip())
+        self._say(f"speculate on {text!r}")
+        return [("speculate", text, self._audio(), self.start_t)]
 
     def _commit(self, now: float, timed_out: bool) -> list:
         c = Commit(audio=self._audio(), spec=self.spec, res=self.res, prefix=self.prefix, state=self.ts,

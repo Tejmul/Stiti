@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from dataclasses import dataclass
 from typing import Iterator
@@ -17,7 +18,7 @@ import httpx
 from openai import OpenAI
 
 from .config import CFG
-from .db import one, q
+from .db import one, q, unheld
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,11 @@ def _now():
 
 
 def _record(p: str, model: str, tin: int, tout: int, err: str | None = None, cooldown_s: float = 0):
+    with unheld():                                 # quota use is real even if a speculative turn is discarded
+        _record_q(p, model, tin, tout, err, cooldown_s)
+
+
+def _record_q(p: str, model: str, tin: int, tout: int, err: str | None, cooldown_s: float):
     q("""INSERT INTO llm_usage(provider, model, day, requests, tokens_in, tokens_out,
                                minute_start, minute_tokens, minute_requests, cooldown_until, last_error)
          VALUES (%(p)s,%(m)s,current_date,%(r)s,%(ti)s,%(to)s,now(),%(tt)s,%(r)s,
@@ -329,12 +335,45 @@ def stream(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1,
     raise NoProvider("; ".join(errors) or "no API keys configured (.env)")
 
 
-def warm() -> None:
-    """Open connections + fetch model lists now, so the first real reply doesn't pay TLS/handshake (~0.3–0.6 s)."""
-    import threading
-    for p in PROVIDERS:
-        if _client(p) is not None:
-            threading.Thread(target=_available_models, args=(p,), daemon=True).start()
+WARM_GAP_S = 20.0                 # at most one warm-up per 20 s (he starts talking many times a minute)
+_warm_lock = threading.Lock()
+_warm_at = -1e9
+_warm_busy = False
+
+
+def warm(route: str = "voice_fast", *, min_gap_s: float = WARM_GAP_S) -> bool:
+    """Open connections + fetch model lists now, so the first real reply doesn't pay TLS/handshake (~0.3–0.6 s).
+    Called at start-up, on wake and when his speech starts (Wispr fires GET /warmup on the first audio chunk, D29).
+    Cheap and de-duplicated: never two at once, at most one per `min_gap_s`; returns True if it started one.
+    After the first call it keeps the first voice provider's TLS connection hot with one GET /models (no tokens)."""
+    global _warm_at, _warm_busy
+    now = time.monotonic()
+    with _warm_lock:
+        if _warm_busy or now - _warm_at < min_gap_s:
+            return False
+        _warm_busy, _warm_at = True, now
+    threading.Thread(target=_warm_job, args=(route,), daemon=True).start()
+    return True
+
+
+def _warm_job(route: str) -> None:
+    global _warm_busy
+    try:
+        first = next((p for p, m in CHAINS.get(route, []) if is_free(p, m) and _client(p) is not None), None)
+        for p in PROVIDERS:
+            if p != first and p not in _models and _client(p) is not None:
+                threading.Thread(target=_available_models, args=(p,), daemon=True).start()
+        if first is None:
+            return
+        if first not in _models:
+            _available_models(first)                 # the first fetch is the warm-up
+        else:
+            try:
+                _client(first).with_options(timeout=5).models.list()   # reuses the pooled connection → stays hot
+            except Exception:
+                pass
+    finally:
+        _warm_busy = False
 
 
 def status() -> list[dict]:

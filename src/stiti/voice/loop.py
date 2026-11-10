@@ -33,6 +33,7 @@ import numpy as np
 
 from . import endpoint, prosody, stt, turn, wake
 from .duplex import Duplex
+from .realtime import Realtime
 from .. import router
 from ..learn import recorder
 from ..brain.psych import StreamLint
@@ -51,6 +52,8 @@ class _Cancelled(Exception):
 
 
 class VoiceLoop:
+    rt: Realtime | None = None           # preemptive reply, pre-warm, ● ◐ ○, media pause (realtime.py, D29)
+
     def __init__(self, engine, aec: bool = True, debug: bool = False):
         self.engine = engine
         self.aec = aec
@@ -79,6 +82,7 @@ class VoiceLoop:
         self.ack_text = ACKS
         threading.Thread(target=self._prepare_fillers, daemon=True).start()
         router.warm()
+        self.rt = Realtime(self)
 
     # ---------- audio in: callback only queues; segmentation runs in its own thread ----------
     def _on_mic(self, x16: np.ndarray):
@@ -106,6 +110,8 @@ class VoiceLoop:
                     self._on_event(ev)
 
     def _on_event(self, ev: tuple) -> None:
+        if self.rt is not None and self.rt.on_event(ev):
+            return
         kind, d = ev[0], self.duplex
         if kind == "commit":
             self.segq.put(ev[1])
@@ -217,7 +223,8 @@ class VoiceLoop:
 
         def work():
             try:
-                result["reply"] = self.engine.turn(text, voice_emotion=voice, on_delta=on_delta, on_ack=sp.ack)
+                result["reply"] = (self.rt.turn if self.rt is not None else self.engine.turn)(
+                    text, voice_emotion=voice, on_delta=on_delta, on_ack=sp.ack)
                 if getattr(self.engine, "last_route", None) == "fast_path":
                     pend.action = getattr(self.engine, "last_action", None)
             except _Cancelled:
@@ -324,6 +331,8 @@ class VoiceLoop:
                     c = self.segq.get(timeout=0.5)
                 except queue.Empty:
                     c = None
+                if self.rt is not None:
+                    self.rt.tick(c)
                 now = time.time()
                 if (self.awake and now - self.last_activity > AWAKE_TIMEOUT_S and not d.playing
                         and not self.tt.busy):           # never fall asleep while he's mid-sentence
@@ -411,6 +420,8 @@ class VoiceLoop:
                 print(f"You: {text}" + (f"   ({res.ms:.0f} ms STT)" if self.debug else ""))
                 self.last_activity = now
                 self._handle(text, c.audio, c)
+            if self.rt is not None:
+                self.rt.close()                         # give him back any music she paused
 
 
 def _after_offer(engine) -> bool:
