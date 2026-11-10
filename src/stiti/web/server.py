@@ -125,6 +125,16 @@ def app():
             return PlainTextResponse("not found", 404)
         return FileResponse(f, headers={"Cache-Control": "max-age=86400"})
 
+    async def link(req):
+        """Hand the per-install key to Stiti's OWN pages, so any page opened on 127.0.0.1:7317 just works (no
+        'open from the terminal' gate). Safe because: the Host check blocks DNS rebinding; browsers stamp every
+        fetch with Sec-Fetch-Site, which page JS can't forge, so another website's request says 'cross-site'; and
+        without CORS headers no other origin can read the response anyway. (Local apps could already read
+        ~/.stiti/web_token.)"""
+        if not host_ok(req.headers) or req.headers.get("sec-fetch-site") != "same-origin":
+            return JSONResponse({"error": "not allowed"}, 403)
+        return JSONResponse({"t": token}, headers={"Cache-Control": "no-store"})
+
     async def state(req):
         if not (host_ok(req.headers) and tok_ok(req)):
             return JSONResponse({"error": "not allowed"}, 403)
@@ -208,7 +218,7 @@ def app():
 
     return Starlette(routes=[
         Route("/", page("index.html")), Route("/chat", page("chat.html")), Route("/memory", page("memory.html")),
-        Route("/api/mind", mind_api), Route("/api/moments", moments_api),
+        Route("/api/link", link), Route("/api/mind", mind_api), Route("/api/moments", moments_api),
         Route("/api/fact", fact_add, methods=["POST"]),
         Route("/api/fact/{id:int}/forget", fact_forget, methods=["POST"]),
         Route("/icons/{n}.png", icon), Route("/api/state", state),
