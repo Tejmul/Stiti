@@ -360,6 +360,10 @@ class VoiceLoop:
                     self.rt.tick(c)
                 if c is None and not _tutor_active() and (why := d.heal()):
                     print(f"🎙️  [mic] {why} — reopened the microphone (reopen #{d.reopens})")
+                if c is None and not _tutor_active() and d.reopen_failed() and _may_restart():
+                    print("🎙️  [mic] still silent after reopening — restarting Stiti (a fresh process hears again)",
+                          flush=True)
+                    os._exit(75)                         # Stiti.app's launcher restarts on a non-zero exit
                 now = time.time()
                 if (self.awake and now - self.last_activity > AWAKE_TIMEOUT_S and not d.playing
                         and not self.tt.busy):           # never fall asleep while he's mid-sentence
@@ -470,6 +474,27 @@ def _explicit_bye(text: str) -> bool:
 
 
 _BYE_RX = re.compile(r"\b(bye+|good ?night|gn|so jao|go to sleep|sleep now|see you|kal milte|shubh ratri)\b", re.I)
+
+
+MIC_RESTARTS = 2              # at most this many mic restarts …
+MIC_RESTART_WINDOW_S = 600.0  # … per 10 minutes (a really muted mic must not cause a restart loop)
+
+
+def _may_restart(now: float | None = None) -> bool:
+    """Record a mic restart unless there were already MIC_RESTARTS in the window (file survives the restart)."""
+    from ..config import CFG
+    now = time.time() if now is None else now
+    p = CFG.home / "logs" / "mic_restarts"
+    try:
+        stamps = [float(x) for x in p.read_text().split()] if p.exists() else []
+    except ValueError:
+        stamps = []
+    stamps = [t for t in stamps if now - t < MIC_RESTART_WINDOW_S]
+    if len(stamps) >= MIC_RESTARTS:
+        return False
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(" ".join(str(t) for t in stamps + [now]))
+    return True
 
 
 def _tutor_active() -> bool:

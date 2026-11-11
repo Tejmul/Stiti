@@ -35,6 +35,7 @@ STALL_S = 3.0          # no audio callback this long = the stream is dead (devic
 ZERO_S = 30.0          # raw mic digitally silent this long = dead input
 REOPEN_EVERY_S = 30.0  # first retry gap; doubles while it stays dead (muted mic), capped at REOPEN_MAX_S
 REOPEN_MAX_S = 600.0
+RECOVER_S = 6.0        # after a reopen, real sound must come back this fast — else the process itself is stuck
 
 
 def resample(audio: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
@@ -97,6 +98,12 @@ class Duplex:
         if self._zero_since is not None and now - self._zero_since > ZERO_S:
             return f"the mic has sent pure silence for {now - self._zero_since:.0f} s"
         return None
+
+    def reopen_failed(self, now: float | None = None) -> bool:
+        """A reopen happened and still no real sound after RECOVER_S (2026-11-11: after CoreAudio err -50 every
+        in-process reopen gave pure zeros, while a fresh process heard fine) → the caller restarts the process."""
+        now = time.monotonic() if now is None else now
+        return bool(self.reopens) and self._last_sound < self._opened_at and now - self._opened_at > RECOVER_S
 
     def heal(self, now: float | None = None) -> str | None:
         """Reopen the stream if the mic is dead (rate-limited). Returns the reason when it acted."""
