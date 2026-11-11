@@ -23,6 +23,11 @@ from .connectors import live
 from .connectors.mac import music_fastpath
 from .tools import registry
 
+def _awaiting_label() -> bool:
+    from .life import alarms
+    return alarms.awaiting_label()
+
+
 def _tutor_request(text: str):
     from .tutor import voice_request
     return voice_request(text)
@@ -289,7 +294,7 @@ class Engine:
         if any(checks):
             return "action"
         from .connectors.mac import MUSIC_RX
-        if (MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None
+        if (MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None or _awaiting_label()
                 or time.time() - self.teach_ask_at < TEACH_ASK_S):
             return "action"
         if live.detect(t, known=_names_his_person) is not None:
@@ -481,6 +486,9 @@ class Engine:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
         elif switched := self._intro_switch(text):
             reply = switched
+        elif _awaiting_label() and len(text.split()) <= 12 and not bye.is_bye(text):
+            from .life import alarms           # she just asked "What's it for?" about a reminder
+            reply = alarms.set_label(text)
         elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
             reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
             strat = strategy.make("REPAIR" if corrected else "DO", strat.lang)
