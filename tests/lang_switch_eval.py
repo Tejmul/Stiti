@@ -136,7 +136,8 @@ check("voice loop asks for the language check only while awake", loop_src.count(
 check("short clips need a clear Telugu majority", lid.TE_SHARE_SHORT > lid.TE_SHARE >= 0.6)
 check("near-miss wakes are logged ('Hey Stuthi', 'సునోస్తిరిఏ')", wake.near_miss("Hey Stuthi") and wake.near_miss("సునోస్తిరిఏ."))
 check("ambient talk is never logged", not wake.near_miss("I think the train is late again today guys")
-      and not wake.near_miss("Pass me the water"))
+      and not wake.near_miss("Pass me the water") and not wake.near_miss("You can start with yours."))
+check("…but real near misses are ('Hey Stuti', 'Sthiti')", wake.near_miss("Hey Stuti") and wake.near_miss("Sthiti"))
 
 # ---- live LLM (only with a free key): his exact flow
 from stiti import router                                                # noqa: E402
