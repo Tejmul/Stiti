@@ -519,3 +519,22 @@ Core Animation vs WKWebView measured on the M2); behaviour tuned from `docs/rese
   +5 MB for the pill and +2 MB with a card open in a rumps-like process, plateauing at ~+16 MB after hundreds of cards
   (font/symbol caches, no leak). Tests: `tests/overlay_eval.py`. Not verified yet: on-screen look with the display on,
   full-screen video (status vs `STITI_OVERLAY_LEVEL=screensaver`), notch Macs.
+
+## D31: She talks like a person — machine-talk cut in code, SOUL fits the briefing (2026-11-11)
+
+**Complaint:** "Why is it reporting all the errors and technical terms while talking?" Real replies: "The voice model is
+likely glitching or the audio stream is corrupted. I cannot control the synthesis engine…", "Functioning within normal
+parameters. No errors to report.", "That is a word I do not recognize.", "My thinking brain (cloud LLM) is offline."
+
+- **Cause 1 — SOUL:** "Stiti is Tejmul's own JARVIS … British-butler understatement" + "never claim feelings" made the
+  model play a machine. **Cause 2 — truncation:** the briefing keeps only 1400 chars of SOUL; ours was ~1700, so the
+  whole "Never" section was cut every turn. New SOUL (live + `docs/persona/SOUL.jarvis.md` + `DEFAULT_SOUL`): a friend
+  who sounds like a person, "Sounds human" rules first, 1386 chars. No bare "Done." example (the model copied it).
+- **In code, for any LLM:** `psych.MACHINE` drops sentences where she describes HERSELF as software (my model/engine/
+  servers, normal parameters, synthesis engine, "word I do not recognize", rate-limited…) in `enforce`, `lint` and
+  `StreamLint`. His tech talk ("Postgres is a database", "status code 404", "your API key") is untouched — 12/12 kept.
+  If nothing human is left: `human_fallback` ("Good, thanks — quiet day on my side." / "Sorry, my voice is acting up a
+  bit." / "Sorry, I didn't catch that."); the voice loop speaks the clean reply if every streamed piece was cut.
+  A lone "Done." after a non-action reply is dropped.
+- Fixed lines: offline → "My head's a bit foggy right now…"; Telegram/web errors no longer read out exception names;
+  mail no longer mentions `.env`. Tests: `tests/human_talk_eval.py` (48, incl. 3 live-LLM lines).

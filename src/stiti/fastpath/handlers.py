@@ -95,7 +95,7 @@ def _todo_remove(text: str) -> str | None:
     row = one("""SELECT id, title, similarity(lower(title), lower(%s)) s FROM tasks
                  WHERE status='open' ORDER BY s DESC LIMIT 1""", (cleaned,))
     if not row or row["s"] < 0.2:
-        return f"I couldn't find an open task matching “{cleaned}”."
+        return f"I couldn't find “{cleaned}” on your list."
     q("UPDATE tasks SET status='cancelled' WHERE id=%s", (row["id"],))
     return f"Done — removed “{row['title']}”. (task #{row['id']})"
 
@@ -108,7 +108,7 @@ def _todo_done(text: str) -> str | None:
     row = one("""SELECT id, title, similarity(lower(title), lower(%s)) s FROM tasks
                  WHERE status='open' ORDER BY s DESC LIMIT 1""", (cleaned,))
     if not row or row["s"] < 0.2:
-        return f"I couldn't find an open task matching “{cleaned}”."
+        return f"I couldn't find “{cleaned}” on your list."
     q("UPDATE tasks SET status='done' WHERE id=%s", (row["id"],))
     return f"Nice — “{row['title']}” is done."
 
