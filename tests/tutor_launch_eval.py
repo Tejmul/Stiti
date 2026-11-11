@@ -92,8 +92,14 @@ player = open(os.path.join(here, "..", "src", "stiti", "tutor", "player.py")).re
 check("no 'cloud brain' in what the tutor says", "cloud brain" not in player.split('"""', 2)[-1].replace("No cloud brain?", ""))
 audio = open(os.path.join(here, "..", "src", "stiti", "tutor", "audio.py")).read()
 check("lesson ears use the single whisper thread (MLX streams are per thread)",
-      "self.vl._stt.submit(stt.transcribe, seg)" in audio and "stt.transcribe(np.zeros" not in audio.replace(
+      "self.vl._stt.submit(stt.transcribe_ex, seg)" in audio and "stt.transcribe(np.zeros" not in audio.replace(
           "self.vl._stt.submit(stt.transcribe, np.zeros", ""))
+
+print("lesson ears ignore noise")
+from stiti.tutor.audio import keep_heard                               # noqa: E402
+check("unclear noise is ignored ('Nim nil to nara')", not keep_heard("Nim nil to nara.", True))
+check("unclear but a command still counts ('ruko')", keep_heard("ruko", True) and keep_heard("phir se", True))
+check("a clear question always counts", keep_heard("What is a token in lexical analysis?", False))
 
 subprocess.Popen = _real_popen
 print(f"tutor launch: {passed}/{total} checks passed")

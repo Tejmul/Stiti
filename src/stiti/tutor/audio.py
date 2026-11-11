@@ -81,6 +81,15 @@ class SpeakerAudio(_Kokoro):
         self.stop()
 
 
+def keep_heard(text: str, unclear: bool) -> bool:
+    """A clear line always counts. An unclear one only if it's a lesson command (ruko / phir se / continue…):
+    mis-heard noise must not become a 'question' the tutor stops to answer."""
+    if not unclear:
+        return True
+    from .commands import classify
+    return classify(text) not in ("question", "answer", "other")
+
+
 class VoiceAudio(_Kokoro):
     """Reuses Stiti's VoiceLoop machinery (Duplex + AEC + VAD segmenter + Smart Turn + whisper)."""
 
@@ -116,9 +125,13 @@ class VoiceAudio(_Kokoro):
             if len(seg) < SR * 0.3:
                 continue
             try:
-                text, ms = self.vl._stt.submit(stt.transcribe, seg).result()
+                r = self.vl._stt.submit(stt.transcribe_ex, seg).result()
             except Exception as e:                       # never let one bad segment make the lesson deaf
                 print(f"   [ears] {type(e).__name__}: {e}")
+                continue
+            text, ms = r.text, r.ms
+            if text and not keep_heard(text, r.unclear):
+                print(f"   (unclear, ignored: {text!r})")      # 2026-11-11: noise like "Nim nil to nara" got answered
                 continue
             if text:
                 if self.debug:
