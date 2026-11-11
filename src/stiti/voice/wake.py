@@ -26,6 +26,17 @@ def _norm(t: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9\s']", " ", t.lower()).split())
 
 
+def near_miss(transcript: str) -> bool:
+    """Close to a wake phrase but not one — logged so a failing wake can be diagnosed; ambient talk is never logged."""
+    if re.search(r"[\u0C00-\u0C7F\u0900-\u097F]", transcript):   # a short line in another script (checked first:
+        return len(transcript.split()) <= 4                         # _norm() keeps only Latin letters)
+    words = _norm(transcript).split()
+    if not words or len(words) > 8:
+        return False
+    # ≥ 0.7: "stuti"/"sthiti"/"steeti" count; "start" (0.6) doesn't — "You can start with yours" got logged at 0.6
+    return "wake" in words or any(SequenceMatcher(None, w.strip("'"), "stiti").ratio() >= 0.7 for w in words if len(w) >= 4)
+
+
 def _name_hit(word: str) -> bool:
     w = word.strip("'")
     if w in NAME_VARIANTS:

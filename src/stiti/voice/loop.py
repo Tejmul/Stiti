@@ -90,7 +90,7 @@ class VoiceLoop:
             self.micq.put(x16)
 
     def _submit_stt(self, audio: np.ndarray) -> Future:
-        return self._stt.submit(stt.transcribe_ex, audio)
+        return self._stt.submit(stt.transcribe_ex, audio, lid=getattr(self, "awake", False))
 
     def _segmenter(self, stop: threading.Event):
         """VAD every 32 ms frame → endpoint.TurnTaker decides (end of turn, barge-in, continuation)."""
@@ -332,7 +332,8 @@ class VoiceLoop:
     def _result(self, c: endpoint.Commit) -> stt.STTResult:
         if c.res is None:
             try:
-                c.res = (c.spec or self._stt.submit(stt.transcribe_ex, c.audio)).result()
+                c.res = (c.spec or self._stt.submit(stt.transcribe_ex, c.audio,
+                                                    lid=getattr(self, "awake", False))).result()
             except Exception as e:
                 print(f"[stt] {type(e).__name__}: {e}")
                 c.res = stt.STTResult("")
@@ -418,6 +419,8 @@ class VoiceLoop:
                         print(f"   (heard while asleep: {text!r}, {res.ms:.0f} ms)")
                     woke, rest = wake.detect(text)
                     if not woke:
+                        if wake.near_miss(text):         # "Hey Stuti-ish" that didn't match: log it, nothing else
+                            print(f"   (almost woke: {text!r})")
                         continue
                     self.awake, self.silenced, self.last_activity = True, False, now
                     overlay.set_state("listening")      # "Hey Stiti" → the pill blooms in under the menu bar

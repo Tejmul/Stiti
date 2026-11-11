@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 
 os.environ.setdefault("HF_HUB_OFFLINE", "1")
+os.environ.setdefault("STITI_LID", "off")     # this suite tests the English/Hinglish path on placeholder audio; LID has
+                                              # its own tests (lang_switch_eval) — on CI a cached LID model judged it
 passed = total = 0
 
 
