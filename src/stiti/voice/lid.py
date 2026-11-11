@@ -17,7 +17,8 @@ import numpy as np
 
 MODEL = os.getenv("STITI_LID_MODEL", "mlx-community/whisper-tiny-mlx")
 GROUPS = {"en": ("en",), "hi": ("hi", "ur", "mr", "ne"), "te": ("te", "kn", "ta", "ml")}
-TE_SHARE = 0.5
+TE_SHARE = 0.6                     # Telugu needs a clear majority of the pooled score …
+TE_SHARE_SHORT, SHORT_SECONDS = 0.75, 2.0   # … and a big one on short clips ("Suno Stiti" scored 0.55 as Telugu)
 MIN_SECONDS = 0.8                  # shorter clips ("ok", "haan") carry too little to judge
 _lock = threading.Lock()
 _m: dict = {}
@@ -60,6 +61,6 @@ def detect(audio: np.ndarray, sr: int = 16000) -> tuple[str, float] | None:
     except Exception:
         return None
     best = max(share, key=share.get)
-    if share["te"] >= TE_SHARE:
+    if share["te"] >= (TE_SHARE_SHORT if len(audio) < SHORT_SECONDS * sr else TE_SHARE):
         return "te", share["te"]
     return best, share[best]

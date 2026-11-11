@@ -124,6 +124,20 @@ r = stt.transcribe_ex(np.zeros(16000 * 2, dtype=np.float32), cloud_call=fake)
 check("Telugu speech → transcribed AS Telugu (not translated)", TE.search(r.text) and r.lang == "telugu", f"{r}")
 lid.detect, stt_cloud.enabled = lid_detect, cloud_enabled
 
+print("waking is never routed through the language check (2026-11-11: 'Suno Stiti' heard as Telugu script)")
+from stiti.voice import wake                                            # noqa: E402
+calls = []
+lid.detect = lambda audio, sr=16000: calls.append(1) or ("te", 0.9)
+stt.transcribe_ex(np.zeros(16000 * 2, dtype=np.float32), lid=False)
+check("asleep (lid=False) → no language check at all", not calls)
+lid.detect = lid_detect
+loop_src = open(os.path.join(os.path.dirname(__file__), "..", "src", "stiti", "voice", "loop.py")).read()
+check("voice loop asks for the language check only while awake", loop_src.count('lid=getattr(self, "awake", False)') == 2)
+check("short clips need a clear Telugu majority", lid.TE_SHARE_SHORT > lid.TE_SHARE >= 0.6)
+check("near-miss wakes are logged ('Hey Stuthi', 'సునోస్తిరిఏ')", wake.near_miss("Hey Stuthi") and wake.near_miss("సునోస్తిరిఏ."))
+check("ambient talk is never logged", not wake.near_miss("I think the train is late again today guys")
+      and not wake.near_miss("Pass me the water"))
+
 # ---- live LLM (only with a free key): his exact flow
 from stiti import router                                                # noqa: E402
 

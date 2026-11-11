@@ -286,7 +286,9 @@ def _finish(text: str) -> str:
     return glossary.snap(text) if text and os.getenv("STITI_STT_SNAP", "on") != "off" else text
 
 
-def transcribe_ex(audio: np.ndarray, *, cloud_call=None) -> STTResult:
+def transcribe_ex(audio: np.ndarray, *, cloud_call=None, lid: bool = True) -> STTResult:
+    """lid=False while she sleeps: the only thing to hear then is an English wake phrase, and the language check
+    once heard "Suno Stiti" as Telugu ("సునోస్తిరిఏ") — a wake that could never match (2026-11-11)."""
     t0 = time.perf_counter()
     audio = np.asarray(audio, dtype=np.float32)
     fp = _fingerprint(audio)
@@ -296,8 +298,8 @@ def transcribe_ex(audio: np.ndarray, *, cloud_call=None) -> STTResult:
     p = build_prompt(lang, prev)
     terms = [t.text for t in glossary.terms()]
     stt_cloud.prewarm()
-    from . import lid
-    spoken = lid.detect(audio)                       # D34: Telugu speech must not be translated into English
+    from . import lid as lid_mod
+    spoken = lid_mod.detect(audio) if lid else None   # D34: Telugu speech must not be translated into English
     if spoken and spoken[0] == "te":
         return _telugu(audio, t0, fp, cloud_call)
     loc, _ = _local(audio, os.getenv("STITI_WHISPER", WHISPER_MAIN), p)
