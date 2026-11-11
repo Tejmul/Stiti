@@ -50,6 +50,54 @@ BANNED = [
     r"\b(proud of you|knew you (could|would))\b", r"\bon point\b", r"\bnailed it\b",
 ]
 BANNED_RX = re.compile("|".join(BANNED), re.I)
+# Machine-talk: she describes HERSELF as software (2026-11-11: "The voice model is likely glitching or the audio stream is
+# corrupted. I cannot control the synthesis engine…", "Functioning within normal parameters. No errors to report.").
+# Only self-talk is caught — "your API returns 500" or "Postgres is a database" about HIS code still gets through.
+MACHINE = [
+    r"\b(functioning|operating|running|performing) (within|at|in) (normal|optimal|full|expected) (parameters|capacity|levels?)\b",
+    r"\bno (errors|faults|anomalies|malfunctions) (to report|detected)\b",
+    r"\b(my|all) systems?( are| is)? (go|nominal|operational|normal|online|functional|running smoothly)\b",
+    r"\bmy (own )?(voice |speech |audio |language |ai |tts |stt |neural |internal )?(model|engine|system|software|programming|"
+    r"circuits|algorithms?|training( data)?|servers?|processors?|memory banks?|sensors?|hardware|parameters|cpu|backend|"
+    r"pipeline|api|llm)s?\b",
+    r"\b(the|this|that) (voice|speech|tts|text[- ]to[- ]speech|speech[- ]to[- ]text|synthesis|audio|transcription) "
+    r"(model|engine|stream|pipeline|module|buffer|driver)s?\b",
+    r"\bsynthesis engine\b",
+    r"\b(reset|restart|reboot|recalibrate) (the|this|our) session\b",
+    r"\b(reset|restart|reboot|recalibrate) (myself|my (system|engine|model|voice))\b",
+    r"\bi('?m| am) (just |only )?(a|an) (program|software|machine|bot|computer|virtual assistant|language model|ai model|"
+    r"ai assistant|algorithm)\b",
+    r"\bi (do not|don'?t) (have|possess) (feelings|emotions|a body|consciousness|a physical form)\b",
+    r"\b(cloud|thinking) (llm|brain|model)\b", r"\bmy (api key|quota|provider|router|fallback chain|context window|prompt|"
+    r"briefing)\b", r"\bi('?m| am| was| got| have been) (being )?rate[- ]?limited\b",
+    r"\bi('?m| am) (offline|online)\b",
+    r"\b(that is|that'?s|it is|it'?s) (a|an|not a) (word|input|command) i (do not|don'?t|cannot|can'?t) (recognize|process)\b",
+    r"\bi (do not|don'?t|cannot|can'?t) (recognize|process) (that|this|the) (word|input|command|request)\b",
+    r"\bdoes not compute\b", r"\bi('?m| am) unable to (process|parse|compute)\b",
+]
+MACHINE_RX = re.compile("|".join(MACHINE), re.I)
+LONE_DONE = re.compile(r"(all )?done[.!]?", re.I)
+NOT_HEARD_RX = re.compile(r"\b(recognize|process|compute|invalid)\b", re.I)
+ASKED_ABOUT_HER = re.compile(r"\b(how about you|what about you|and you|how are you|how r u|how'?re you|how (is|was) your day|"
+                             r"how'?s your day|how'?s it going|wbu|hbu|tum kais[ei]|aap kais[ei]|kaisi ho|kaise ho|"
+                             r"tumhara din|you ok(ay)?)\b", re.I)
+ABOUT_HER_VOICE = re.compile(r"\b(voice|awaaz|aawaz|awaz|sound(s|ing)?|audio|bol rahi|speaking weird|glitch\w*|robotic)\b", re.I)
+
+
+def human_fallback(user_text: str, dropped: list[str] | None = None) -> str:
+    """What to say when every sentence was machine-talk: what a friend would say instead."""
+    t = user_text or ""
+    if ASKED_ABOUT_HER.search(t):
+        return "Good, thanks — quiet day on my side."
+    if ABOUT_HER_VOICE.search(t):
+        return "Sorry, my voice is acting up a bit. Tell me if it still sounds off."
+    if dropped and any(NOT_HEARD_RX.search(d) for d in dropped):
+        return "Sorry, I didn't catch that. Say it once more?"
+    return "Got it."
+
+
+def machine_talk(text: str) -> bool:
+    return bool(MACHINE_RX.search(text or ""))
 OPENER_TIC = re.compile(r"^\s*(absolutely|of course|great|awesome|amazing|sure thing|oh wow|wow|totally|certainly|"
                         r"arre,? sorry|my bad|ah,? i see|i see|so,)[!,.—-]*\s+", re.I)
 HEDGE = re.compile(r"\b(i might be wrong,? but|i could be wrong,? but|i think maybe|it seems like maybe|honestly speaking,?|"
@@ -104,8 +152,10 @@ def _keep(sentence: str, s, last: bool) -> bool:
     st = sentence.strip()
     if not st:
         return False
-    if BANNED_RX.search(st):
+    if BANNED_RX.search(st) or MACHINE_RX.search(st):
         return False
+    if s is not None and s.name != "DO" and LONE_DONE.fullmatch(st):
+        return False                             # "…rate limits prevent overload. Done." — nothing was done
     is_q = st.rstrip("\"”' )").endswith("?")
     if is_q and s is not None:
         if not s.ask:
@@ -135,11 +185,11 @@ def _polish(sentence: str, s) -> str:
     return out[:1].upper() + out[1:] if out else out
 
 
-def enforce(text: str, s=None) -> str:
-    """The full reply rules for a finished LLM reply: banned phrases, questions, closers, promises, advice, humour,
-    emojis, feminine Hindi, one "!" at most, list items, and the strategy's word cap (cut at a sentence/clause)."""
+def enforce(text: str, s=None, user_text: str = "") -> str:
+    """The full reply rules for a finished LLM reply: banned phrases, machine-talk, questions, closers, promises, advice,
+    humour, emojis, feminine Hindi, one "!" at most, list items, and the strategy's word cap (cut at a sentence/clause)."""
     if s is None:
-        return lint(text)
+        return lint(text, user_text=user_text)
     out = text.replace("’", "'").replace("‘", "'")
     for rx, rep in GUILT:
         out = re.sub(rx, rep, out, flags=re.I)
@@ -174,13 +224,21 @@ def enforce(text: str, s=None) -> str:
         first = final.index("?") + 1
         final = final[:first] + final[first:].replace("?", ".")
     if not final:                                # everything was filler: say something tiny instead of nothing
-        final = "Samajh gayi." if s.lang == "hinglish" else "Got it."
+        dropped = [x for x in sents if MACHINE_RX.search(x)]
+        if dropped:
+            final = human_fallback(user_text, dropped)
+        else:
+            final = "Samajh gayi." if s.lang == "hinglish" else "Got it."
     return final
 
 
-def lint(text: str, max_items: int = 3) -> str:
-    """Final pass on every reply (LLM or fast path)."""
+def lint(text: str, max_items: int = 3, user_text: str = "") -> str:
+    """Final pass on every reply (LLM or fast path). Machine-talk sentences are dropped here too."""
     out = text
+    if MACHINE_RX.search(out):
+        sents = [x for x in _SENT.split(out) if x.strip()]
+        kept = [x for x in sents if not MACHINE_RX.search(x)]
+        out = " ".join(kept).strip() or human_fallback(user_text, [x for x in sents if MACHINE_RX.search(x)])
     for rx, rep in GUILT:
         out = re.sub(rx, rep, out, flags=re.I)
     # list items > max -> trim + offer more
@@ -221,6 +279,7 @@ class StreamLint:
     def __init__(self, max_items: int = 3, policy=None):
         self.max_items, self.items, self.questions = max_items, 0, 0
         self.policy, self._bound, self.words, self.done = policy, policy is not None, 0, False
+        self.said = 0                                        # pieces let through (0 → the loop speaks the final reply)
 
     def feed(self, piece: str) -> str | None:
         if not self._bound:
@@ -234,10 +293,13 @@ class StreamLint:
             if self.items > (s.max_items if s is not None else self.max_items):
                 return None                                  # extra list items: not spoken
         if s is None:                                        # no strategy known: the old rules
+            if MACHINE_RX.search(piece):
+                return None
             if "?" in piece:
                 if self.questions:
                     piece = piece.replace("?", ".")          # at most one question per reply
                 self.questions += piece.count("?")
+            self.said += 1
             return feminine(piece)
         if self.done or not _keep(piece, s, False):
             return None
@@ -256,6 +318,7 @@ class StreamLint:
             piece = _cut(piece, s.max_words)
             self.done = True
         self.words += n
+        self.said += 1
         return piece
 
 

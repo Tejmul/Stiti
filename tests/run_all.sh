@@ -38,6 +38,7 @@ run "STT his words + Indian voice (D27)" tests/stt_voice_eval.py
 run "personal emotion + recorder (D28)" tests/emotion_learning_eval.py
 run "real-time reply (D29)"         tests/realtime_eval.py
 run "desktop overlay (pill + cards)" tests/overlay_eval.py
+run "talks like a person (no machine-talk)" tests/human_talk_eval.py
 run "card motion (added / done / cancelled)" tests/card_motion_eval.py
 run "mic watchdog (dead mic → reopen)" tests/mic_watchdog_eval.py
 exit $fail
