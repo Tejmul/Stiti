@@ -239,6 +239,15 @@ REVISE_RX = __import__("re").compile(r"\b(revise|revision|revise karna|revision 
                                      __import__("re").I)
 COURSE_RESUME_RX = __import__("re").compile(r"\b(continue|resume) (my |the )?(crash ?course|course|night)\b|"
                                             r"course (continue|resume) karo", __import__("re").I)
+# a revision SESSION: "let's revise", "revision time", "revise karna hai", "start my revision", "flashcards"
+REVISE_START_RX = __import__("re").compile(
+    r"^(?:(?:hey |hi )?stiti,? )?(?:let'?s |start (?:my |the )?|time (?:to|for) |can we |chalo )?(?:revise|revision)"
+    r"(?: (?:time|karna( hai)?|karao|karte hain|session|now|please))?$|\brevision (?:time|karna|karao|session)\b|"
+    r"\brevise karna hai\b|\b(?:my |the )?flashcards?\b", __import__("re").I)
+# to-dos, reminders and alarms are never lessons, even when they say "revise" / "study" / "teach"
+NOT_A_LESSON_RX = __import__("re").compile(
+    r"\b(add|put|daal|note (it )?down)\b.*\b(to-?do|todos?|tasks?|list)\b|\b(remind me|reminder|alarm)\b",
+    __import__("re").I)
 BOOK_DIRS = ("~/Downloads", "~/Documents", "~/Desktop", "~/Books")
 
 
@@ -272,9 +281,11 @@ def voice_request(text: str) -> tuple | None:
     'teach me operating systems tonight' -> ('operating systems', False, 'night'); 'revise karna hai' -> revise."""
     import re
     t = text.strip().rstrip(".!?")
+    if NOT_A_LESSON_RX.search(t):
+        return None          # "add revise DBMS notes to my to-do list" is a to-do, not a revision session (2026-11-11)
     if COURSE_RESUME_RX.search(t):
         return None, True, "night"
-    if REVISE_RX.search(t) and re.search(r"\b(stiti|karna|karao|let'?s|start|my|time)\b", t, re.I):
+    if REVISE_START_RX.search(t):
         return None, False, "revise"
     if RESUME_RX.search(t):
         return None, True

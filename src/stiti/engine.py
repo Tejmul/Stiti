@@ -67,7 +67,9 @@ HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek secon
                      r"let me think|soch(ne do| ke batata hoon| ke batati hoon| raha hoon| rahi hoon)|"
                      r"hmm+,? let me think)[.!…, ]*$", re.I)
 # "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
-TEACH_ASK_S = 90.0      # after "what should I teach you?", his next short line is the topic
+TEACH_ASK_S = 90.0      # after "what should I teach you?", his next short line is the topic …
+COMMAND_RX = re.compile(r"\b(add|remind\w*|alarms?|to-?do|todos?|tasks?|delete|list|timers?)\b", re.I)   # … unless a command
+CANCEL_ASK_RX = re.compile(r"^\W*(never ?mind|cancel|leave it|forget it|no|nahi|rehne do|chhodo|nothing)\W*$", re.I)
 NOTHING_RX = re.compile(r"^\s*(no|nope|nah|nahi|nahin|not yet|ok|okay|alright|nothing|nothing else|that'?s (it|all)( for now)?|bas|bas itna|"
                         r"no thanks|no thank you|all good|i'?m good|abhi nahi|kuch nahi|that'?s it for now|nope that'?s it)[.!]*\s*$", re.I)
 ASKED_NAME_RX = re.compile(r"\b(?:about|remember|yaad hai|of)\s+(?P<name>[A-Z][a-z]{2,20})\b")
@@ -393,6 +395,8 @@ class Engine:
         route, reply, info, recalled_ids, lesson_ids, brief_tokens, brief = "fast_path", None, {}, [], [], None, None
         live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
 
+        if self.teach_ask_at and (COMMAND_RX.search(text) or domain in ("todo", "time")):
+            self.teach_ask_at = 0.0     # he moved on to a command: drop the pending "what should I teach you?"
         # ---- fast paths (no LLM) ----
         low = psych.minimum_viable_day(emo.label)
         from .brain import instructions, onboarding
@@ -509,7 +513,8 @@ class Engine:
             from .tutor import ASK_TOPIC, launch
             reply = launch(*tr)
             self.teach_ask_at = time.time() if reply == ASK_TOPIC else 0.0
-        elif time.time() - self.teach_ask_at < TEACH_ASK_S and len(text.split()) <= 10:
+        elif (time.time() - self.teach_ask_at < TEACH_ASK_S and len(text.split()) <= 10
+              and (domain != "control" or CANCEL_ASK_RX.match(text))):
             from .tutor import launch
             self.teach_ask_at = 0.0             # "what should I teach you?" → "lexical analysis" (or "never mind")
             reply = ("Okay, another time." if NOTHING_RX.match(text) or re.search(r"\b(never ?mind|cancel|leave it|"

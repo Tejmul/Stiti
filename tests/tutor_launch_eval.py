@@ -86,6 +86,19 @@ e.turn("Can you teach me?")
 r = e.turn("never mind")
 check("engine: 'never mind' cancels", r.startswith("Okay, another time"), r)
 
+e.turn("Can you teach me?")
+calls.clear()
+r = e.turn("Also add call the placement cell")
+check("engine: a to-do while she waits for a topic is a to-do, not a lesson", not calls and e.teach_ask_at == 0.0
+      or not calls, f"{r} | {calls}")
+
+print("to-dos are never lessons (audit 2026-11-11)")
+from stiti.tutor import voice_request as vr                            # noqa: E402
+for t in ("Add revise DBMS notes to my to-do list", "remind me to revise DBMS at 9", "I need to revise graphs today"):
+    check(f"not a lesson: {t!r}", vr(t) is None, str(vr(t)))
+for t in ("Let's revise", "revision time", "revise karna hai", "Stiti, start my revision"):
+    check(f"revision session: {t!r}", vr(t) == (None, False, "revise"), str(vr(t)))
+
 print("she talks like a person in lessons too")
 here = os.path.dirname(__file__)
 player = open(os.path.join(here, "..", "src", "stiti", "tutor", "player.py")).read()
