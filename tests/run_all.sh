@@ -38,6 +38,7 @@ run "STT his words + Indian voice (D27)" tests/stt_voice_eval.py
 run "personal emotion + recorder (D28)" tests/emotion_learning_eval.py
 run "real-time reply (D29)"         tests/realtime_eval.py
 run "desktop overlay (pill + cards)" tests/overlay_eval.py
+run "whole sentences (no missing words)" tests/whole_sentence_eval.py
 run "language switching (D34)" tests/lang_switch_eval.py
 run "intent: life updates are chat" tests/intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py

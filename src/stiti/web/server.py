@@ -197,6 +197,7 @@ def app():
 
                     async def pump():                    # stream the reply word by word, in order
                         while (d := await pieces.get()) is not None:
+                            d = d.replace("\u2019", "'").replace("\u2018", "'")   # same quotes as the saved reply
                             await ws.send_text(json.dumps({"type": "delta", "text": d}))
 
                     pumping = asyncio.create_task(pump())

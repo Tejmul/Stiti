@@ -36,7 +36,7 @@ def tone(mood: str | None) -> str:
 # ---------------- JARVIS reply rules, enforced in code (docs/research/jarvis_persona_psychology.md §1.2, §3d) ------
 # Sentences containing one of these are dropped: therapy-speak, cheerleading, AI disclaimers, servile filler.
 BANNED = [
-    r"\bi hear you\b", r"\b(that'?s|it'?s|your feelings are|that is) (completely |totally |so |perfectly )?(valid|understandable)\b",
+    r"\bi hear you(r)?\b", r"\bi (can )?(feel|sense|see) (your|the) (frustration|pain|stress|anger)\b", r"\b(that'?s|it'?s|your feelings are|that is) (completely |totally |so |perfectly )?(valid|understandable)\b",
     r"\byou'?ve got this\b", r"\byou got this\b", r"\bgreat question\b", r"\bas an ai\b", r"\bas a (large )?language model\b",
     r"\bi'?m (just )?an ai\b", r"\bi'?m (always )?here for you\b", r"\bi'?m here if you (want|need)\b", r"\blet me know if\b",
     r"\bfeel free to\b", r"\banything else i can\b", r"\bhow can i (help|assist)\b", r"\bhope (this|that) helps\b",
@@ -137,12 +137,42 @@ def _words(s: str) -> int:
     return len(s.split())
 
 
+OVERRUN = 1.6             # a sentence that started under the word cap may finish up to 1.6× the cap
+
+
 def _cut(sentence: str, cap: int) -> str:
-    """One sentence longer than the cap: cut at the last comma/dash before it, else at the cap."""
+    """One sentence longer than the cap: keep it whole up to OVERRUN × cap; past that, end at a clause boundary.
+    Never mid-phrase (2026-11-11: "the placement test is tomorrow at" — the "ten" was cut off)."""
     w = sentence.split()
-    head = " ".join(w[:cap])
-    m = list(re.finditer(r"[,;:—–-]\s", head))
+    if len(w) <= int(cap * OVERRUN):
+        return sentence
+    head = " ".join(w[:int(cap * OVERRUN)])
+    m = list(re.finditer(r"[,;:—–]\s", head))
     if m and m[-1].start() > len(head) // 3:
+        head = head[:m[-1].start()]
+    return head.rstrip(",;:—– ") + "."
+
+
+_FIRST_END = re.compile(r"[,;:—](?=\s)")
+
+
+def _first_piece(sentence: str) -> str:
+    """The first piece voice/tts.ClauseChunker would speak of this sentence: up to a comma after ≥ 3 words, else the
+    whole sentence (the chunker's ~7-word cut is ignored: it continues the same clause)."""
+    for m in _FIRST_END.finditer(sentence):
+        if len(sentence[:m.start()].split()) >= 3:
+            return sentence[:m.end()]
+    return sentence
+
+
+def _clip(piece: str, k: int) -> str:
+    """At most k words, ended at the last comma inside them when there is one (never mid-phrase if avoidable)."""
+    w = piece.split()
+    if len(w) <= k:
+        return piece
+    head = " ".join(w[:k])
+    m = list(re.finditer(r"[,;:—–]\s", head))
+    if m:
         head = head[:m[-1].start()]
     return head.rstrip(",;:—– ") + "."
 
@@ -171,7 +201,7 @@ def _keep(sentence: str, s, last: bool) -> bool:
     return True
 
 
-def _polish(sentence: str, s) -> str:
+def _polish(sentence: str, s, start: bool = True) -> str:
     out = OPENER_TIC.sub("", sentence)
     out = HEDGE.sub("", out)
     for rx, rep in SWAP:
@@ -181,8 +211,8 @@ def _polish(sentence: str, s) -> str:
     out = EMOJI.sub("", out)
     out = re.sub(r"!{2,}", "!", out)
     out = feminine(out)
-    out = out.strip().lstrip(",;:—–- ").strip()
-    return out[:1].upper() + out[1:] if out else out
+    out = out.strip().lstrip(",;:—–- ").strip() if start else out.strip()
+    return out[:1].upper() + out[1:] if out and start else out
 
 
 def enforce(text: str, s=None, user_text: str = "") -> str:
@@ -204,8 +234,20 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
         lines.append(l.strip())
     out = re.sub(r"[*_`#>]", "", " ".join(x for x in lines if x))
     sents = [x for x in _SENT.split(out) if x.strip()]
-    kept = [_polish(x, s) for i, x in enumerate(sents) if _keep(x, s, i == len(sents) - 1)]
-    kept = [k for k in kept if k]
+    kept: list[str] = []
+    for i, x in enumerate(sents):                # a dropped sentence AFTER she has said something ends the reply:
+        last = i == len(sents) - 1               # later sentences may lean on it ("…Then revise graphs")
+        fp = _first_piece(x) if i == 0 else x    # the voice judges sentence 1 by its first clause (spoken at once)
+        if fp != x and _keep(fp, s, last):
+            if BANNED_RX.search(x) or MACHINE_RX.search(x):
+                x = fp.rstrip(",;:—– ") + "."    # the voice ends the sentence where the bad part starts
+            if k := _polish(x, s):
+                kept.append(k)
+        elif fp == x and _keep(x, s, last):
+            if k := _polish(x, s):
+                kept.append(k)
+        elif kept:
+            break
     res, n = [], 0
     for k in kept:
         if n + _words(k) <= s.max_words:
@@ -271,9 +313,18 @@ def current_policy():
     return getattr(_tl, "policy", None)
 
 
+SENT_END = re.compile(r"[.!?।…][\"'”)\]]*\s*$")
+
+
 class StreamLint:
-    """enforce() for a reply that is spoken clause by clause while it streams (same rules, applied per piece).
-    Pass policy=Strategy, or leave it None to use the policy engine.turn() set for this thread."""
+    """enforce() for a reply that is spoken piece by piece while it streams. Pass policy=Strategy, or leave it None to
+    use the policy engine.turn() set for this thread.
+
+    Whole sentences, never holes (2026-11-11: "If you're tired, try to rest for ten minutes, then start the DSA sheet"
+    came out as "If you're tired," — the rest was judged alone as advice and dropped). A sentence is judged by the rules
+    when it STARTS; once its start is spoken, the rest of it is spoken too, unless the rest is machine-talk or banned,
+    which ends the sentence there. If a sentence's start is dropped, all of it is dropped. The word cap only stops at a
+    sentence end (a sentence may finish up to 1.6× the cap)."""
 
     BULLET = re.compile(r"^\s*([-*•]|\d+[.)])\s+")
 
@@ -281,6 +332,8 @@ class StreamLint:
         self.max_items, self.items, self.questions = max_items, 0, 0
         self.policy, self._bound, self.words, self.done = policy, policy is not None, 0, False
         self.said = 0                                        # pieces let through (0 → the loop speaks the final reply)
+        self.open = False                                    # a spoken sentence hasn't ended yet
+        self.skip = False                                    # drop the rest of the current sentence
 
     def feed(self, piece: str) -> str | None:
         if not self._bound:
@@ -302,9 +355,24 @@ class StreamLint:
                 self.questions += piece.count("?")
             self.said += 1
             return feminine(piece)
-        if self.done or not _keep(piece, s, False):
+        ends = bool(SENT_END.search(piece))
+        cont = self.open                                     # this piece continues a sentence already being spoken
+        if self.done and not cont:
             return None
-        piece = _polish(piece, s)
+        if self.skip:                                        # the rest of a dropped / cut sentence
+            if ends:
+                self.skip, self.open = False, False
+            return None
+        if cont:
+            if BANNED_RX.search(piece) or MACHINE_RX.search(piece):
+                self.skip, self.open = not ends, False       # end the sentence here, drop the rest of it
+                return None
+        elif not _keep(piece, s, False):
+            self.skip = not ends                             # its start is dropped → all of it is
+            if self.said:
+                self.done = True                             # …and after she has said something, the reply ends here
+            return None
+        piece = _polish(piece, s, start=not cont)
         if not piece:
             return None
         if "?" in piece:
@@ -312,13 +380,16 @@ class StreamLint:
                 piece = piece.replace("?", ".")
             self.questions += piece.count("?")
         n = _words(piece)
-        if self.words + n > s.max_words:
-            if self.words:                                   # over the cap: stop at the clause boundary
-                self.done = True
-                return None
-            piece = _cut(piece, s.max_words)
-            self.done = True
+        if not cont and self.words and self.words + n > s.max_words:
+            self.done = True                                 # over the cap: stop BEFORE a new sentence
+            self.skip = not ends
+            return None
+        if self.words + n > int(s.max_words * OVERRUN):      # a runaway sentence: end it at a clause boundary
+            piece = _clip(piece, max(1, int(s.max_words * OVERRUN) - self.words))
+            n = _words(piece)
+            self.done, self.skip, ends = True, not ends, True
         self.words += n
+        self.open = not ends
         self.said += 1
         return piece
 
