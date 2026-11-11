@@ -62,16 +62,19 @@ check("once off, never offered again", "intro" not in eng.greet())
 profile.set("name", "Tejmul", "owner_edit")
 check("once she knows his name → plain hello, no intro", "Tejmul" in eng.greet())
 
-# ---- an instruction becomes a permanent rule immediately (and replaces the older one on the same topic)
+# ---- language (D34): "talk in X" switches; "just talk in English, no other language" is a saved lock
 r = eng.turn("Talk in English")
 rules = [x["directive"] for x in q("SELECT directive FROM user_directives WHERE status='active' AND category='talk_style'")]
-check("“talk in English” → active talk-style rule at once", any("English" in x for x in rules) and "english" in r.lower(),
+check("“talk in English” → switches now, no forever-rule", "english" in r.lower() and not any("English" in x for x in rules),
       f"{r} | {rules}")
+r = eng.turn("Just talk in English. Don't talk in any other language right now.")
+rules = [x["directive"] for x in q("SELECT directive FROM user_directives WHERE status='active' AND category='talk_style'")]
+check("“just talk in English…” → an active Language lock at once", any(x.startswith("Language lock") for x in rules),
+      f"{r} | {rules}")
+check("the lock shows in USER.md for him to edit", "Language lock" in (CFG.home / "USER.md").read_text())
 eng.turn("Hindi mein bolo")
 rules = [x["directive"] for x in q("SELECT directive FROM user_directives WHERE status='active' AND category='talk_style'")]
-check("a newer language instruction replaces the old one", sum("Reply in" in x for x in rules) == 1 and
-      any("Hinglish" in x for x in rules), str(rules))
-check("rules show in USER.md for him to edit", "Hinglish" in (CFG.home / "USER.md").read_text())
+check("an explicit switch to Hindi ends the English lock", not any(x.startswith("Language lock") for x in rules), str(rules))
 
 print(f"conversation: {ok}/{ok + fail} checks passed")
 raise SystemExit(1 if fail else 0)

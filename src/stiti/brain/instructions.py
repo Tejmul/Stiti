@@ -30,22 +30,23 @@ class Instruction:
     category: str            # talk_style | boundary
     ack: str                 # what she says back (short, Jarvis-style)
     call_me: str | None = None
+    lang_cmd: tuple[str, str | None] | None = None   # ("lock"|"unlock"|"switch", lang) — brain/lang.py
 
 
 def parse(text: str) -> Instruction | None:
     t = text.strip()
+    from . import lang as L
     m = LANG_RX.search(t)
     if m and re.search(r"\b(i|we|they|he|she|people|everyone)\s+(\w+\s+)?$", t[:m.start()], re.I) \
             and not re.search(r"\b(can|could|will|would)\s+you\s+$", t[:m.start()], re.I):
-        m = None                                   # "I speak English at work" is a fact, not an instruction
-    if m:
-        lang = (m.group(2) or m.group(3) or "").lower()
-        if lang == "english":
-            return Instruction("Reply in English (he asked for it), even if he mixes in Hindi words.",
-                               "language", "talk_style", "Got it. English from now on.")
-        if lang in ("hindi", "hinglish"):
-            return Instruction("Reply in Hinglish (Hindi + English, in Roman script).",
-                               "language", "talk_style", "Theek hai, Hinglish mein baat karte hain.")
+        pass                                       # "I speak English at work" is a fact, not an instruction
+    elif c := L.command(t):
+        op, lg = c                                 # D34: only an explicit lock is saved; "talk in X" just switches
+        if op == "lock":
+            return Instruction(L.lock_directive(lg), "language", "talk_style", L.phrase("locked", lg), lang_cmd=c)
+        if op == "unlock":
+            return Instruction("", "language", "talk_style", L.phrase("unlocked", "english"), lang_cmd=c)
+        return Instruction("", "language", "talk_style", L.phrase("switched", lg), lang_cmd=c)
     if SHORT_RX.search(t):
         return Instruction("Keep replies short: one or two sentences unless he asks for detail.",
                            "brevity", "talk_style", "Got it. Short from now on.")
@@ -72,6 +73,15 @@ def apply(ins: Instruction, episode_ids: list[int]) -> str:
     from .mdsync import render_all, sync
     from .sleep import apply_directive
     sync()                                         # never overwrite his own USER.md edits
+    if ins.lang_cmd and ins.lang_cmd[0] in ("switch", "unlock"):
+        from ..db import q                         # a switch/unlock ends any language rule (lock or old-style)
+        from .lang import LANG_RULE_RX
+        rows = q("SELECT id, directive FROM user_directives WHERE status='active' AND category='talk_style'")
+        ids = [r["id"] for r in rows if r["directive"].startswith("Language lock:") or LANG_RULE_RX.search(r["directive"])]
+        if ids:
+            q("UPDATE user_directives SET status='superseded' WHERE id = ANY(%s)", (ids,))
+        render_all()
+        return ins.ack
     apply_directive({"directive": ins.directive, "category": ins.category, "supersession_key": ins.key}, episode_ids)
     if ins.call_me:
         profile.set("call_me", ins.call_me, "owner_edit")

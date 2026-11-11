@@ -201,7 +201,7 @@ class Overlay:
 
     def _row_clicked(self, i: int) -> None:
         lay = self.card.lay
-        if lay is None or not (0 <= i < lay.n) or not lay.rows[i].tickable:
+        if lay is None or not (0 <= i < lay.n) or not lay.rows[i].tickable or i in self.card.gone:
             return
         row = lay.rows[i]
         done = not row.done
