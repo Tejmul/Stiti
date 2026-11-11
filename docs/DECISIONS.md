@@ -535,3 +535,18 @@ from a 6-voice lineup; then: "there should be two voices: one for Hinglish and a
   never in code — and apply to stock Kokoro voices only (goonj already says Indian names right).
 - CLI: `stiti voices use-hi <voice|off>`, `stiti voices speed 1.05`, `stiti voices say-as <word> <how>`. Fixed: `try` /
   `use` treated every non-`af_` voice as a goonj persona (hf_beta broke). Tests: `tests/voice_pick_eval.py` (21).
+
+## D34: Reply in the language he speaks — English · Hinglish · Hindi · Telugu · Tenglish (2026-11-11)
+
+**Ask:** mirror his language turn by turn; "just talk in English, don't use any other language" locks it; saying the
+language switches it. Research: `docs/research/language_switching.md` (11 options, Whisper LID measured on the M2).
+
+- Hearing: Whisper-tiny language ID (32 ms), pooled into his three base languages → Telugu turns are transcribed as
+  Telugu (Groq large-v3 `language=te`, else local) instead of being translated into English by the English-pinned STT.
+- Deciding (local, < 1 ms, `brain/lang.py`): lock › "talk in X" › this message's language › previous one for "ok/bye".
+  Roman Hindi → Hinglish (casual), Devanagari → Hindi. Only an explicit lock is saved (`Language lock: …`); one-off
+  "talk in English" and confusion no longer create forever-rules (the old D25 auto-rule is gone), and old-style
+  language rules are kept out of the LLM's MUST lines.
+- Speaking: script routing — Telugu → `voice_te` (owner: hf_alpha), Hindi/Hinglish → `voice_hi` (hf_alpha), English →
+  `voice` (af_jessica); Telugu/Tenglish phonemes via espeak `te` + `en-us` (`voice/telugu.py`).
+- Tests: `tests/lang_switch_eval.py` (50, incl. his live flow); persona/conversation tests updated to the new rules.

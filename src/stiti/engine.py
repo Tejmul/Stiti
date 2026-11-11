@@ -112,6 +112,8 @@ class Engine:
         self._snap: dict | None = None                      # engine state before it
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
+        self.lang_prev: str | None = None                   # her last reply language (D34: "ok"/"bye" keep it)
+        self.lang_pref: str | None = None                   # his "talk in Telugu" (held while he speaks it / English)
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
@@ -425,19 +427,17 @@ class Engine:
         talk = [r["directive"] for r in q(
             "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style' ORDER BY id")]
         rule_saved = False
-        if confused and strategy.is_hinglish(self.last_reply_text or "") and not strategy.is_hinglish(text) \
-                and strategy.directive_language(talk) != "english":
-            # her Hinglish lost him and he speaks English: the evidence is clear — English from now on, saved now
-            instructions.apply(instructions.parse("talk in English"), [i for i in (self.last_reply_ep, user_ep) if i])
-            talk = [r["directive"] for r in q(
-                "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style' ORDER BY id")]
-            rule_saved = True
+        if confused and strategy.is_hinglish(self.last_reply_text or "") and not strategy.is_hinglish(text):
+            # her Hinglish lost him and he speaks English: drop any "talk in Hinglish" — mirroring answers in English
+            # (D34: no forever-rule from one confused moment; only "just talk in English" locks it)
+            self.lang_pref = None
         elif confused:
             learning.note_confusion(text)
 
         def pick(dom: str) -> strategy.Strategy:
             s = strategy.choose(text, domain=dom, mood=emo.label, mood_conf=emo.conf, arousal=emo.arousal,
                                 corrected=corrected, last_reply=self.last_reply_text, directives=talk,
+                                prev_lang=self.lang_prev, pref_lang=self.lang_pref,
                                 crisis_recent=time.time() - self.crisis_at < 1800,
                                 pending_offer=(self.last_reply_text or "").rstrip().endswith("?"),
                                 voice_mood=bool(emo.voice_label) and emo.voice_conf >= 0.5)
@@ -450,7 +450,8 @@ class Engine:
             reply = strategy.crisis_reply(strat.lang)
             self.crisis_at = time.time()
         elif after_offer:
-            reply = "Okay, I'm here." if strat.lang == "english" else "Theek hai, main yahin hoon."
+            from .brain import lang as lang_mod
+            reply = lang_mod.phrase("here", strat.lang)
         elif taught:
             vocab.add(taught.term, taught.heard, taught.source)
             reply = vocab.confirm(taught)
@@ -475,6 +476,10 @@ class Engine:
         elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
             reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
             strat = strategy.make("REPAIR" if corrected else "DO", strat.lang)
+            if inst.lang_cmd:                   # lock / unlock / "talk in Telugu": the ack is already in that language
+                op, lg = inst.lang_cmd
+                self.lang_pref = lg if op == "switch" else None
+                strat = strategy.make("DO", lg or "english")
         elif strat.name == "QUIET" and self.onboarding is None and self.chunker is None and self.woop is None \
                 and self.pending is None:
             reply = strategy.quiet_reply(text, strat.lang, self.last_reply_text)
@@ -724,6 +729,9 @@ class Engine:
         self.last_turn_id, self.last_lesson_ids = turn["id"], lesson_ids
         self.last_reply_text, self.last_user_text, self.last_route = reply, text, route
         self.last_reply_full, self.last_strategy = None, strat
+        self.lang_prev = strat.lang
+        if self.lang_pref and strat.lang != self.lang_pref:
+            self.lang_pref = None                       # he moved on to another language: mirror him again
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)

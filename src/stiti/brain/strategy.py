@@ -95,23 +95,16 @@ def is_hinglish(text: str) -> bool:
 
 
 def directive_language(directives: list[str]) -> str | None:
-    """An active talk-style directive about language wins over everything (newest last in the list)."""
-    for d in reversed(directives or []):
-        dl = d.lower()
-        m = re.search(r"\b(?:reply|talk|speak|respond|answer)\s+(?:only\s+)?in\s+(english|hinglish|hindi)\b(?P<rest>.{0,12})", dl)
-        if m:
-            if re.match(r"\s*(when|if|whenever)\b", m.group("rest")):
-                continue                   # "Reply in Hinglish when I speak Hinglish" = mirror him, not a fixed language
-            return "english" if m.group(1) == "english" else "hinglish"
-    return None
+    """The language he locked ("just talk in English, no other language"), or None (brain/lang.py)."""
+    from . import lang
+    return lang.locked(directives)
 
 
-def reply_lang(text: str, directives: list[str] | None = None) -> str:
-    """English by default. A language directive wins. Otherwise Hinglish only if THIS message is clearly Hinglish."""
-    forced = directive_language(directives or [])
-    if forced:
-        return forced
-    return "hinglish" if is_hinglish(text) else "english"
+def reply_lang(text: str, directives: list[str] | None = None, prev: str | None = None, pref: str | None = None) -> str:
+    """Mirror him (D34): the language of THIS message — english / hinglish / hindi / telugu / tenglish — unless he
+    locked one; his explicit "talk in Telugu" holds while he speaks Telugu or English; "ok"/"bye" keep the last one."""
+    from . import lang
+    return lang.decide(text, prev=prev, lock=lang.locked(directives), pref=pref)
 
 
 def asks_about_past(text: str, domain: str | None = None) -> bool:
@@ -186,12 +179,13 @@ def make(name: str, lang: str = "english", **over) -> Strategy:
 def choose(text: str, *, domain: str | None, mood: str | None = None, mood_conf: float = 0.0,
            arousal: float = 0.3, corrected: bool = False, last_reply: str | None = None,
            directives: list[str] | None = None, live: bool = False, crisis_recent: bool = False,
-           pending_offer: bool = False, voice_mood: bool = False) -> Strategy:
+           pending_offer: bool = False, voice_mood: bool = False, prev_lang: str | None = None,
+           pref_lang: str | None = None) -> Strategy:
     """Pick the reply strategy for this turn. Pure function of local signals, < 1 ms.
     A low mood alone switches to LISTEN only when the VOICE says so too (text-only mood is ~50% reliable); in text,
     his words must show it (venting, bad news)."""
     t = (text or "").strip()
-    lang = reply_lang(t, directives)
+    lang = reply_lang(t, directives, prev=prev_lang, pref=pref_lang)
     words = len(t.split())
     dirs = " ".join(directives or []).lower()
     s: Strategy
@@ -237,7 +231,7 @@ def choose(text: str, *, domain: str | None, mood: str | None = None, mood_conf:
 
 # ---------------------------------------------------------------- fixed local replies (no LLM)
 def crisis_reply(lang: str = "english") -> str:
-    if lang == "hinglish":
+    if lang in ("hinglish", "hindi"):
         return ("Mujhe khushi hai ki tumne mujhe bataya. Please abhi Tele-MANAS ko call karo — 14416, free hai, "
                 "24 ghante. Kisi apne ko bhi bula lo. Main yahin hoon.")
     return ("I'm really glad you told me. Please call Tele-MANAS now — 14416, it's free and open 24×7. "
@@ -246,8 +240,9 @@ def crisis_reply(lang: str = "english") -> str:
 
 def quiet_reply(text: str, lang: str = "english", last: str | None = None) -> str:
     if OPENER_RX.match(text.strip()):
-        return "Haan?" if lang == "hinglish" else "Mm?"
-    opts = ["Theek.", "Hmm."] if lang == "hinglish" else ["Cool.", "Mm-hm.", "Okay."]
+        return {"hinglish": "Haan?", "hindi": "हाँ?", "telugu": "హా?", "tenglish": "హా?"}.get(lang, "Mm?")
+    opts = {"hinglish": ["Theek.", "Hmm."], "hindi": ["ठीक है।", "हम्म।"], "telugu": ["సరే.", "హ్మ్."],
+            "tenglish": ["Okay.", "సరే."]}.get(lang, ["Cool.", "Mm-hm.", "Okay."])
     return next((o for o in opts if o != last), opts[0])
 
 

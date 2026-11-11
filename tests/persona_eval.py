@@ -89,16 +89,22 @@ def run(eng: Engine, text: str, bad: str = "Okay.", **kw) -> str:
 print("A. offline — local decisions + enforcement against the doc's 'Bad' replies")
 e = Engine("voice")
 
-# 1 — "Bro talk in English." after a Hinglish reply → saved directive, short ack, holds in a fresh Engine
+# 1 — "Bro talk in English." after a Hinglish reply → switches to English now (D34: a switch, not a forever-rule);
+#     "just talk in English, no other language" → a saved lock that holds in a fresh Engine, even against Hinglish
 e.last_reply_text = "Haan yaar, main dekh rahi hoon. Kya scene hai aaj?"
 r1 = run(e, "Bro talk in English.")
 SAMPLES.append(("1", "Bro talk in English.", r1))
 dirs = [x["directive"] for x in q("SELECT directive FROM user_directives WHERE status='active' AND supersession_key='language'")]
-check("1 'talk in English' → directive saved", any("English" in d for d in dirs), str(dirs))
+check("1 'talk in English' → switches, saves no forever-rule", not dirs and e.lang_pref == "english", str(dirs))
 check("1 ack ≤ 8 words, no question, no Hindi", words(r1) <= 8 and qs(r1) == 0 and hindi(r1) == 0, r1)
+run(e, "So what should I do this evening?", bad="Finish the DBMS notes.")
+check("1 …and the next English line stays English", e.last_strategy.lang == "english", str(e.last_debug.get("lang")))
+r1b = run(e, "Just talk in English. Don't talk in any other language right now.")
+dirs = [x["directive"] for x in q("SELECT directive FROM user_directives WHERE status='active' AND supersession_key='language'")]
+check("1 'just talk in English, no other language' → lock saved", any(d.startswith("Language lock") for d in dirs), str(dirs))
 e2 = Engine("voice")                                       # fresh session ("restart")
 run(e2, "yaar aaj kya plan hai mera, kuch batao", bad="Aaj ka plan simple hai.")
-check("1 fresh Engine: language decided = English (directive beats his Hinglish)",
+check("1 fresh Engine: language decided = English (the lock beats his Hinglish)",
       e2.last_strategy is not None and e2.last_strategy.lang == "english", str(e2.last_debug.get("lang")))
 check("1 briefing tells the LLM 'reply in English'", "reply in English" in FAKE["system"], FAKE["system"][-900:])
 q("UPDATE user_directives SET status='superseded' WHERE supersession_key='language'")
@@ -243,10 +249,10 @@ e3 = Engine("voice")
 e3.last_reply_text = "Arre, soch rahi hoon, kya tum ek puzzle ho?"
 e3.last_reply_ep = memory.add_episode(e3.session, "stiti", e3.last_reply_text)
 r_rep = run(e3, "I didn't understand, what language is this?", "Sorry — I asked what's on your mind. From now on, English.")
-check("REPAIR: confusion after a Hinglish reply → strategy REPAIR + English directive saved at once",
-      e3.last_debug.get("strategy") == "REPAIR" and one("SELECT 1 AS x FROM user_directives WHERE status='active' "
-                                                       "AND supersession_key='language' AND directive ILIKE '%%English%%'"), r_rep)
-check("REPAIR: the 'from now on' promise is allowed because the rule was really saved", "now on" in r_rep.lower(), r_rep)
+check("REPAIR: confusion after a Hinglish reply → strategy REPAIR, replied in English, no forever-rule (D34)",
+      e3.last_debug.get("strategy") == "REPAIR" and e3.last_strategy.lang == "english"
+      and not one("SELECT 1 AS x FROM user_directives WHERE status='active' AND supersession_key='language'"), r_rep)
+check("REPAIR: no 'from now on' promise, because no rule was saved", "now on" not in r_rep.lower(), r_rep)
 q("UPDATE user_directives SET status='superseded' WHERE supersession_key='language'")
 e4 = Engine("voice")
 r_p = run(e4, "I'm working on my DBMS notes today.", "Nice. From now on I'll remind you to take breaks.")

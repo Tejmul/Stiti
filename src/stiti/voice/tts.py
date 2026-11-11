@@ -13,11 +13,12 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 
 import numpy as np
 import sounddevice as sd
 
-from . import hinglish, models
+from . import hinglish, models, telugu
 from .models import path
 
 DEFAULT_VOICE = "goonj:en_priya"     # Stiti is "she"; the owner hasn't picked a persona yet (`stiti voices`)
@@ -58,6 +59,12 @@ def _profile(key: str) -> str | None:
 def hindi_voice_setting() -> str | None:
     """The voice for Hinglish / Hindi lines: STITI_VOICE_HI, then owner_profile `voice_hi`; None = same as English."""
     v = os.getenv("STITI_VOICE_HI") or _profile("voice_hi")
+    return v.strip() if v and v.strip() else None
+
+
+def telugu_voice_setting() -> str | None:
+    """The voice for Telugu / Tenglish lines: STITI_VOICE_TE, then owner_profile `voice_te`; None = the Hindi one."""
+    v = os.getenv("STITI_VOICE_TE") or _profile("voice_te")
     return v.strip() if v and v.strip() else None
 
 
@@ -135,10 +142,14 @@ class TTS:
     """Two voices (owner's choice, 2026-11-11): `voice` for English lines, `voice_hi` for Hinglish/Hindi lines
     (a line is Hinglish when hinglish.phonemize() finds 2+ Hindi words). No `voice_hi` = one voice for everything."""
 
-    def __init__(self, voice: str | None = None, voice_hi: str | None = None):
+    def __init__(self, voice: str | None = None, voice_hi: str | None = None, voice_te: str | None = None):
         self.engine, self.voice, self.k = _load(voice)
         hi = voice_hi if voice_hi is not None else (hindi_voice_setting() if voice is None else None)
-        self.hi = _load(hi) if hi else None             # (engine, voice, model) for Hinglish lines
+        self.hi = _load(hi) if hi else None             # (engine, voice, model) for Hinglish / Hindi lines
+        te = voice_te if voice_te is not None else (telugu_voice_setting() if voice is None else None)
+        self.te = _load(te) if te else None             # … for Telugu / Tenglish lines (else the Hindi one)
+        self._native: tuple[str, object] | None = None  # the Indian voice used last, and when (short English bits
+        self._native_t = 0.0                            # inside a Telugu/Hindi reply stay in that voice)
         self.base_speed = speed_setting()
         self.say_as = say_as_setting()
         self.lang = os.getenv("STITI_VOICE_LANG", "en-us")
@@ -164,12 +175,26 @@ class TTS:
             n += " + " + (f"goonj:{self.hi[1]}" if self.hi[0] == "goonj" else self.hi[1]) + " (Hinglish)"
         return n
 
+    NATIVE_HOLD_S = 4.0      # a short plain-English sentence this soon after a Telugu/Hindi one keeps that voice
+
     def pick(self, text: str) -> tuple[str, object, str | None]:
-        """(voice, model, phonemes-or-None) for this line: Hinglish → the Hinglish voice + mixed hi/en phonemes."""
+        """(voice, model, phonemes-or-None) for this line: Telugu script → the Telugu voice (te/en phonemes);
+        Hinglish / Devanagari → the Hindi voice (hi/en phonemes); English → the English voice."""
+        if telugu.has(text):
+            v = self.te or self.hi or (self.engine, self.voice, self.k)
+            return self._mark(v[1], v[2], telugu.phonemize(text, v[2].tokenizer))
         ph = hinglish.phonemize(text) if self.hindi_phonemes else None
         if ph and self.hi:
-            return self.hi[1], self.hi[2], ph
+            return self._mark(self.hi[1], self.hi[2], ph)
+        if (not ph and self._native and len(text.split()) <= 6
+                and time.monotonic() - self._native_t < self.NATIVE_HOLD_S):
+            self._native_t = time.monotonic()
+            return self._native[0], self._native[1], None     # "Okay." inside a Telugu reply: same voice
         return self.voice, self.k, ph
+
+    def _mark(self, voice: str, k, ph):
+        self._native, self._native_t = (voice, k), time.monotonic()
+        return voice, k, ph
 
     def synth(self, text: str, mood: str = "calm") -> tuple[np.ndarray, int]:
         """English line → the English voice; Hinglish line → the Hinglish voice (or the same one), Hindi words with

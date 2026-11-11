@@ -38,5 +38,6 @@ run "STT his words + Indian voice (D27)" tests/stt_voice_eval.py
 run "personal emotion + recorder (D28)" tests/emotion_learning_eval.py
 run "real-time reply (D29)"         tests/realtime_eval.py
 run "desktop overlay (pill + cards)" tests/overlay_eval.py
+run "language switching (D34)" tests/lang_switch_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 exit $fail
