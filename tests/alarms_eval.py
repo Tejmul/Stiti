@@ -114,6 +114,14 @@ for _ in range(alarms.MAX_SNOOZES):
     alarms.snooze(rid)
 check("snooze limit", "last snooze" in alarms.snooze(rid))
 
+# ---- a time in a question is not a reminder request (2026-11-11: two surprise 9 AM reminders)
+q("DELETE FROM intents")
+for t in ("Namaskar, aaj shaam ko main kya padhun?", "Okay, and what about tomorrow morning?",
+          "What should I focus on this evening?", "I have a meeting at 4 tomorrow"):
+    check(f"no reminder from: {t!r}", alarms.handle(t) is None and not q("SELECT 1 FROM intents"))
+check("an explicit ask still sets one", "reminder" in (alarms.handle("Remind me at 11 pm to call mom") or "").lower()
+      and len(q("SELECT 1 FROM intents")) == 1)
+
 q("DELETE FROM intents")
 print(f"alarms: {ok}/{ok + fail} checks passed")
 sys.exit(1 if fail else 0)

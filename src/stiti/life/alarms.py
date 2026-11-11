@@ -124,7 +124,16 @@ def handle(text: str) -> str | None:
     if re.search(r"\b(my|kitne|which|what|list|kaunse|show|upcoming|saare|all)\b.*\b(alarms?|reminders?|timers?)\b", t) \
             and not re.search(r"\bset\b", t):
         return list_all()
+    if not ASK_RX.search(t):
+        return None          # "what should I study this evening?" mentions a time; it is not asking for a reminder
     return create(text)
+
+
+# He has to ASK for one (2026-11-11: "Namaskar, aaj shaam ko main kya padhun?" and "what about tomorrow morning?"
+# each created a 9 AM reminder — any line the classifier tagged "time" with a parseable time became one).
+ASK_RX = re.compile(r"\b(remind\w*|alarms?|timers?|wake|jaga\w*|utha\w*|uth\w*|yaad|set|laga\w*|bajao|bajana|"
+                    r"notify|ping me|alert me|countdown)\b|\b\d+\s*(min|mins|minute|minutes|sec|second|seconds|hour|"
+                    r"hours|ghante|minat)\b.*\b(ka|ke|for|after|baad|mein|me)\b|\b(in|after)\s+\d+\s*(min|minute|hour)", re.I)
 
 
 def create(text: str, ref: datetime | None = None) -> str | None:
@@ -238,6 +247,16 @@ def move(text: str) -> str:
         return "Which one, and to what time? Say: move my 7 am alarm to 7:30."
     r = target[0]
     rule = r["rrule"]
+    tail = text.split(parts[1], 1)[1] if len(parts) > 1 else text
+    if r["fire_at"] and not re.search(r"\b(am|pm|a\.m\.|p\.m\.|subah|shaam|raat|dopahar|morning|evening|night|"
+                                      r"afternoon|noon)\b", tail, re.I):
+        old_h = r["fire_at"].astimezone(new.tzinfo).hour       # "move my 6:30 alarm to 7:15" stays in the morning
+        if old_h < 12 <= new.hour:
+            new -= timedelta(hours=12)
+        elif new.hour < 12 <= old_h:
+            new += timedelta(hours=12)
+        if not rule and new <= now():
+            new += timedelta(days=1)
     if rule:
         rule = re.sub(r"BYHOUR=\d+;BYMINUTE=\d+", f"BYHOUR={new.hour};BYMINUTE={new.minute}", rule)
         new = next_time(rule, now()) or new
