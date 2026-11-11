@@ -8,6 +8,8 @@ speech ends → "✓ Added" confirmation → hidden, in ~15 s. Ticking a row in 
 --shots DIR   screencapture the top-centre region in each phase (overlay-<phase>.png)
 --measure     print CPU % (this process + WindowServer) and memory (phys_footprint) per phase
 --all         also show the reminders and headlines cards
+--motion      only the card motion: a to-do added → one finished (✓, strike, folds away) → a reminder set → one
+              cancelled; with --shots, a burst of frames through each animation (overlay-<phase>-<ms>.png)
 """
 from __future__ import annotations
 
@@ -32,12 +34,17 @@ TODOS = {"kind": "todos", "title": "5 things to do", "ts": time.time(), "items":
     {"id": 3, "text": "Revise graph algorithms", "meta": "due tomorrow, 10 AM"},
     {"id": 4, "text": "Buy a notebook", "meta": ""},
     {"id": 5, "text": "Call home", "meta": ""}]}
-ADDED = {"kind": "todo_added", "title": "Added to your list", "ts": time.time(),
-         "items": [{"id": 6, "text": "Start the resume", "meta": "due today, 4 PM"}]}
+ADDED = {"kind": "todos", "title": "6 things to do", "ts": time.time(), "focus": {"op": "added", "ids": [6]},
+         "items": TODOS["items"] + [{"id": 6, "text": "Start the resume", "meta": "due today, 4 PM"}]}
+DONE = {"kind": "todos", "title": "4 things to do", "ts": time.time(), "focus": {"op": "done", "ids": [2]},
+        "items": TODOS["items"]}
 REMINDERS = {"kind": "reminders", "title": "Coming up", "ts": time.time(), "items": [
     {"id": 1, "text": "Alarm", "meta": "tomorrow, 7 AM · repeats"},
     {"id": 2, "text": "Stand-up call", "meta": "today, 5:30 PM"},
     {"id": 3, "text": "Drink water", "meta": "today, 6 PM · repeats"}]}
+SET = dict(REMINDERS, items=REMINDERS["items"] + [{"id": 4, "text": "Call mom", "meta": "today, 8 PM"}],
+           focus={"op": "set", "ids": [4]})
+CANCELLED = dict(REMINDERS, focus={"op": "cancelled", "ids": [2]})
 NEWS = {"kind": "news", "title": "AI updates", "ts": time.time(), "items": [
     {"id": None, "text": "A new open model tops the small-model leaderboard", "meta": "Hacker News"},
     {"id": None, "text": "Apple ships a Core ML update for on-device speech", "meta": "The Verge"},
@@ -107,7 +114,12 @@ class Demo:
                   ("speaking-card", h or 3.0, self._speak_card),
                   ("card-after-speech", h * 0.8 or 2.5, self._speech_end),
                   ("confirm", h * 0.8 or 2.6, self._confirm)]
-        if args.all:
+        if args.motion:
+            show = lambda c: (lambda: (overlay.hide_card(), overlay.show_card(c, speaking=False)))  # noqa: E731
+            phases = [("idle", 0.8, lambda: overlay.set_state("idle")),
+                      ("added", 3.0, show(ADDED)), ("done", 3.2, show(DONE)),
+                      ("reminder-set", 3.0, show(SET)), ("reminder-cancelled", 3.2, show(CANCELLED))]
+        elif args.all:
             phases += [("reminders", h or 2.5, lambda: overlay.show_card(REMINDERS, speaking=False)),
                        ("news", h or 2.5, lambda: overlay.show_card(NEWS, speaking=False))]
         phases += [("hidden", 1.2, self._sleep)]
@@ -152,7 +164,11 @@ class Demo:
         r0, w0 = self._cpu(), _cputime(self.ws) if (self.args.measure and self.ws) else None
         t0 = time.monotonic()
         fn()
-        if self.args.shots:
+        if self.args.shots and self.args.motion and name != "idle":
+            for ms in (150, 450, 800, 1100, 1500, 2000, 2700):
+                if ms / 1000 < secs:
+                    AppHelper.callLater(ms / 1000, self._shot, f"{name}-{ms:04d}")
+        elif self.args.shots:
             AppHelper.callLater(min(secs * 0.6, secs - 0.2), self._shot, name)
         AppHelper.callLater(secs, self._end_phase, i, name, t0, r0, w0)
 
@@ -197,12 +213,14 @@ def main():
     ap.add_argument("--shots", default=None)
     ap.add_argument("--measure", action="store_true")
     ap.add_argument("--all", action="store_true")
+    ap.add_argument("--motion", action="store_true")
     args = ap.parse_args()
     front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
     app = AppKit.NSApplication.sharedApplication()
     app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)   # like Stiti.app (LSUIElement)
     if args.shots:
         os.makedirs(args.shots, exist_ok=True)
+        os.environ["STITI_OVERLAY_DEMO_CAPTURE"] = "1"   # demo cards hold fake data; the real app is never captured
     demo = Demo(args)
 
     def go():

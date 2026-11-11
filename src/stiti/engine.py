@@ -72,6 +72,9 @@ HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek secon
                      r"let me think|soch(ne do| ke batata hoon| ke batati hoon| raha hoon| rahi hoon)|"
                      r"hmm+,? let me think)[.!…, ]*$", re.I)
 # "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
+TEACH_ASK_S = 90.0      # after "what should I teach you?", his next short line is the topic …
+COMMAND_RX = re.compile(r"\b(add|remind\w*|alarms?|to-?do|todos?|tasks?|delete|list|timers?)\b", re.I)   # … unless a command
+CANCEL_ASK_RX = re.compile(r"^\W*(never ?mind|cancel|leave it|forget it|no|nahi|rehne do|chhodo|nothing)\W*$", re.I)
 NOTHING_RX = re.compile(r"^\s*(no|nope|nah|nahi|nahin|not yet|ok|okay|alright|nothing|nothing else|that'?s (it|all)( for now)?|bas|bas itna|"
                         r"no thanks|no thank you|all good|i'?m good|abhi nahi|kuch nahi|that'?s it for now|nope that'?s it)[.!]*\s*$", re.I)
 ASKED_NAME_RX = re.compile(r"\b(?:about|remember|yaad hai|of)\s+(?P<name>[A-Z][a-z]{2,20})\b")
@@ -117,6 +120,7 @@ class Engine:
         self._snap: dict | None = None                      # engine state before it
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
+        self.teach_ask_at = 0.0                             # she asked "what should I teach you?" (tutor launch)
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
@@ -290,7 +294,8 @@ class Engine:
         if any(checks):
             return "action"
         from .connectors.mac import MUSIC_RX
-        if MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None or _awaiting_label():
+        if (MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None or _awaiting_label()
+                or time.time() - self.teach_ask_at < TEACH_ASK_S):
             return "action"
         if live.detect(t, known=_names_his_person) is not None:
             return "live"
@@ -395,7 +400,11 @@ class Engine:
         route, reply, info, recalled_ids, lesson_ids, brief_tokens, brief = "fast_path", None, {}, [], [], None, None
         live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
 
+        if self.teach_ask_at and (COMMAND_RX.search(text) or domain in ("todo", "time")):
+            self.teach_ask_at = 0.0     # he moved on to a command: drop the pending "what should I teach you?"
         # ---- fast paths (no LLM) ----
+        from . import cards
+        cards.take()                                    # forget a change noted outside a turn (scheduler, web)
         low = psych.minimum_viable_day(emo.label)
         from .brain import instructions, onboarding
         from .life import proactive
@@ -511,8 +520,15 @@ class Engine:
             self.chunker = chunker.Chunker(chunker.goal_from(text))
             reply = self.chunker.start()
         elif (tr := _tutor_request(text)) is not None:
-            from .tutor import launch
+            from .tutor import ASK_TOPIC, launch
             reply = launch(*tr)
+            self.teach_ask_at = time.time() if reply == ASK_TOPIC else 0.0
+        elif (time.time() - self.teach_ask_at < TEACH_ASK_S and len(text.split()) <= 10
+              and (domain != "control" or CANCEL_ASK_RX.match(text))):
+            from .tutor import launch
+            self.teach_ask_at = 0.0             # "what should I teach you?" → "lexical analysis" (or "never mind")
+            reply = ("Okay, another time." if NOTHING_RX.match(text) or re.search(r"\b(never ?mind|cancel|leave it|"
+                     r"rehne do|chhodo)\b", text, re.I) else launch(text.strip(" .?!")))
         elif (self.live_last and time.time() - self.live_last[2] < 300 and live.MORE_RX.match(text)
               and re.search(r"\b(more|aur)\b", self.last_reply_text or "", re.I)):
             live_res, live_from, _ = self.live_last             # "want more?" → "haan": next items, no refetch
@@ -674,7 +690,7 @@ class Engine:
                 if privacy >= 2:
                     reply = "That sounds private, so I'm keeping it on this Mac. "
                 elif time.time() - self._offline_said_at > 3600:
-                    reply = "My thinking brain (cloud LLM) is offline right now. "
+                    reply = "My head's a bit foggy right now, so I can't think that one through. "
                     self._offline_said_at = time.time()
                 else:
                     reply = ""
@@ -690,7 +706,7 @@ class Engine:
                     m = mems[0]
                     reply += f"Here's what I remember from {m['occurred_at'].astimezone(CFG.tz):%d %b}: “{m['text']}”"
                 elif reply:
-                    reply += "I can still do todos, alarms and reminders, and I'm remembering everything you say."
+                    reply += "I can still handle your to-dos, alarms and reminders, and I'll remember what you said."
                 else:
                     reply = "Hmm, that one I can't answer right now — but I've noted it."
                 info = {"error": str(e)}
@@ -702,11 +718,11 @@ class Engine:
                 return self._incomplete(user_ep, mark)
             self.last_marker = mark
         if route == "llm" and not (self.pending is not None and reply.startswith("Should I go ahead")):
-            reply = psych.enforce(reply, strat)         # strategy shape, banned tics, questions, promises — in code
+            reply = psych.enforce(reply, strat, user_text=text)   # strategy shape, banned tics, machine-talk — in code
             if mems and not strategy.asks_about_past(text, domain):
                 gate.mark_volunteered(reply, mems)      # G4 clocks start only for memories she actually used
         else:
-            reply = psych.lint(reply)
+            reply = psych.lint(reply, user_text=text)
         m = re.search(r"\((task )?#(\d+)\)", reply)   # ids stay internal (undo); never spoken or shown
         self.last_action = ({"type": "task" if m.group(1) else "intent", "id": int(m.group(2))}
                             if m and route == "fast_path" else None)
@@ -735,8 +751,8 @@ class Engine:
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)
-            from . import cards
-            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from)
+            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from,
+                                            event=cards.take())
         except Exception as e:
             print(f"[cards] {e}")
             self.last_card = None

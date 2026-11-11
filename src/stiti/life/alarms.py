@@ -21,6 +21,7 @@ from datetime import datetime, timedelta
 
 from dateutil.rrule import rrulestr
 
+from .. import cards
 from ..config import CFG
 from ..db import one, q
 from ..fastpath.dates import WAKE, now, parse_when, readback, say_when, second_person
@@ -153,6 +154,7 @@ def create(text: str, ref: datetime | None = None) -> str | None:
     payload = {"say": say, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120]}
     row = one("""INSERT INTO intents(kind, fire_at, rrule, payload, user_set) VALUES (%s,%s,%s,%s,true) RETURNING id""",
               ("alarm" if kind in ("alarm", "timer") else "reminder", when, rule, json.dumps(payload)))
+    cards.note("set", "intent", row["id"])
     _last.update(id=row["id"], t=time.monotonic(), await_label=kind == "reminder" and not label)
     if kind != "timer" and os.getenv("STITI_EVENTKIT", "on") != "off":
         try:
@@ -294,6 +296,7 @@ def cancel(text: str) -> str:
                 eventkit.remove_reminder(r["ek_identifier"])
             except Exception:
                 pass
+    cards.note("cancelled", "intent", [r["id"] for r in targets])
     if len(targets) > 1:
         return f"Cancelled all {len(targets)}."
     return f"Cancelled the {_describe(targets[0])}."
@@ -323,6 +326,7 @@ def move(text: str) -> str:
         new = next_time(rule, now()) or new
     q("UPDATE intents SET fire_at=%s, rrule=%s WHERE id=%s", (new, rule, r["id"]))
     r["fire_at"], r["rrule"] = new, rule
+    cards.note("moved", "intent", r["id"])
     return f"Moved: {_describe(r)}."
 
 
