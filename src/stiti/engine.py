@@ -391,6 +391,8 @@ class Engine:
         live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
 
         # ---- fast paths (no LLM) ----
+        from . import cards
+        cards.take()                                    # forget a change noted outside a turn (scheduler, web)
         low = psych.minimum_viable_day(emo.label)
         from .brain import instructions, onboarding
         from .life import proactive
@@ -727,8 +729,8 @@ class Engine:
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)
-            from . import cards
-            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from)
+            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from,
+                                            event=cards.take())
         except Exception as e:
             print(f"[cards] {e}")
             self.last_card = None
