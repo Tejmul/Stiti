@@ -102,7 +102,8 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
                   for f in facts if f.get("valid") is not None and f["valid"].lower]
     doc_lines = [f"[D{d['chunk_id']} · doc “{d['title']}”{' › ' + d['section'] if d['section'] else ''}] "
                  f"{d['text'][:500]}" for d in (docs or [])]
-    how = [f"MUST: {d}" for d in talk_directives]
+    from . import lang as lang_mod
+    how = [f"MUST: {d}" for d in talk_directives if not lang_mod.is_language_rule(d)]
     how += [f"{'MUST NOT' if l['polarity'] == 'dont' else 'MUST'}: {l['guidance']} (lesson L{l['id']}, "
             f"{l['created_at']:%Y-%m-%d})" for l in lessons]
     if mvd:

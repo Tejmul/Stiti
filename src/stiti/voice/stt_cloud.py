@@ -110,14 +110,14 @@ def _flac(audio: np.ndarray) -> bytes:
     return buf.getvalue()
 
 
-def _call(audio: np.ndarray, prompt: str) -> CloudResult:
+def _call(audio: np.ndarray, prompt: str, language: str = "en") -> CloudResult:
     from .. import router
     client = router._client("groq")
     if client is None:
         raise RuntimeError("no groq key")
     t = time.perf_counter()
     r = client.with_options(timeout=5.0).audio.transcriptions.create(
-        model=MODEL, file=("turn.flac", _flac(audio)), language="en", prompt=trim_prompt(prompt),
+        model=MODEL, file=("turn.flac", _flac(audio)), language=language, prompt=trim_prompt(prompt),
         temperature=0.0, response_format="verbose_json")
     ms = (time.perf_counter() - t) * 1000
     segs = [s.model_dump() if hasattr(s, "model_dump") else dict(s) for s in (getattr(r, "segments", None) or [])]
@@ -128,14 +128,16 @@ def _call(audio: np.ndarray, prompt: str) -> CloudResult:
     return CloudResult((getattr(r, "text", "") or "").strip(), ms, segs)
 
 
-def transcribe(audio: np.ndarray, prompt: str, cap_ms: float | None = None, call=None) -> CloudResult | None:
+def transcribe(audio: np.ndarray, prompt: str, cap_ms: float | None = None, call=None,
+               language: str = "en") -> CloudResult | None:
     """Re-transcribe one turn in the cloud. None when off, cooling down, too slow (cap) or failed: keep local."""
     if not enabled():
         return None
     global _last_use
     stats["calls"] += 1
     _last_use = time.monotonic()
-    fut = _pool.submit(call or _call, audio, prompt)
+    fut = _pool.submit(call or _call, audio, prompt) if language == "en" else \
+        _pool.submit(call or _call, audio, prompt, language)
     try:
         res = fut.result(timeout=(cap_ms if cap_ms is not None else CAP_MS) / 1000)
         stats["ok"] += 1

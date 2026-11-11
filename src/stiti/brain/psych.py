@@ -228,7 +228,8 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
         if dropped:
             final = human_fallback(user_text, dropped)
         else:
-            final = "Samajh gayi." if s.lang == "hinglish" else "Got it."
+            from . import lang as lang_mod
+            final = lang_mod.phrase("got_it", s.lang)
     return final
 
 
@@ -328,9 +329,8 @@ def minimum_viable_day(mood: str | None) -> bool:
 
 def rules_block(s, *, can_do: str, rule_saved: bool = False) -> str:
     """[THIS TURN] + [REPLY RULES]: replaces the old CONTRACT. Every value is decided by Stiti, not the LLM."""
-    lang = ("Hinglish (Hindi + English in Roman script, no Devanagari). You are female: \"main dekh rahi hoon\", "
-            "\"samajh gayi\", \"karungi\" — never raha/gaya/karunga" if s.lang == "hinglish"
-            else "English. Not Hindi, not Hinglish — even if earlier turns were")
+    from . import lang as lang_mod
+    lang = lang_mod.PROMPT.get(s.lang, lang_mod.PROMPT["english"])
     promise = ("A rule was just saved, so you may say \"from now on\"." if rule_saved
                else "Don't promise future behaviour (\"from now on…\") — nothing was saved.")
     return "\n".join([
