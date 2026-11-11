@@ -186,6 +186,11 @@ check("cancel → reminders card still shows it (to cross out), focus=cancelled,
       ev and ev["op"] == "cancelled" and c and c["items"] and c["focus"]["op"] == "cancelled"
       and c["title"] == "Nothing coming up", f"{r!r} {c}")
 
+q("""INSERT INTO intents(kind, fire_at, payload, user_set, fires_left) VALUES
+      ('checkin', now() + interval '1 day', '{"say": "How did the interview go?", "thing": "interview"}', false, 1)""")
+check("her private check-ins ('How did the interview go?') never show on the reminders card",
+      not any("interview" in i["text"].lower() for i in cards.reminders()["items"]))
+
 # ---- through the engine (what the voice loop puts on screen)
 from stiti.engine import Engine                                        # noqa: E402
 reset()

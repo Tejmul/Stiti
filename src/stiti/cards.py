@@ -100,7 +100,7 @@ def reminders(limit: int = 6, focus: dict | None = None) -> dict:
     ids = list((focus or {}).get("ids") or [])
     cols = "id, kind, fire_at, rrule, COALESCE(payload->>'say', payload->>'text') AS text"
     rows = q(f"""SELECT {cols} FROM intents WHERE state IN ('pending','armed') AND fire_at IS NOT NULL AND fire_at > now()
-                 ORDER BY fire_at LIMIT %s""", (limit,))
+                 AND kind IN ('alarm', 'reminder') ORDER BY fire_at LIMIT %s""", (limit,))   # not her private check-ins
     extra = q(f"SELECT {cols} FROM intents WHERE id = ANY(%s) ORDER BY fire_at", (ids,)) if ids else []
     rows = _with_focus(list(rows), list(extra), ids)
     live = [r for r in rows if not (focus and focus["op"] == "cancelled" and r["id"] in ids)]
