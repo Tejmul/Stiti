@@ -18,13 +18,15 @@ from .dates import now, parse_when, readback, say_when, second_person
 LIST_RX = re.compile(r"\b(what are my|show( me)?|list|kya kya|pending|bacha|baaki|kaunse|my (todos?|tasks)|"
                      r"todos?\s*\??$|tasks?\s*\??$|(todos?|tasks?|kaam|list)\b.*\b(kya|dikhao|batao|sunao|hain|hai)\b)", re.I)
 DONE_RX = re.compile(r"\b(mark|complete|completed|done|finish(ed)?|ho gaya|ho gya|kar liya|khatam)\b", re.I)
+LEAD = r"(?:(?:also|and|okay|ok|aur|plus|then|oh and|haan|one more( thing)?|bhi)[,]?\s+)*"   # "Also add …"
 ADD_TRIGGERS = re.compile(
-    r"^(please\s+)?(add( a)?( new)?( todo| task| to-?do)?( to my (list|todos?))?|new (todo|task)|naya (task|todo)|"
+    r"^" + LEAD + r"(please\s+)?(add( a)?( new)?( todo| task| to-?do)?( to my (list|todos?))?|new (todo|task)|naya (task|todo)|"
     r"todo|task|remind me to do)\s*[:\-]?\s*|\s*(to my (todo|task)s?( list)?|to (the|my) list|"
     r"(todo|list|task) (mein|me) (daal|dal|add kar)( do| dena)?|daal do|dal do|add kar do|add karo)\s*$", re.I)
 
 
-ADD_START = re.compile(r"^(please\s+)?(add|new (todo|task)|naya (task|todo)|todo|task)\b|\b(daal|dal) do\b|\badd kar", re.I)
+ADD_START = re.compile(r"^" + LEAD + r"(please\s+)?(add|new (todo|task)|naya (task|todo)|todo|task)\b|\b(daal|dal) do\b|"
+                       r"\badd kar", re.I)
 DAYWORDS = re.compile(r"\b(kal|aaj|parso|tomorrow|today|ke liye|for)\b", re.I)
 
 
@@ -88,9 +90,13 @@ def todo_list(limit: int = 3) -> str:
     total = one("SELECT count(*) n FROM tasks WHERE status='open'")["n"]
     if not rows:
         return "Your list is clear. Nothing pending."
-    items = [f"{r['title']}" + (f" (due {readback(r['due'])})" if r["due"] else "") for r in rows[:limit]]
-    more = f" …and {total - limit} more — say “more” to hear them." if total > limit else ""
-    return f"{total} open. Top {min(limit, total)}: " + "; ".join(items) + "." + more
+    items = [f"{second_person(r['title'])}" + (f" ({say_when(r['due'])})" if r["due"] else "") for r in rows[:limit]]
+    said = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
+    if total == 1:
+        return f"Just one: {said}."                      # spoken like a person, not "1 open. Top 1: …"
+    if total <= limit:
+        return f"You have {total}: {said}."
+    return f"You have {total}. Top {limit}: {said}. Say “more” for the rest."
 
 
 def _todo_remove(text: str) -> str | None:

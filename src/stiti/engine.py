@@ -158,8 +158,10 @@ class Engine:
         by_name = {t.name: t for t in tools}
         tainted = False
         info = {}
+        ran: list[str] = []                     # tools that really ran (an "Added …" with none ran is a lie)
         for _ in range(3):
             info = router.complete(msgs, privacy=privacy, tools=[t.schema() for t in tools] or None)
+            info["ran_tools"] = ran
             if not info.get("tool_calls"):
                 return info["text"], info
             msgs.append({"role": "assistant", "content": info["text"] or None, "tool_calls": [
@@ -175,6 +177,7 @@ class Engine:
                     res = json.dumps({"error": "unknown tool"})
                 else:
                     res, needs = registry.run(tool, args, tainted)
+                    ran.append(tool.name)
                     tainted = tainted or tool.untrusted_output
                     if needs:
                         self.pending = (tool, args)
@@ -722,6 +725,9 @@ class Engine:
             if turnmark.is_incomplete(mark) and markers:
                 return self._incomplete(user_ep, mark)
             self.last_marker = mark
+        if (route == "llm" and not info.get("ran_tools") and psych.CLAIM_RX.match(reply or "")
+                and not (self.pending is not None and reply.startswith("Should I go ahead"))):
+            reply = psych.HONEST_NOT_DONE           # the LLM said "Added …" but nothing was added (2026-11-11 audit)
         if route == "llm" and not (self.pending is not None and reply.startswith("Should I go ahead")):
             reply = psych.enforce(reply, strat, user_text=text)   # strategy shape, banned tics, machine-talk — in code
             if mems and not strategy.asks_about_past(text, domain):

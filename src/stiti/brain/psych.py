@@ -76,6 +76,12 @@ MACHINE = [
     r"\bdoes not compute\b", r"\bi('?m| am) unable to (process|parse|compute)\b",
 ]
 MACHINE_RX = re.compile("|".join(MACHINE), re.I)
+# She claims she DID something ("Added call the placement cell.", "Reminder set for 4.") — only true when a fast path
+# or a tool really did it. Streamed replies never run tools, so there a claim is always false (2026-11-11 audit).
+CLAIM_RX = re.compile(r"^\W*(done\s*[—–-]\s*(added|set|saved|removed|cancelled)\b|added\b(?! bonus)|i'?ve (added|set|saved|created|put|scheduled|booked|sent|cancelled)\b|"
+                      r"i (added|saved|scheduled|booked|sent)\b|(your )?(reminder|alarm|timer) (is )?(set|added|saved)\b|"
+                      r"set (a|the|your) (reminder|alarm|timer)\b|(saved|scheduled|sent|booked)\b(?! (you|me|us)\b))", re.I)
+HONEST_NOT_DONE = "I haven't saved that yet. Say “add it to my list” or “remind me at …” and I will."
 LONE_DONE = re.compile(r"(all )?done[.!]?", re.I)
 NOT_HEARD_RX = re.compile(r"\b(recognize|process|compute|invalid)\b", re.I)
 ASKED_ABOUT_HER = re.compile(r"\b(how about you|what about you|and you|how are you|how r u|how'?re you|how (is|was) your day|"
@@ -362,6 +368,9 @@ class StreamLint:
         if self.skip:                                        # the rest of a dropped / cut sentence
             if ends:
                 self.skip, self.open = False, False
+            return None
+        if not cont and CLAIM_RX.match(piece):         # a streamed reply never ran a tool: "Added …" would be a lie
+            self.skip = not ends
             return None
         if cont:
             if BANNED_RX.search(piece) or MACHINE_RX.search(piece):
