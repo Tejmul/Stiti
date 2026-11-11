@@ -210,7 +210,7 @@ def fix_ampm(text: str) -> str | None:
     from .. import cards
     if hasattr(cards, "note"):                     # the on-screen card shows the move (D30)
         cards.note("moved", "intent", r["id"])
-    return f"Fixed — {r['payload'].get('kind') or 'reminder'} {readback(new)}. (#{r['id']})"
+    return f"Fixed — {r['payload'].get('kind') or 'reminder'} {say_when(new)}. (#{r['id']})"
 
 
 def awaiting_label() -> bool:
@@ -229,7 +229,7 @@ def set_label(text: str) -> str:
     p = dict(r["payload"])
     p.update(label=label, say=label)
     q("UPDATE intents SET payload=%s WHERE id=%s", (json.dumps(p), r["id"]))
-    return f"Got it — {second_person(label)}, {readback(r['fire_at'])}. (#{r['id']})"
+    return f"Got it — {second_person(label)}, {say_when(r['fire_at'].astimezone(CFG.tz))}. (#{r['id']})"
 
 
 def _upcoming(kinds=("alarm", "reminder")) -> list[dict]:
@@ -243,7 +243,7 @@ def _describe(r: dict) -> str:
     k = p.get("kind") or r["kind"]
     rep = f" ({_rule_words(r['rrule'])})" if r.get("rrule") else ""
     about = f" — {p['label']}" if k == "reminder" and p.get("label") else ""
-    return f"{k} {readback(r['fire_at'])}{rep}{about} (#{r['id']})"
+    return f"{k} {say_when(r['fire_at'].astimezone(CFG.tz))}{rep}{about} (#{r['id']})"   # spoken: "today at 9 PM"
 
 
 def list_all(limit: int = 6) -> str:
