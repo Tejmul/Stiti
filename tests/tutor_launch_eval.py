@@ -44,9 +44,9 @@ subprocess.Popen = fake_popen
 tutor.LOCK.unlink(missing_ok=True)
 
 print("one lesson, however many times it's asked")
-r1 = tutor.launch("lexical analysis")
-r2 = tutor.launch("lexical analysis in compiler design")
-r3 = tutor.launch("lexical analysis using whiteboard")
+r1 = tutor.launch("compilers")                     # a compiler topic opens with or without an LLM key (CI has none)
+r2 = tutor.launch("compilers, lexical analysis")
+r3 = tutor.launch("compilers using whiteboard")
 check("three quick requests → ONE lesson process", len(spawned) == 1, f"{len(spawned)} spawned")
 check("the lock is taken at launch (lesson still loading)", tutor.tutor_active())
 check("2nd and 3rd say it's already open", r2 == r3 == "Your lesson's already open on the whiteboard.", f"{r2!r}")
