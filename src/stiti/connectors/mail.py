@@ -75,7 +75,7 @@ def search(text: str, limit: int = 5) -> dict:
 
 def speak_unread(r: dict) -> str:
     if "error" in r:
-        return "Mail isn't connected yet — add a Gmail app password to .env."
+        return "I can't see your mail yet — it isn't set up."
     if not r["unread"]:
         return "Inbox zero — nothing unread. 🎉"
     items = "; ".join(f"{x['from']}: {x['subject']}" for x in r["latest"][:3])

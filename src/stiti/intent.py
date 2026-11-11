@@ -18,11 +18,12 @@ DOMAIN_EX = {
     "todo": ["add a task to my list", "put pay electricity bill on my todo", "todo mein daal do doodh lena",
              "show my pending tasks", "list mein kya bacha hai", "what do I still need to do",
              "mark laundry as done", "ye kaam ho gaya, done kar do", "naya task: report bhejna",
-             "remove buy shoes from my list", "kaunse kaam pending hain"],
+             "remove buy shoes from my list", "kaunse kaam pending hain", "naa list lo milk add cheyyi",
+             "ఆ పని అయిపోయింది"],
     "time": ["wake me up at 7", "alarm laga do 5:30 ka", "remind me tomorrow morning to call the bank",
              "yaad dila dena shaam ko dawai leni hai", "set a timer for 15 minutes", "20 minute ka timer",
              "remind me in an hour to drink water", "parso subah 8 baje alarm", "cancel my 6 am alarm",
-             "kal subah yaad dilana meeting hai"],
+             "kal subah yaad dilana meeting hai", "saayantram 5 ki gurthu cheyyi", "సాయంత్రం ఐదు గంటలకు గుర్తు చేయి"],
     "memory": ["what did I tell you about my brother", "when is Priya's wedding",
                "maine pichli baar kya kaha tha project ke baare mein", "do you remember my favourite food",
                "who is Rahul", "what happened at office last Monday", "mere dost ka naam kya tha jo Delhi gaya",
@@ -31,7 +32,15 @@ DOMAIN_EX = {
              "I'm really excited about the trip", "kya lagta hai tumhe, I should switch jobs?",
              "explain how black holes work", "yaar bahut bore ho raha hoon", "I can't believe she said that",
              "kuch motivational bolo", "how are you doing today", "what's a good book to read",
-             "bas aise hi baat karne ka mann tha"],
+             "bas aise hi baat karne ka mann tha",
+             # life updates with people + days (2026-11-11: these went to tool / time / memory / control)
+             "my uncle is coming over this weekend", "my brother's wedding is next month",
+             "dad is travelling to Hyderabad tomorrow", "I have a test on Friday", "my roommate got an internship today",
+             "my friend got a job at Google", "I'm meeting my friends tonight", "kal ghar pe guests aa rahe hain",
+             "I'm so tired of this bug", "I'm done for today, my brain is fried", "ugh this assignment is killing me",
+             # Telugu / Tenglish chat
+             "repu maa intiki friends vastunnaru", "naaku chala bore ga undi", "ammaku next week birthday",
+             "ఈ రోజు ఆఫీస్ లో చాలా పని ఉంది", "నా ఫ్రెండ్ కి జాబ్ వచ్చింది", "మా అన్నయ్య రేపు వస్తున్నాడు", "ఈ వారం నాకు పరీక్షలు ఉన్నాయి"],
     "tool": ["what's on my calendar today", "check my email", "open chrome", "volume kam karo",
              "search google for flight prices", "read my latest mail", "play music on spotify",
              "find the pdf I downloaded yesterday", "schedule a meeting with Arjun on Friday",
@@ -41,7 +50,7 @@ DOMAIN_EX = {
                  "I told you not to remind me during work", "be more direct with me",
                  "jab main gusse mein hoon tab advice mat dena", "that was rude, don't do that"],
     "control": ["stop", "ruk jao", "repeat that", "phir se bolo", "louder please", "dheere bolo",
-                "cancel", "chup", "say that again", "never mind", "bas bas", "pause"],
+                "cancel", "chup", "say that again", "never mind", "bas bas", "pause", "aagu", "malli cheppu", "ఆపు"],
 }
 
 MOOD_EX = {
