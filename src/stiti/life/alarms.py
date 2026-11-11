@@ -229,7 +229,10 @@ def set_label(text: str) -> str:
     p = dict(r["payload"])
     p.update(label=label, say=label)
     q("UPDATE intents SET payload=%s WHERE id=%s", (json.dumps(p), r["id"]))
-    return f"Got it — {second_person(label)}, {say_when(r['fire_at'].astimezone(CFG.tz))}. (#{r['id']})"
+    said = second_person(label)
+    if said[:1].isupper() and not said[1:2].isupper():
+        said = said[0].lower() + said[1:]          # "Got it — check your to-do list", not "— Check …"
+    return f"Got it — {said}, {say_when(r['fire_at'].astimezone(CFG.tz))}. (#{r['id']})"
 
 
 def _upcoming(kinds=("alarm", "reminder")) -> list[dict]:
