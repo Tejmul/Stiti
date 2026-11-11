@@ -65,7 +65,8 @@ class ChatSession:
             try:
                 reply = self.eng.turn(text, on_delta=on_delta)
             except Exception as e:                       # one bad turn never kills the chat
-                reply = f"Something broke on my side ({type(e).__name__}). Try again?"
+                print(f"[web] {type(e).__name__}: {e}")
+                reply = "Oops, that didn't go through. Try again?"
             dbg = getattr(self.eng, "last_debug", {}) or {}
             return {"type": "reply", "text": reply, "route": dbg.get("route"), "domain": dbg.get("domain"),
                     "mood": dbg.get("mood"), "provider": dbg.get("provider"),

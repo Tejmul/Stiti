@@ -241,6 +241,7 @@ class Row:
     h: float
     tickable: bool
     done: bool = False
+    op: str | None = None  # what this turn did to it: added | done | removed | set | cancelled | moved
 
 
 @dataclass
@@ -253,6 +254,7 @@ class CardLayout:
     rows: list[Row] = field(default_factory=list)
     more: int = 0          # "+N more" below the rows
     more_y: float = 0.0
+    total: int = 0         # the count in the eyebrow
 
     @property
     def n(self) -> int:
@@ -271,10 +273,16 @@ def layout(card: dict) -> CardLayout | None:
         return None
     items = [i for i in (card.get("items") or []) if isinstance(i, dict) and str(i.get("text") or "").strip()]
     title = _clip(str(card.get("title") or ""), 44)
-    total = max(len(items), _count_from_title(title) or 0)
+    focus = card.get("focus") if isinstance(card.get("focus"), dict) else {}
+    fop, fids = focus.get("op"), {i for i in (focus.get("ids") or []) if isinstance(i, int)}
     shown = items[:MAX_ROWS]
-    eyebrow = {"todos": f"TO-DO · {total} OPEN" if total else "TO-DO",
-               "reminders": f"REMINDERS · {total}" if total else "REMINDERS", "news": "HEADLINES"}[kind]
+    leaving = sum(1 for it in items if fop in LEAVING and it.get("id") in fids)
+    counted = _count_from_title(title)
+    if counted is None and kind != "news" and items and not title.lower().startswith("nothing"):
+        counted = len(items) - leaving
+    # a row on its way out still counts until it leaves (the eyebrow ticks down as it collapses)
+    total = (counted or 0) + leaving if counted is not None else len(items)
+    eyebrow = eyebrow_text(kind, total)
     if kind == "todos" and shown:
         title = "You have these to complete"         # the owner's words; the count is in the eyebrow
     w = CARD_W.get(kind, CARD_W_DEFAULT)
@@ -285,7 +293,8 @@ def layout(card: dict) -> CardLayout | None:
         tid = it.get("id")
         rows.append(Row(tid if isinstance(tid, int) else None, _clip(str(it["text"]), 90 if kind == "news" else 60),
                         _clip(str(it.get("meta") or ""), 26), y, rh,
-                        tickable=kind == "todos" and isinstance(tid, int)))
+                        tickable=kind == "todos" and isinstance(tid, int),
+                        op=fop if (fop and tid in fids) else None))
         y += rh
     more = max(0, total - len(shown))
     more_y = y
@@ -293,7 +302,67 @@ def layout(card: dict) -> CardLayout | None:
         y += MORE_H
     if not rows:
         y = PAD + EYEBROW_H + TITLE_H + EMPTY_H
-    return CardLayout(kind, eyebrow, title, w, y + PAD, rows, more, more_y)
+    return CardLayout(kind, eyebrow, title, w, y + PAD, rows, more, more_y, total)
+
+
+def eyebrow_text(kind: str, total: int) -> str:
+    return {"todos": f"TO-DO · {total} OPEN" if total else "TO-DO",
+            "reminders": f"REMINDERS · {total}" if total else "REMINDERS", "news": "HEADLINES"}.get(kind, "")
+
+
+# ---------------------------------------------------------------- choreography (what the card plays)
+LEAVING = ("done", "removed", "cancelled")       # struck through, then leave the list
+ARRIVING = ("added", "set", "moved")             # slide in highlighted, then settle
+ENTER_S, ENTER_STAGGER_S, ENTER_MAX_S = 0.26, 0.045, 0.25   # rows rise in one after another (≤ 250 ms of stagger)
+LAND_S = 0.32                                    # the card's own drop (card.show)
+STRIKE_AT_S, STRIKE_S, STRIKE_STAGGER_S = 0.55, 0.30, 0.14  # ✓ + the line drawn left → right
+COLLAPSE_HOLD_S, COLLAPSE_S = 0.75, 0.30         # he sees it struck, then the row folds away and the rest close up
+HIGHLIGHT_S = 1.6                                # an arriving row stays tinted this long
+
+
+def choreography(lay: CardLayout, reduce_motion: bool = False) -> list[tuple[float, str, int]]:
+    """(seconds after the card is shown, step, row index), sorted. Steps: enter | arrive | settle | strike | collapse.
+    Reduce Motion: no slides — rows are just there; the strike and the removal still happen (they carry meaning)."""
+    steps: list[tuple[float, str, int]] = []
+    n = lay.n
+    stagger = min(ENTER_STAGGER_S, ENTER_MAX_S / max(n - 1, 1))
+    for i, r in enumerate(lay.rows):
+        t = 0.0 if reduce_motion else LAND_S * 0.4 + i * stagger
+        if not reduce_motion:
+            steps.append((t, "enter", i))
+        if r.op in ARRIVING:
+            steps.append((t + (0.0 if reduce_motion else ENTER_S * 0.6), "arrive", i))
+            steps.append((t + HIGHLIGHT_S, "settle", i))
+    leaving = [i for i, r in enumerate(lay.rows) if r.op in LEAVING]
+    for k, i in enumerate(leaving):
+        steps.append((STRIKE_AT_S + k * STRIKE_STAGGER_S, "strike", i))
+    if leaving:                                  # all of them fold together, after the last one is struck
+        t = STRIKE_AT_S + (len(leaving) - 1) * STRIKE_STAGGER_S + STRIKE_S + COLLAPSE_HOLD_S
+        steps += [(t, "collapse", i) for i in leaving]
+    return sorted(steps, key=lambda s: (s[0], s[2]))
+
+
+def collapse(lay: CardLayout, gone: set[int]) -> CardLayout:
+    """The card after rows `gone` (indices into lay.rows) folded away: rows below move up, the card gets shorter,
+    the eyebrow counts down. lay.rows keeps every row (indices stay stable); gone rows keep their old y."""
+    y = PAD + EYEBROW_H + TITLE_H + HEADER_GAP
+    rows = []
+    for i, r in enumerate(lay.rows):
+        if i in gone:
+            rows.append(Row(r.id, r.text, r.meta, r.y, 0.0, r.tickable, r.done, r.op))
+            continue
+        rows.append(Row(r.id, r.text, r.meta, y, r.h, r.tickable, r.done, r.op))
+        y += r.h
+    more_y = y
+    if lay.more:
+        y += MORE_H
+    left = sum(1 for i in range(lay.n) if i not in gone)
+    title = lay.title
+    if not left and not lay.more:
+        y = PAD + EYEBROW_H + TITLE_H + EMPTY_H
+        title = "All clear" if lay.kind == "todos" else "Nothing coming up"
+    total = max(0, lay.total - sum(1 for i in gone if lay.rows[i].op in LEAVING))
+    return CardLayout(lay.kind, eyebrow_text(lay.kind, total), title, lay.width, y + PAD, rows, lay.more, more_y, total)
 
 
 def row_at(lay: CardLayout, y: float) -> int | None:

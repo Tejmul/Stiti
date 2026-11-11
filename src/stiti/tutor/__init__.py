@@ -32,6 +32,18 @@ def tutor_active() -> bool:
         return False
 
 
+def _other_lesson() -> bool:
+    """Another live lesson holds the lock (launch() writes OUR pid before we start, so that one is us)."""
+    try:
+        pid = int(LOCK.read_text().strip())
+        if pid == os.getpid():
+            return False
+        os.kill(pid, 0)
+        return True
+    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+        return False
+
+
 def _arg(args: list[str], flag: str, default=None):
     return args[args.index(flag) + 1] if flag in args and args.index(flag) + 1 < len(args) else default
 
@@ -101,6 +113,9 @@ def teach(args: list[str]) -> dict:
     holder: dict = {}
     srv = BoardServer(on_connect=lambda: holder["t"].on_connect() if "t" in holder else []) if board else None
     events = srv.events if srv else queue.Queue()
+    if _other_lesson():
+        print("A lesson is already running; not starting a second one.")
+        return {"finished": False}
     print("Stiti is getting ready… (voice, whiteboard)" if mode == "voice" else "Stiti is getting ready…")
     audio = au.make(mode, events, debug="--debug" in args)
     if "--night" in args or "--resume-course" in args or "--revise" in args:
@@ -224,6 +239,15 @@ REVISE_RX = __import__("re").compile(r"\b(revise|revision|revise karna|revision 
                                      __import__("re").I)
 COURSE_RESUME_RX = __import__("re").compile(r"\b(continue|resume) (my |the )?(crash ?course|course|night)\b|"
                                             r"course (continue|resume) karo", __import__("re").I)
+# a revision SESSION: "let's revise", "revision time", "revise karna hai", "start my revision", "flashcards"
+REVISE_START_RX = __import__("re").compile(
+    r"^(?:(?:hey |hi )?stiti,? )?(?:let'?s |start (?:my |the )?|time (?:to|for) |can we |chalo )?(?:revise|revision)"
+    r"(?: (?:time|karna( hai)?|karao|karte hain|session|now|please))?$|\brevision (?:time|karna|karao|session)\b|"
+    r"\brevise karna hai\b|\b(?:my |the )?flashcards?\b", __import__("re").I)
+# to-dos, reminders and alarms are never lessons, even when they say "revise" / "study" / "teach"
+NOT_A_LESSON_RX = __import__("re").compile(
+    r"\b(add|put|daal|note (it )?down)\b.*\b(to-?do|todos?|tasks?|list)\b|\b(remind me|reminder|alarm)\b",
+    __import__("re").I)
 BOOK_DIRS = ("~/Downloads", "~/Documents", "~/Desktop", "~/Books")
 
 
@@ -257,9 +281,11 @@ def voice_request(text: str) -> tuple | None:
     'teach me operating systems tonight' -> ('operating systems', False, 'night'); 'revise karna hai' -> revise."""
     import re
     t = text.strip().rstrip(".!?")
+    if NOT_A_LESSON_RX.search(t):
+        return None          # "add revise DBMS notes to my to-do list" is a to-do, not a revision session (2026-11-11)
     if COURSE_RESUME_RX.search(t):
         return None, True, "night"
-    if REVISE_RX.search(t) and re.search(r"\b(stiti|karna|karao|let'?s|start|my|time)\b", t, re.I):
+    if REVISE_START_RX.search(t):
         return None, False, "revise"
     if RESUME_RX.search(t):
         return None, True
@@ -278,11 +304,26 @@ def voice_request(text: str) -> tuple | None:
     return (topic or None), False
 
 
+ASK_TOPIC = "Sure! What should I teach you?"
+
+
+def _spawn(args: list[str]) -> None:
+    """Start the lesson process and take the lock NOW (its pid), not seconds later when the lesson has loaded:
+    2026-11-11 a request said in three breaths ("can you teach me… lexical analysis… using whiteboard?") started
+    three lessons that talked over each other and heard each other as the learner."""
+    import subprocess
+    log = open(CFG.home / "logs" / "tutor.log", "a")
+    p = subprocess.Popen([sys.executable, "-m", "stiti", "teach", *args], stdout=log, stderr=log,
+                         stdin=subprocess.DEVNULL, start_new_session=True)
+    LOCK.write_text(str(p.pid))
+
+
 def launch(topic: str | None, resume: bool = False, mode: str | None = None) -> str:
     """Start a lesson / crash course / revision as its own process (voice + board), from the always-on assistant."""
-    import subprocess
     if tutor_active():
-        return "A lesson is already running on the whiteboard."
+        return "Your lesson's already open on the whiteboard."
+    if not topic and not resume and mode is None:
+        return ASK_TOPIC                        # "can you teach me?" alone: ask, don't start a random lesson
     if mode in ("night", "revise"):
         if mode == "revise":
             args, msg = ["--revise"], "Revision time! Opening the board."
@@ -295,9 +336,7 @@ def launch(topic: str | None, resume: bool = False, mode: str | None = None) -> 
             args = ["--night", book or topic]
             msg = (f"Crash course from {Path(book).stem[:40]}! Give me a minute to plan the night."
                    if book else f"Crash course on {topic} tonight! Give me a minute to plan it.")
-        log = open(CFG.home / "logs" / "tutor.log", "a")
-        subprocess.Popen([sys.executable, "-m", "stiti", "teach", *args], stdout=log, stderr=log,
-                         stdin=subprocess.DEVNULL, start_new_session=True)
+        _spawn(args)
         return msg
     from .lesson import demos
     args = ["--resume"] if resume else ([topic] if topic else [])
@@ -307,11 +346,8 @@ def launch(topic: str | None, resume: bool = False, mode: str | None = None) -> 
             if "compil" in topic.lower():
                 args = ["compiler"]
             else:
-                return ("I can only teach my built-in lesson until I have a free LLM key. Add GROQ_API_KEY to .env, "
-                        "or say: teach me compilers.")
-    log = open(CFG.home / "logs" / "tutor.log", "a")
-    subprocess.Popen([sys.executable, "-m", "stiti", "teach", *args], stdout=log, stderr=log,
-                     stdin=subprocess.DEVNULL, start_new_session=True)
+                return "Right now I can only teach my compilers lesson. Say: teach me compilers."
+    _spawn(args)
     return "Opening the whiteboard. Give me a few seconds." if not resume else "Opening your lesson where we stopped."
 
 
