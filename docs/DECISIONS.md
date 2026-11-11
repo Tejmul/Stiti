@@ -520,6 +520,21 @@ Core Animation vs WKWebView measured on the M2); behaviour tuned from `docs/rese
   (font/symbol caches, no leak). Tests: `tests/overlay_eval.py`. Not verified yet: on-screen look with the display on,
   full-screen video (status vs `STITI_OVERLAY_LEVEL=screensaver`), notch Macs.
 
+## D33: One lesson at a time — the tutor lock is taken at launch, not after loading (2026-11-11)
+
+**Bug:** "while teaching… it was breaking in the middle… loading and taking time… multiple voices coming and corrupting."
+"Can you teach me… lexical analysis in compiler design… using whiteboard?" said in three breaths ran three turns; each
+launched a lesson (the reply was dropped as "you were still talking", the launch was not). The lesson only wrote
+`tutor.lock` after loading its models, so all three saw no lock: three whiteboards, three voices, each hearing the
+others as the learner ("You (voice): Chalo today, lexical analysis…"), three model loads on 8 GB, planner calls failing.
+
+- `launch()` writes the lock with the child's pid the moment it spawns it; the lesson refuses to start if a different
+  live pid holds it. Main Stiti also goes quiet from that moment (it already yields while `tutor_active()`).
+- "Can you teach me?" with no topic asks "Sure! What should I teach you?"; his next short line (90 s) is the topic,
+  "never mind" cancels. Never speculated.
+- Lesson ears run whisper on the voice loop's single STT thread (a second thread loading MLX at the same time failed:
+  "There is no Stream(cpu, 0) in current thread"); a bad segment can't kill the ears thread.
+- "without my cloud brain" lines → "Good one. I've parked it in the corner…". Tests: `tests/tutor_launch_eval.py` (15).
 ## D32: Two voices — one for English, one for Hinglish; speed + say-as (2026-11-11)
 
 **Owner:** goonj en_priya sounded "like an old woman"; wants sweet + energetic; picked Kokoro **af_jessica** (American)
