@@ -312,6 +312,7 @@ def _spawn(args: list[str]) -> None:
     2026-11-11 a request said in three breaths ("can you teach me… lexical analysis… using whiteboard?") started
     three lessons that talked over each other and heard each other as the learner."""
     import subprocess
+    (CFG.home / "logs").mkdir(parents=True, exist_ok=True)     # a fresh install has no logs/ yet (CI caught it)
     log = open(CFG.home / "logs" / "tutor.log", "a")
     p = subprocess.Popen([sys.executable, "-m", "stiti", "teach", *args], stdout=log, stderr=log,
                          stdin=subprocess.DEVNULL, start_new_session=True)
