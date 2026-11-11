@@ -538,3 +538,22 @@ parameters. No errors to report.", "That is a word I do not recognize.", "My thi
   A lone "Done." after a non-action reply is dropped.
 - Fixed lines: offline → "My head's a bit foggy right now…"; Telegram/web errors no longer read out exception names;
   mail no longer mentions `.env`. Tests: `tests/human_talk_eval.py` (48, incl. 3 live-LLM lines).
+## D30: Cards play the change — added / done / cancelled animate on the list (2026-11-11)
+
+**Ask:** "I tell it a to-do → it's noted. I say 'okay, it has been done' → the card appears, the item is struck, and it
+goes away from the list. Same for everything else."
+
+- **What changed comes from the brain, not the reply text.** Fast-path writers call `cards.note(op, kind, ids)`
+  (to-do added / done / removed / cleared / restored; reminder set / cancelled / moved); the engine clears it at the
+  start of a turn and passes it to `cards.for_turn(event=)`. Cards are now always the whole list with a `focus`
+  (`todo_added` / `reminder_set` one-line pill confirmations are no longer produced; the pill path still exists).
+- **Timeline is pure** (`overlay/model.choreography` + `collapse`, unit-tested): rows rise in (45 ms stagger, ≤ 250 ms);
+  an arriving row gets a blue wash + icon bounce, settles at 1.6 s; a leaving row gets ✓ / ✕ / slashed bell and a
+  strike line drawn left → right at 0.55 s, holds 0.75 s, then folds (300 ms) while rows below close up, the card
+  shortens from the bottom and the eyebrow counts down ("All clear" when the last one goes). All within ~1.9 s, i.e.
+  while she is still saying it. Reduce Motion: no slides; strike + removal still happen.
+- **"It's done" with no task named** resolves to the task he just added / was just shown (15 min), else the only open
+  one, else she asks "Which one is done — …?" and shows the list. Guard: "I'm done" / "I am so done" is about HIM and
+  never ticks a to-do; a bare "done" only counts right after a to-do was in play.
+- Overlay panels stay excluded from screen capture; only `overlay.demo --shots` (fake data) lifts that, to check frames.
+- Tests: `tests/card_motion_eval.py` (42). Verified visually with `python -m stiti.overlay.demo --motion --shots DIR`.
