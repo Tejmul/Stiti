@@ -154,9 +154,33 @@ finally:
     FakeSD.Stream = FakeStream
 check("failed reopen → reason says so, no exception", why is not None and "reopen failed" in why, str(why))
 
+# ---- a reopen that doesn't bring sound back → restart the process (2026-11-11, CoreAudio err -50) ----
+dx = make()
+feed(dx, True, t0 + 0.1)
+check("no reopen yet → never 'failed'", not dx.reopen_failed(t0 + 100))
+D.time.monotonic = lambda: t0 + 10.0
+dx.heal(t0 + 10.0)
+D.time.monotonic = _real_mono
+dx._opened_at = t0 + 10.0
+check("just reopened → give it a few seconds", not dx.reopen_failed(t0 + 12.0))
+check("6 s after the reopen, still silent → failed", dx.reopen_failed(t0 + 17.0))
+feed(dx, True, t0 + 13.0)
+check("real sound after the reopen → recovered", not dx.reopen_failed(t0 + 20.0))
+
+import tempfile as _tf                                            # noqa: E402
+from stiti.config import CFG                                      # noqa: E402
+from stiti.voice import loop as L                                 # noqa: E402
+(CFG.home / "logs" / "mic_restarts").unlink(missing_ok=True)
+now = 1_000_000.0
+check("first mic restart allowed", L._may_restart(now))
+check("second allowed", L._may_restart(now + 60))
+check("third within 10 min refused (no restart loop on a muted mic)", not L._may_restart(now + 120))
+check("allowed again after the window", L._may_restart(now + 700))
+
 # ---- the loop wires it in ----
 src = open(os.path.join(os.path.dirname(__file__), "..", "src", "stiti", "voice", "loop.py")).read()
 check("voice loop calls heal() on idle ticks", "d.heal()" in src and "_tutor_active()" in src)
+check("voice loop restarts (exit 75) when a reopen fails", "d.reopen_failed()" in src and "os._exit(75)" in src)
 
 print(f"mic watchdog: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
