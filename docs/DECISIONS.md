@@ -520,6 +520,21 @@ Core Animation vs WKWebView measured on the M2); behaviour tuned from `docs/rese
   (font/symbol caches, no leak). Tests: `tests/overlay_eval.py`. Not verified yet: on-screen look with the display on,
   full-screen video (status vs `STITI_OVERLAY_LEVEL=screensaver`), notch Macs.
 
+## D32: Two voices — one for English, one for Hinglish; speed + say-as (2026-11-11)
+
+**Owner:** goonj en_priya sounded "like an old woman"; wants sweet + energetic; picked Kokoro **af_jessica** (American)
+from a 6-voice lineup; then: "there should be two voices: one for Hinglish and another for English."
+
+- Measured 20 female voices on one line (pitch, pitch spread, Whisper round-trip, synth time): all equally clear
+  (~4% WER, mostly "4" vs "four"); priya's pitch spread is 4.6 semitones vs ~2.7 for the rest (reads as older);
+  brightest: goonj en_nisha 326 Hz, en_ananya 305 Hz, hi_meera 281 Hz. Every American/British Kokoro voice says
+  "Tej" as "Tedge".
+- `voice` (English lines) + optional `voice_hi` (lines where `hinglish.phonemize` finds 2+ Hindi words). One Kokoro
+  model per model file, shared, so two stock voices cost no extra RAM; a goonj + stock pair adds ~115 MB.
+- `voice_speed` (0.8–1.3, moods scale it) and `say_as` respellings ({"Tej": "Tayj"}) live in the local owner_profile —
+  never in code — and apply to stock Kokoro voices only (goonj already says Indian names right).
+- CLI: `stiti voices use-hi <voice|off>`, `stiti voices speed 1.05`, `stiti voices say-as <word> <how>`. Fixed: `try` /
+  `use` treated every non-`af_` voice as a goonj persona (hf_beta broke). Tests: `tests/voice_pick_eval.py` (21).
 ## D31: She talks like a person — machine-talk cut in code, SOUL fits the briefing (2026-11-11)
 
 **Complaint:** "Why is it reporting all the errors and technical terms while talking?" Real replies: "The voice model is
