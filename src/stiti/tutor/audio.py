@@ -90,7 +90,9 @@ class VoiceAudio(_Kokoro):
         self.events, self.debug = events, debug
         self.vl = VoiceLoop(SimpleNamespace(last_interrupted=False), aec=aec, debug=debug)
         super().__init__(self.vl.tts)
-        stt.transcribe(np.zeros(16000, dtype=np.float32))        # load whisper now, not mid-lesson
+        # load whisper now, not mid-lesson — on the loop's ONE STT thread: MLX streams belong to a thread, and a second
+        # thread loading it at the same time failed with "There is no Stream(cpu, 0) in current thread" (2026-11-11)
+        self.vl._stt.submit(stt.transcribe, np.zeros(16000, dtype=np.float32)).result()
         self.barged = threading.Event()
         self._stop = threading.Event()
         self._ctx = None
@@ -113,7 +115,11 @@ class VoiceAudio(_Kokoro):
                 continue
             if len(seg) < SR * 0.3:
                 continue
-            text, ms = stt.transcribe(seg)
+            try:
+                text, ms = self.vl._stt.submit(stt.transcribe, seg).result()
+            except Exception as e:                       # never let one bad segment make the lesson deaf
+                print(f"   [ears] {type(e).__name__}: {e}")
+                continue
             if text:
                 if self.debug:
                     print(f"   (heard {text!r}, {ms:.0f} ms)")

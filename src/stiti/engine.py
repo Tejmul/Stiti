@@ -67,6 +67,7 @@ HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek secon
                      r"let me think|soch(ne do| ke batata hoon| ke batati hoon| raha hoon| rahi hoon)|"
                      r"hmm+,? let me think)[.!…, ]*$", re.I)
 # "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
+TEACH_ASK_S = 90.0      # after "what should I teach you?", his next short line is the topic
 NOTHING_RX = re.compile(r"^\s*(no|nope|nah|nahi|nahin|not yet|ok|okay|alright|nothing|nothing else|that'?s (it|all)( for now)?|bas|bas itna|"
                         r"no thanks|no thank you|all good|i'?m good|abhi nahi|kuch nahi|that'?s it for now|nope that'?s it)[.!]*\s*$", re.I)
 ASKED_NAME_RX = re.compile(r"\b(?:about|remember|yaad hai|of)\s+(?P<name>[A-Z][a-z]{2,20})\b")
@@ -112,6 +113,7 @@ class Engine:
         self._snap: dict | None = None                      # engine state before it
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
+        self.teach_ask_at = 0.0                             # she asked "what should I teach you?" (tutor launch)
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
@@ -285,7 +287,8 @@ class Engine:
         if any(checks):
             return "action"
         from .connectors.mac import MUSIC_RX
-        if MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None:
+        if (MUSIC_RX.search(t) or instructions.parse(t) or _tutor_request(t) is not None
+                or time.time() - self.teach_ask_at < TEACH_ASK_S):
             return "action"
         if live.detect(t, known=_names_his_person) is not None:
             return "live"
@@ -503,8 +506,14 @@ class Engine:
             self.chunker = chunker.Chunker(chunker.goal_from(text))
             reply = self.chunker.start()
         elif (tr := _tutor_request(text)) is not None:
-            from .tutor import launch
+            from .tutor import ASK_TOPIC, launch
             reply = launch(*tr)
+            self.teach_ask_at = time.time() if reply == ASK_TOPIC else 0.0
+        elif time.time() - self.teach_ask_at < TEACH_ASK_S and len(text.split()) <= 10:
+            from .tutor import launch
+            self.teach_ask_at = 0.0             # "what should I teach you?" → "lexical analysis" (or "never mind")
+            reply = ("Okay, another time." if NOTHING_RX.match(text) or re.search(r"\b(never ?mind|cancel|leave it|"
+                     r"rehne do|chhodo)\b", text, re.I) else launch(text.strip(" .?!")))
         elif (self.live_last and time.time() - self.live_last[2] < 300 and live.MORE_RX.match(text)
               and re.search(r"\b(more|aur)\b", self.last_reply_text or "", re.I)):
             live_res, live_from, _ = self.live_last             # "want more?" → "haan": next items, no refetch
