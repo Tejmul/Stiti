@@ -96,5 +96,6 @@ class TelegramBot:
                     if self.engine.last_debug.get("privacy") == 2:
                         reply = "That's private, so I'll answer it on your Mac, not over Telegram. 🔒"
                 except Exception as e:
-                    reply = f"Oops ({type(e).__name__}). Try again?"
+                    print(f"[telegram] {type(e).__name__}: {e}")
+                    reply = "Oops, that didn't go through. Try again?"
                 send(reply, chat)
