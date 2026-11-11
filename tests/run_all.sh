@@ -39,5 +39,11 @@ run "personal emotion + recorder (D28)" tests/emotion_learning_eval.py
 run "real-time reply (D29)"         tests/realtime_eval.py
 run "desktop overlay (pill + cards)" tests/overlay_eval.py
 run "whole sentences (no missing words)" tests/whole_sentence_eval.py
+run "language switching (D34)" tests/lang_switch_eval.py
+run "intent: life updates are chat" tests/intent_eval.py
+run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
+run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
+run "card motion (added / done / cancelled)" tests/card_motion_eval.py
+run "mic watchdog (dead mic → reopen)" tests/mic_watchdog_eval.py
 exit $fail

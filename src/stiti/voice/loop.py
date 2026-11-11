@@ -358,6 +358,8 @@ class VoiceLoop:
                     c = None
                 if self.rt is not None:
                     self.rt.tick(c)
+                if c is None and not _tutor_active() and (why := d.heal()):
+                    print(f"🎙️  [mic] {why} — reopened the microphone (reopen #{d.reopens})")
                 now = time.time()
                 if (self.awake and now - self.last_activity > AWAKE_TIMEOUT_S and not d.playing
                         and not self.tt.busy):           # never fall asleep while he's mid-sentence

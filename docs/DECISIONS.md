@@ -520,6 +520,51 @@ Core Animation vs WKWebView measured on the M2); behaviour tuned from `docs/rese
   (font/symbol caches, no leak). Tests: `tests/overlay_eval.py`. Not verified yet: on-screen look with the display on,
   full-screen video (status vs `STITI_OVERLAY_LEVEL=screensaver`), notch Macs.
 
+## D33: One lesson at a time — the tutor lock is taken at launch, not after loading (2026-11-11)
+
+**Bug:** "while teaching… it was breaking in the middle… loading and taking time… multiple voices coming and corrupting."
+"Can you teach me… lexical analysis in compiler design… using whiteboard?" said in three breaths ran three turns; each
+launched a lesson (the reply was dropped as "you were still talking", the launch was not). The lesson only wrote
+`tutor.lock` after loading its models, so all three saw no lock: three whiteboards, three voices, each hearing the
+others as the learner ("You (voice): Chalo today, lexical analysis…"), three model loads on 8 GB, planner calls failing.
+
+- `launch()` writes the lock with the child's pid the moment it spawns it; the lesson refuses to start if a different
+  live pid holds it. Main Stiti also goes quiet from that moment (it already yields while `tutor_active()`).
+- "Can you teach me?" with no topic asks "Sure! What should I teach you?"; his next short line (90 s) is the topic,
+  "never mind" cancels. Never speculated.
+- Lesson ears run whisper on the voice loop's single STT thread (a second thread loading MLX at the same time failed:
+  "There is no Stream(cpu, 0) in current thread"); a bad segment can't kill the ears thread.
+- "without my cloud brain" lines → "Good one. I've parked it in the corner…". Tests: `tests/tutor_launch_eval.py` (15).
+## D32: Two voices — one for English, one for Hinglish; speed + say-as (2026-11-11)
+
+**Owner:** goonj en_priya sounded "like an old woman"; wants sweet + energetic; picked Kokoro **af_jessica** (American)
+from a 6-voice lineup; then: "there should be two voices: one for Hinglish and another for English."
+
+- Measured 20 female voices on one line (pitch, pitch spread, Whisper round-trip, synth time): all equally clear
+  (~4% WER, mostly "4" vs "four"); priya's pitch spread is 4.6 semitones vs ~2.7 for the rest (reads as older);
+  brightest: goonj en_nisha 326 Hz, en_ananya 305 Hz, hi_meera 281 Hz. Every American/British Kokoro voice says
+  "Tej" as "Tedge".
+- `voice` (English lines) + optional `voice_hi` (lines where `hinglish.phonemize` finds 2+ Hindi words). One Kokoro
+  model per model file, shared, so two stock voices cost no extra RAM; a goonj + stock pair adds ~115 MB.
+- `voice_speed` (0.8–1.3, moods scale it) and `say_as` respellings ({"Tej": "Tayj"}) live in the local owner_profile —
+  never in code — and apply to stock Kokoro voices only (goonj already says Indian names right).
+- CLI: `stiti voices use-hi <voice|off>`, `stiti voices speed 1.05`, `stiti voices say-as <word> <how>`. Fixed: `try` /
+  `use` treated every non-`af_` voice as a goonj persona (hf_beta broke). Tests: `tests/voice_pick_eval.py` (21).
+
+## D34: Reply in the language he speaks — English · Hinglish · Hindi · Telugu · Tenglish (2026-11-11)
+
+**Ask:** mirror his language turn by turn; "just talk in English, don't use any other language" locks it; saying the
+language switches it. Research: `docs/research/language_switching.md` (11 options, Whisper LID measured on the M2).
+
+- Hearing: Whisper-tiny language ID (32 ms), pooled into his three base languages → Telugu turns are transcribed as
+  Telugu (Groq large-v3 `language=te`, else local) instead of being translated into English by the English-pinned STT.
+- Deciding (local, < 1 ms, `brain/lang.py`): lock › "talk in X" › this message's language › previous one for "ok/bye".
+  Roman Hindi → Hinglish (casual), Devanagari → Hindi. Only an explicit lock is saved (`Language lock: …`); one-off
+  "talk in English" and confusion no longer create forever-rules (the old D25 auto-rule is gone), and old-style
+  language rules are kept out of the LLM's MUST lines.
+- Speaking: script routing — Telugu → `voice_te` (owner: hf_alpha), Hindi/Hinglish → `voice_hi` (hf_alpha), English →
+  `voice` (af_jessica); Telugu/Tenglish phonemes via espeak `te` + `en-us` (`voice/telugu.py`).
+- Tests: `tests/lang_switch_eval.py` (50, incl. his live flow); persona/conversation tests updated to the new rules.
 ## D31: She talks like a person — machine-talk cut in code, SOUL fits the briefing (2026-11-11)
 
 **Complaint:** "Why is it reporting all the errors and technical terms while talking?" Real replies: "The voice model is
@@ -553,3 +598,22 @@ then start the DSA sheet" was spoken as "If you're tired," (the rest, judged alo
 - `enforce()` (what's saved) judges sentence 1 by its first clause like the voice, so saved == spoken.
 - No capitals inside sentences ("Laga", "Ten"). "I hear your frustration" joins the banned therapy-speak.
 - Tests: `tests/whole_sentence_eval.py` (13).
+## D30: Cards play the change — added / done / cancelled animate on the list (2026-11-11)
+
+**Ask:** "I tell it a to-do → it's noted. I say 'okay, it has been done' → the card appears, the item is struck, and it
+goes away from the list. Same for everything else."
+
+- **What changed comes from the brain, not the reply text.** Fast-path writers call `cards.note(op, kind, ids)`
+  (to-do added / done / removed / cleared / restored; reminder set / cancelled / moved); the engine clears it at the
+  start of a turn and passes it to `cards.for_turn(event=)`. Cards are now always the whole list with a `focus`
+  (`todo_added` / `reminder_set` one-line pill confirmations are no longer produced; the pill path still exists).
+- **Timeline is pure** (`overlay/model.choreography` + `collapse`, unit-tested): rows rise in (45 ms stagger, ≤ 250 ms);
+  an arriving row gets a blue wash + icon bounce, settles at 1.6 s; a leaving row gets ✓ / ✕ / slashed bell and a
+  strike line drawn left → right at 0.55 s, holds 0.75 s, then folds (300 ms) while rows below close up, the card
+  shortens from the bottom and the eyebrow counts down ("All clear" when the last one goes). All within ~1.9 s, i.e.
+  while she is still saying it. Reduce Motion: no slides; strike + removal still happen.
+- **"It's done" with no task named** resolves to the task he just added / was just shown (15 min), else the only open
+  one, else she asks "Which one is done — …?" and shows the list. Guard: "I'm done" / "I am so done" is about HIM and
+  never ticks a to-do; a bare "done" only counts right after a to-do was in play.
+- Overlay panels stay excluded from screen capture; only `overlay.demo --shots` (fake data) lifts that, to check frames.
+- Tests: `tests/card_motion_eval.py` (42). Verified visually with `python -m stiti.overlay.demo --motion --shots DIR`.

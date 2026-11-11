@@ -342,14 +342,13 @@ class Tutor:
             hits = self._local_lookup(question)
             if hits:
                 ops = [Op(type="text", text=h[:120], style="violet") for h in hits]
-                self.say("My cloud brain isn't connected right now, so here's what I said about that earlier.",
+                self.say("I can't look that up right now, so here's what I said about it earlier.",
                          actions=self._apply(ops, self.k))
                 for h in hits:
                     self.say(h)
             else:
                 self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.park(question)]})
-                self.say("I can't answer that one properly without my cloud brain. I've parked it in the corner, "
-                         "and we'll come back to it.")
+                self.say("Good one. I've parked it in the corner, and we'll come back to it.")
         self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]})
         ev = self.say("Shall we continue?")
         if ev is None:

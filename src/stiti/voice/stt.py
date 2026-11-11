@@ -73,7 +73,7 @@ class STTResult:
     avg_logprob: float = 0.0
     source: str = "local"        # local | cloud
     escalated: str = ""          # why the cloud was asked: low_conf | empty | filtered | prompt_copy
-    lang: str = "en"             # en | hinglish (what this utterance sounded like)
+    lang: str = "en"             # en | hinglish | telugu (what this utterance sounded like)
     speech_ms: int = -1          # voiced audio estimate (-1 = unknown)
 
     @property
@@ -296,6 +296,10 @@ def transcribe_ex(audio: np.ndarray, *, cloud_call=None) -> STTResult:
     p = build_prompt(lang, prev)
     terms = [t.text for t in glossary.terms()]
     stt_cloud.prewarm()
+    from . import lid
+    spoken = lid.detect(audio)                       # D34: Telugu speech must not be translated into English
+    if spoken and spoken[0] == "te":
+        return _telugu(audio, t0, fp, cloud_call)
     loc, _ = _local(audio, os.getenv("STITI_WHISPER", WHISPER_MAIN), p)
     loc.copy = prompt_copy(loc.text, p, terms)
     sp = -1
@@ -317,6 +321,33 @@ def transcribe_ex(audio: np.ndarray, *, cloud_call=None) -> STTResult:
     heard_lang = hinglish.language(text) if text else lang
     _remember(fp, text, heard_lang)
     return STTResult(text, (time.perf_counter() - t0) * 1000, nsp, lp, source, reason or "", heard_lang, sp)
+
+
+TE_PROMPT = "తెలుగు. Stiti, to-do list, alarm, reminder, placement, interview."
+
+
+def _telugu(audio: np.ndarray, t0: float, fp, cloud_call=None) -> STTResult:
+    """Telugu / Tenglish turn: Groq whisper-large-v3 with language=te (much better at Telugu than the local small
+    model; audio leaves the Mac only when the cloud second opinion is on), else local small with language=te."""
+    text, source, nsp, lp = "", "local", 0.0, 0.0
+    if stt_cloud.enabled():
+        cr = stt_cloud.transcribe(audio, TE_PROMPT, call=cloud_call, language="te")
+        if cr is not None and cr.text.strip():
+            text, source = cr.text.strip(), "cloud"
+            if cr.segments:
+                nsp, lp = score(cr.segments)
+    if not text:
+        import mlx_whisper
+        _cap_mlx_cache()
+        r = mlx_whisper.transcribe(np.asarray(audio, dtype=np.float32),
+                                   path_or_hf_repo=os.getenv("STITI_WHISPER", WHISPER_MAIN), language="te",
+                                   initial_prompt=TE_PROMPT, condition_on_previous_text=False, temperature=0.0,
+                                   no_speech_threshold=0.6, verbose=None)
+        text = (r.get("text") or "").strip()
+        nsp, lp = score(r.get("segments") or [])
+    _remember(fp, text, "telugu")
+    return STTResult(text, (time.perf_counter() - t0) * 1000, nsp, lp, source, "telugu" if source == "cloud" else "",
+                     "telugu", -1)
 
 
 def transcribe(audio: np.ndarray) -> tuple[str, float]:

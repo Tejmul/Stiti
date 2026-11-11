@@ -13,11 +13,12 @@ from __future__ import annotations
 import os
 import re
 import threading
+import time
 
 import numpy as np
 import sounddevice as sd
 
-from . import hinglish, models
+from . import hinglish, models, telugu
 from .models import path
 
 DEFAULT_VOICE = "goonj:en_priya"     # Stiti is "she"; the owner hasn't picked a persona yet (`stiti voices`)
@@ -47,6 +48,53 @@ def voice_setting() -> str:
     return (v or DEFAULT_VOICE).strip()
 
 
+def _profile(key: str) -> str | None:
+    try:
+        from .. import profile
+        return profile.get(key)
+    except Exception:
+        return None
+
+
+def hindi_voice_setting() -> str | None:
+    """The voice for Hinglish / Hindi lines: STITI_VOICE_HI, then owner_profile `voice_hi`; None = same as English."""
+    v = os.getenv("STITI_VOICE_HI") or _profile("voice_hi")
+    return v.strip() if v and v.strip() else None
+
+
+def telugu_voice_setting() -> str | None:
+    """The voice for Telugu / Tenglish lines: STITI_VOICE_TE, then owner_profile `voice_te`; None = the Hindi one."""
+    v = os.getenv("STITI_VOICE_TE") or _profile("voice_te")
+    return v.strip() if v and v.strip() else None
+
+
+def speed_setting() -> float:
+    """Owner's base speed (owner_profile `voice_speed`, STITI_VOICE_SPEED wins), 0.8–1.3; moods scale it."""
+    try:
+        v = float(os.getenv("STITI_VOICE_SPEED") or _profile("voice_speed") or 1.0)
+    except ValueError:
+        v = 1.0
+    return min(1.3, max(0.8, v))
+
+
+def say_as_setting() -> dict[str, str]:
+    """{word: respelling} from owner_profile `say_as` (JSON), e.g. a name an American voice says wrong.
+    Kept in his local brain, never in code."""
+    import json
+    try:
+        d = json.loads(_profile("say_as") or "{}")
+        return {str(k): str(v) for k, v in d.items() if str(k).strip() and str(v).strip()} if isinstance(d, dict) else {}
+    except Exception:
+        return {}
+
+
+def apply_say_as(text: str, table: dict[str, str]) -> str:
+    """Whole-word, case-insensitive respelling ("Tej" → "Tayj"); longer words first so "Tejmul" wins over "Tej"."""
+    for w in sorted(table, key=len, reverse=True):
+        text = re.sub(rf"(?<!\w){re.escape(w)}(?!\w)", table[w], text, flags=re.I)
+    return text
+
+
 def resolve(setting: str | None = None, ready: bool | None = None) -> tuple[str, str]:
     """'goonj:en_tara' → ('goonj', 'en_tara'); 'goonj' → default persona; 'af_heart' → ('kokoro', 'af_heart').
     goonj without its files → ('kokoro', af_heart)."""
@@ -67,19 +115,43 @@ def sentences(text: str) -> list[str]:
     return parts
 
 
-class TTS:
-    def __init__(self, voice: str | None = None):
-        from kokoro_onnx import Kokoro
-        self.engine, self.voice = resolve(voice)
-        if self.engine == "goonj":
-            self.k = Kokoro(str(models.GOONJ_DIR / models.GOONJ_MODEL), str(models.GOONJ_DIR / models.GOONJ_VOICES))
-            if self.voice not in self.k.voices:
-                print(f"[tts] no goonj persona {self.voice!r}; using {DEFAULT_VOICE}")
-                self.voice = DEFAULT_VOICE.split(":", 1)[1]
+_MODELS: dict[str, object] = {}     # one Kokoro per model file, shared by both voices
+
+
+def _model(engine: str):
+    from kokoro_onnx import Kokoro
+    if engine not in _MODELS:
+        _MODELS[engine] = (Kokoro(str(models.GOONJ_DIR / models.GOONJ_MODEL), str(models.GOONJ_DIR / models.GOONJ_VOICES))
+                           if engine == "goonj" else Kokoro(str(path("kokoro-v1.0.int8.onnx")), str(path("voices-v1.0.bin"))))
+    return _MODELS[engine]
+
+
+def _load(setting: str | None) -> tuple[str, str, object]:
+    engine, voice = resolve(setting)
+    k = _model(engine)
+    if voice not in k.voices:
+        if engine == "goonj":
+            print(f"[tts] no goonj persona {voice!r}; using {DEFAULT_VOICE}")
+            voice = DEFAULT_VOICE.split(":", 1)[1]
         else:
-            self.k = Kokoro(str(path("kokoro-v1.0.int8.onnx")), str(path("voices-v1.0.bin")))
-            if self.voice not in self.k.voices:
-                self.voice = FALLBACK_VOICE
+            voice = FALLBACK_VOICE
+    return engine, voice, k
+
+
+class TTS:
+    """Two voices (owner's choice, 2026-11-11): `voice` for English lines, `voice_hi` for Hinglish/Hindi lines
+    (a line is Hinglish when hinglish.phonemize() finds 2+ Hindi words). No `voice_hi` = one voice for everything."""
+
+    def __init__(self, voice: str | None = None, voice_hi: str | None = None, voice_te: str | None = None):
+        self.engine, self.voice, self.k = _load(voice)
+        hi = voice_hi if voice_hi is not None else (hindi_voice_setting() if voice is None else None)
+        self.hi = _load(hi) if hi else None             # (engine, voice, model) for Hinglish / Hindi lines
+        te = voice_te if voice_te is not None else (telugu_voice_setting() if voice is None else None)
+        self.te = _load(te) if te else None             # … for Telugu / Tenglish lines (else the Hindi one)
+        self._native: tuple[str, object] | None = None  # the Indian voice used last, and when (short English bits
+        self._native_t = 0.0                            # inside a Telugu/Hindi reply stay in that voice)
+        self.base_speed = speed_setting()
+        self.say_as = say_as_setting()
         self.lang = os.getenv("STITI_VOICE_LANG", "en-us")
         # Hindi words get Hindi phonemes (D22) but the SAME voice speaks the whole line; "off" = English phonemes only
         self.hindi_phonemes = os.getenv("STITI_HI_VOICE", "on") != "off"
@@ -98,15 +170,42 @@ class TTS:
 
     @property
     def name(self) -> str:
-        return f"goonj:{self.voice}" if self.engine == "goonj" else self.voice
+        n = f"goonj:{self.voice}" if self.engine == "goonj" else self.voice
+        if self.hi:
+            n += " + " + (f"goonj:{self.hi[1]}" if self.hi[0] == "goonj" else self.hi[1]) + " (Hinglish)"
+        return n
+
+    NATIVE_HOLD_S = 4.0      # a short plain-English sentence this soon after a Telugu/Hindi one keeps that voice
+
+    def pick(self, text: str) -> tuple[str, object, str | None]:
+        """(voice, model, phonemes-or-None) for this line: Telugu script → the Telugu voice (te/en phonemes);
+        Hinglish / Devanagari → the Hindi voice (hi/en phonemes); English → the English voice."""
+        if telugu.has(text):
+            v = self.te or self.hi or (self.engine, self.voice, self.k)
+            return self._mark(v[1], v[2], telugu.phonemize(text, v[2].tokenizer))
+        ph = hinglish.phonemize(text) if self.hindi_phonemes else None
+        if ph and self.hi:
+            return self._mark(self.hi[1], self.hi[2], ph)
+        if (not ph and self._native and len(text.split()) <= 6
+                and time.monotonic() - self._native_t < self.NATIVE_HOLD_S):
+            self._native_t = time.monotonic()
+            return self._native[0], self._native[1], None     # "Okay." inside a Telugu reply: same voice
+        return self.voice, self.k, ph
+
+    def _mark(self, voice: str, k, ph):
+        self._native, self._native_t = (voice, k), time.monotonic()
+        return voice, k, ph
 
     def synth(self, text: str, mood: str = "calm") -> tuple[np.ndarray, int]:
-        """One voice for everything: Hinglish → mixed hi/en-us phonemes (hinglish.py), plain English → en-us."""
-        speed = SPEED_FOR_MOOD.get(mood, 1.0)
-        ph = hinglish.phonemize(text) if self.hindi_phonemes else None
+        """English line → the English voice; Hinglish line → the Hinglish voice (or the same one), Hindi words with
+        Hindi phonemes (hinglish.py). His say-as respellings apply to stock Kokoro voices (the American ones)."""
+        speed = SPEED_FOR_MOOD.get(mood, 1.0) * self.base_speed
+        voice, k, ph = self.pick(text)
         if ph:
-            return self.k.create(ph, voice=self.voice, speed=speed, is_phonemes=True)
-        return self.k.create(text, voice=self.voice, speed=speed, lang=self.lang)
+            return k.create(ph, voice=voice, speed=speed, is_phonemes=True)
+        if self.say_as and self.engine == "kokoro":
+            text = apply_say_as(text, self.say_as)
+        return k.create(text, voice=voice, speed=speed, lang=self.lang)
 
     def say(self, text: str, mood: str = "calm") -> bool:
         """Speak sentence by sentence (first audio after the first sentence). Returns False if interrupted."""
