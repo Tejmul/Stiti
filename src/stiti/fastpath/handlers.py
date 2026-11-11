@@ -136,7 +136,8 @@ def list_intents(limit: int = 3) -> str:
     if not rows:
         return "No alarms or reminders set."
     return "Coming up: " + "; ".join(
-        f"{r['kind']} {readback(r['fire_at'])}" + (f" — {r['payload'].get('say')}" if r['kind'] == 'reminder' else "")
+        f"{r['kind']} {readback(r['fire_at'])}" + (f" — {r['payload']['label']}"
+                                                   if r['kind'] == 'reminder' and r['payload'].get('label') else "")
         for r in rows) + "."
 
 

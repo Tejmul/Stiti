@@ -122,6 +122,33 @@ for t in ("Namaskar, aaj shaam ko main kya padhun?", "Okay, and what about tomor
 check("an explicit ask still sets one", "reminder" in (alarms.handle("Remind me at 11 pm to call mom") or "").lower()
       and len(q("SELECT 1 FROM intents")) == 1)
 
+# ---- right after setting one: "PM, not AM" fixes it; a nameless reminder asks what it's for (2026-11-11)
+q("DELETE FROM intents")
+r = alarms.handle("Remind me at 9:30 to revise DBMS")
+rid = one("SELECT max(id) m FROM intents")["m"]
+h0 = row(rid)["fire_at"].astimezone(alarms.CFG.tz).hour
+flip = alarms.handle("I'm telling you 9.30 PM, not AM.")
+h1 = row(rid)["fire_at"].astimezone(alarms.CFG.tz).hour
+check("'9:30 PM, not AM' fixes THAT reminder, no second one",
+      flip and flip.startswith("Fixed") and len(q("SELECT 1 FROM intents")) == 1 and h1 == 21, f"{flip} {h0}->{h1}")
+q("DELETE FROM intents")
+r = alarms.handle("Remind me at 10.")
+check("no 'what for' → she asks", r and "What's it for?" in r and alarms.awaiting_label(), r)
+r2 = alarms.set_label("to check my to-do list")
+nid = one("SELECT max(id) m FROM intents")["m"]
+check("his answer becomes the note", row(nid)["payload"]["label"] == "check my to-do list" and not alarms.awaiting_label(), r2)
+check("the list never says 'Here's your reminder'", "Here's your reminder" not in alarms.list_all())
+alarms.handle("Remind me at 11.")
+check("'nothing' → no fake note", alarms.set_label("nothing").startswith("Okay") and
+      not row(one("SELECT max(id) m FROM intents")["m"])["payload"].get("label"))
+from stiti.engine import Engine  # noqa: E402
+q("DELETE FROM intents")
+eng = Engine("text")
+r = eng.turn("Remind me at 10 tonight")
+r2 = eng.turn("Call mom")
+lab = one("SELECT payload FROM intents ORDER BY id DESC LIMIT 1")
+check("engine: 'Call mom' after 'What's it for?' is the note", lab and lab["payload"].get("label") == "Call mom", f"{r} | {r2} | {lab}")
+
 q("DELETE FROM intents")
 print(f"alarms: {ok}/{ok + fail} checks passed")
 sys.exit(1 if fail else 0)

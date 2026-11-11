@@ -121,6 +121,8 @@ def handle(text: str) -> str | None:
         return move(text)
     if re.search(r"\bsnooze\b", t):
         return snooze_latest()
+    if fixed := fix_ampm(text):
+        return fixed
     if re.search(r"\b(my|kitne|which|what|list|kaunse|show|upcoming|saare|all)\b.*\b(alarms?|reminders?|timers?)\b", t) \
             and not re.search(r"\bset\b", t):
         return list_all()
@@ -147,12 +149,11 @@ def create(text: str, ref: datetime | None = None) -> str | None:
     if rule:
         when = next_time(rule, (ref or now()) - timedelta(seconds=1)) or when
     label = _label(text) if kind == "reminder" else None
-    if kind == "reminder" and not label:
-        label = None
-    say = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, "Here's your reminder.")
+    say = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, NO_LABEL_SAY)
     payload = {"say": say, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120]}
     row = one("""INSERT INTO intents(kind, fire_at, rrule, payload, user_set) VALUES (%s,%s,%s,%s,true) RETURNING id""",
               ("alarm" if kind in ("alarm", "timer") else "reminder", when, rule, json.dumps(payload)))
+    _last.update(id=row["id"], t=time.monotonic(), await_label=kind == "reminder" and not label)
     if kind != "timer" and os.getenv("STITI_EVENTKIT", "on") != "off":
         try:
             from ..connectors import eventkit
@@ -170,8 +171,65 @@ def create(text: str, ref: datetime | None = None) -> str | None:
         slot = say_when(when) if (ref is None or ref.date() == now().date()) else readback(when)
     if kind == "alarm":
         return f"Done — alarm {slot}. (#{row['id']})"
-    about = f": {second_person(label)}" if label else ""
-    return f"Got it — reminder {slot}{about}. (#{row['id']})"
+    if not label:                                  # never a nameless reminder: ask what it's for (next line = label)
+        return f"Got it — reminder {slot}. What's it for? (#{row['id']})"
+    return f"Got it — reminder {slot}: {second_person(label)}. (#{row['id']})"
+
+
+# ---------------------------------------------------------------- right after setting one
+NO_LABEL_SAY = "You asked me to remind you now."
+_last = {"id": None, "t": 0.0, "await_label": False}     # the reminder he just set (this process)
+JUST_SET_S, LABEL_WAIT_S = 600.0, 90.0
+_HALF = r"(a\.?\s?m\.?|p\.?\s?m\.?|morning|evening|night|subah|shaam|raat)"
+AMPM_FIX_RX = re.compile(rf"\b{_HALF}\b[^.?!]{{0,15}}\bnot\s+(?:in\s+the\s+)?{_HALF}\b|"
+                         rf"\bnot\s+(?:in\s+the\s+)?{_HALF}\b[^.?!]{{0,20}}?\b{_HALF}\b", re.I)
+
+
+def _pm(word: str) -> bool:
+    return bool(re.match(r"p|evening|night|shaam|raat", word, re.I))
+
+
+def fix_ampm(text: str) -> str | None:
+    """'I said 9:30 PM, not AM' right after setting one: flip THAT reminder's half of the day (2026-11-11 it made a
+    second reminder labelled 'not AM' instead)."""
+    m = AMPM_FIX_RX.search(text)
+    if not m or not _last["id"] or time.monotonic() - _last["t"] > JUST_SET_S:
+        return None
+    want = m.group(1) or m.group(4)
+    r = one("SELECT id, fire_at, rrule, payload FROM intents WHERE id=%s AND state IN ('pending','armed')", (_last["id"],))
+    if not r:
+        return None
+    new = r["fire_at"].astimezone(CFG.tz)
+    if _pm(want) and new.hour < 12:
+        new += timedelta(hours=12)
+    elif not _pm(want) and new.hour >= 12:
+        new -= timedelta(hours=12)
+    if not r["rrule"] and new <= now():
+        new += timedelta(days=1)
+    q("UPDATE intents SET fire_at=%s WHERE id=%s", (new, r["id"]))
+    from .. import cards
+    if hasattr(cards, "note"):                     # the on-screen card shows the move (D30)
+        cards.note("moved", "intent", r["id"])
+    return f"Fixed — {r['payload'].get('kind') or 'reminder'} {readback(new)}. (#{r['id']})"
+
+
+def awaiting_label() -> bool:
+    return bool(_last["await_label"]) and time.monotonic() - _last["t"] < LABEL_WAIT_S
+
+
+def set_label(text: str) -> str:
+    """His answer to "What's it for?" becomes the reminder's note."""
+    _last["await_label"] = False
+    label = re.sub(r"^(it'?s |its |that'?s )?(for |about |to )?", "", text.strip(" .!?"), flags=re.I).strip()
+    if not label or re.match(r"^(nothing|no|nahi|skip|never ?mind|kuch nahi)$", label, re.I):
+        return "Okay, I'll just ping you then."
+    r = one("SELECT id, fire_at, payload FROM intents WHERE id=%s", (_last["id"],))
+    if not r:
+        return "Okay."
+    p = dict(r["payload"])
+    p.update(label=label, say=label)
+    q("UPDATE intents SET payload=%s WHERE id=%s", (json.dumps(p), r["id"]))
+    return f"Got it — {second_person(label)}, {readback(r['fire_at'])}. (#{r['id']})"
 
 
 def _upcoming(kinds=("alarm", "reminder")) -> list[dict]:
@@ -184,7 +242,7 @@ def _describe(r: dict) -> str:
     p = r["payload"]
     k = p.get("kind") or r["kind"]
     rep = f" ({_rule_words(r['rrule'])})" if r.get("rrule") else ""
-    about = f" — {p.get('label') or p.get('say')}" if k == "reminder" else ""
+    about = f" — {p['label']}" if k == "reminder" and p.get("label") else ""
     return f"{k} {readback(r['fire_at'])}{rep}{about} (#{r['id']})"
 
 
