@@ -538,3 +538,18 @@ parameters. No errors to report.", "That is a word I do not recognize.", "My thi
   A lone "Done." after a non-action reply is dropped.
 - Fixed lines: offline → "My head's a bit foggy right now…"; Telegram/web errors no longer read out exception names;
   mail no longer mentions `.env`. Tests: `tests/human_talk_eval.py` (48, incl. 3 live-LLM lines).
+
+## D35: Whole sentences — no missing words when she speaks (2026-11-11)
+
+**Complaint:** "some words are getting missed in between, so people can't understand what you are talking about."
+Measured on the streaming path (LLM deltas → ClauseChunker → StreamLint): "If you're tired, try to rest for ten minutes,
+then start the DSA sheet" was spoken as "If you're tired," (the rest, judged alone, looked like advice); the word cap cut
+"the placement test is tomorrow at" before "ten"; under the 14-word DO cap "Haan, kal subah chhe baje ka alarm" lost
+"laga diya hai…".
+
+- A sentence is judged when it STARTS; once started it is spoken whole. Machine-talk / banned words in the rest end the
+  sentence there; a dropped start drops all of it; a sentence dropped after she has spoken ends the reply (later ones
+  may lean on it). The cap stops only at sentence ends; a sentence may finish up to 1.6× the cap, then ends at a comma.
+- `enforce()` (what's saved) judges sentence 1 by its first clause like the voice, so saved == spoken.
+- No capitals inside sentences ("Laga", "Ten"). "I hear your frustration" joins the banned therapy-speak.
+- Tests: `tests/whole_sentence_eval.py` (13).
