@@ -4,7 +4,7 @@
 > Do **not** read all of `docs/`, `research_notes/`, `reports/` up front — open them only when the task needs
 > that specific detail (pointers below). **Every session must update this file before it ends** (see bottom).
 >
-> Last updated: **2026-11-10** (session: whiteboard tutor build)
+> Last updated: **2026-11-11** (session: conversation quality, overlay, voices, four languages, bug sweep)
 
 ---
 
@@ -23,6 +23,10 @@
 8. Tejmul writes casual Hinglish/English — take intent over exact words. Short status updates, build fast & fully.
 9. Pronouns for Tejmul not stated → use "they" or the name. Stiti is "she" (wake phrase "wake up baby girl").
 10. README tagline: "Your girlfriend may not understand you, but Stiti will."
+11. **One branch per feature → PR → CI → merge.** Push only when he says "push", all at once. Never push
+    `backup/pre-trailer-removal`. Worktrees go in the session scratchpad, never on ~/Desktop.
+12. **Never show his conversations in any UI**; no personal data in code or the public build (names → local profile).
+13. **Found a bug while working? Fix it** (own branch + test) — don't just report it. Taste/product calls still go to him.
 
 ## 1. Machine / environment
 - Repo **/Users/tejmul/Desktop/Stiti** (GitHub Tejmul/Stiti, public, `main`). Python 3.12 via **uv**; Node 26; gh CLI as `Tejmul`.
@@ -79,6 +83,11 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Web app (`src/stiti/web/` + `frontend/`) | 🟢 Next.js: landing, chat (memory receipts), Memory page — see §6b | DECISIONS D16/D23 |
 | Hinglish voice (`voice/hinglish.py`) | 🟢 Kokoro Hindi voice + code-switch phonemes, WER 68%→~30%; NOT heard on the mic; STT unchanged | DECISIONS D22, `docs/research/hinglish_voice.md` |
 | Cloud LLM router (D17) | 🟢 live with Groq/OpenRouter/Gemini; P1 backup needs a Z.ai or Cloudflare key | `docs/research/free_llm_providers.md` |
+| Conversation quality (D24–D29) | 🟢 turn-taking, JARVIS-psych persona + strategies, STT glossary + Groq 2nd opinion, personal emotion, preemptive replies | DECISIONS D24–D29 |
+| Talks like a person + whole sentences + honesty (D31, D35) | 🟢 no machine-talk, no missing words, never claims an undone action | DECISIONS D31/D35 |
+| Desktop overlay (D26, D30) | 🟢 pill + cards that animate add/done/cancel; NOT seen by him on screen yet | DECISIONS D26/D30 |
+| Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
+| Four languages (D34) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; NOT tested on his real voice | `docs/research/language_switching.md` |
 
 ## 6. Whiteboard tutor (`src/stiti/tutor/`) — backend design
 - **Pattern: the brain decides, the LLM fills slots.** Code owns lesson shape (warm-up → hook → map → teach ×3 →
@@ -130,9 +139,23 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 1. (Symlink no longer needed — app reinstalled to the real path.) 2. `uv run stiti backup --show-key` → save the key. 3. Add `ZAI_API_KEY` and/or
 `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` (personal-chat backup) and optionally `NVIDIA_API_KEY`; restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
 6. Try `uv run stiti web` and `uv run stiti teach`. 7. Confirm the `public/actions` icon licence (looks like
-Streamline) before the repo is promoted.
+Streamline) before the repo is promoted. 8. Talk to Stiti for real: overlay pill/cards, the language switch
+(English ↔ Telugu ↔ Hindi), a lesson (one board only), "it's done" on a to-do. 9. Optional: a different English voice
+(`~/.stiti/voice_samples/english/`, note: that lineup predates the "Tej" fix). 10. Re-check goonj's licence before
+any public build (trained on synthetic ElevenLabs/Fish voices).
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-11 (b) — four languages, voices, bug sweep (D30–D35, PRs #23–#32):** root cause of "to-do list empty":
+  the mic stream died silently for 12 h → watchdog. Cards animate add/done/cancel; "it's done" resolves "it".
+  Machine-talk cut + SOUL fits the 1400-char cap. Two voices (Jessica / hf_alpha) + speed + say-as. Three lessons
+  at once (lock race) → lock at launch. Language mirroring en/hinglish/hindi/telugu/tenglish (LID 32 ms, lock/unlock).
+  Whole sentences (words were dropped mid-sentence). Scripted 25-turn day audit found + fixed: "revise" opened a
+  lesson, "Also add…" was claimed but not added, surprise reminders, nameless reminders, "not AM" duplicates, life
+  updates → control. NOT verified on his mic: languages, LID on his voice, overlay visuals. Next: characters
+  (Harvey-/Zoro-style personas on top of emotion), Telugu fast paths, real-voice LID check.
+- **2026-11-11 (a) — conversation quality (D24–D29):** intro nag, turn-taking, JARVIS/psych persona, STT glossary +
+  Groq second opinion (WER 12.4→6.8%), goonj voices, personal emotion recorder, preemptive replies, desktop overlay,
+  website v2, README. All merged (#12–#22).
 - **2026-11-10 — resume, Hinglish voice, Next.js frontend + Memory page (D22, D23):** resume → clean
   `~/.stiti/me/resume.md` (ingested) + 12 About-me facts; owner name set. Hinglish TTS: Roman Hinglish was read by the
   US voice (68% WER) → code-switch phonemes + Kokoro `hf_alpha` (~30%, same latency). Frontend moved to Next.js (3
