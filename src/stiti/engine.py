@@ -391,6 +391,8 @@ class Engine:
         live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
 
         # ---- fast paths (no LLM) ----
+        from . import cards
+        cards.take()                                    # forget a change noted outside a turn (scheduler, web)
         low = psych.minimum_viable_day(emo.label)
         from .brain import instructions, onboarding
         from .life import proactive
@@ -666,7 +668,7 @@ class Engine:
                 if privacy >= 2:
                     reply = "That sounds private, so I'm keeping it on this Mac. "
                 elif time.time() - self._offline_said_at > 3600:
-                    reply = "My thinking brain (cloud LLM) is offline right now. "
+                    reply = "My head's a bit foggy right now, so I can't think that one through. "
                     self._offline_said_at = time.time()
                 else:
                     reply = ""
@@ -682,7 +684,7 @@ class Engine:
                     m = mems[0]
                     reply += f"Here's what I remember from {m['occurred_at'].astimezone(CFG.tz):%d %b}: “{m['text']}”"
                 elif reply:
-                    reply += "I can still do todos, alarms and reminders, and I'm remembering everything you say."
+                    reply += "I can still handle your to-dos, alarms and reminders, and I'll remember what you said."
                 else:
                     reply = "Hmm, that one I can't answer right now — but I've noted it."
                 info = {"error": str(e)}
@@ -694,11 +696,11 @@ class Engine:
                 return self._incomplete(user_ep, mark)
             self.last_marker = mark
         if route == "llm" and not (self.pending is not None and reply.startswith("Should I go ahead")):
-            reply = psych.enforce(reply, strat)         # strategy shape, banned tics, questions, promises — in code
+            reply = psych.enforce(reply, strat, user_text=text)   # strategy shape, banned tics, machine-talk — in code
             if mems and not strategy.asks_about_past(text, domain):
                 gate.mark_volunteered(reply, mems)      # G4 clocks start only for memories she actually used
         else:
-            reply = psych.lint(reply)
+            reply = psych.lint(reply, user_text=text)
         m = re.search(r"\((task )?#(\d+)\)", reply)   # ids stay internal (undo); never spoken or shown
         self.last_action = ({"type": "task" if m.group(1) else "intent", "id": int(m.group(2))}
                             if m and route == "fast_path" else None)
@@ -727,8 +729,8 @@ class Engine:
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)
-            from . import cards
-            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from)
+            self.last_card = cards.for_turn(text, str(domain), reply, self.last_action, live_res, live_from,
+                                            event=cards.take())
         except Exception as e:
             print(f"[cards] {e}")
             self.last_card = None

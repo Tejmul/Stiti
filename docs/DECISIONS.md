@@ -535,3 +535,40 @@ from a 6-voice lineup; then: "there should be two voices: one for Hinglish and a
   never in code — and apply to stock Kokoro voices only (goonj already says Indian names right).
 - CLI: `stiti voices use-hi <voice|off>`, `stiti voices speed 1.05`, `stiti voices say-as <word> <how>`. Fixed: `try` /
   `use` treated every non-`af_` voice as a goonj persona (hf_beta broke). Tests: `tests/voice_pick_eval.py` (21).
+## D31: She talks like a person — machine-talk cut in code, SOUL fits the briefing (2026-11-11)
+
+**Complaint:** "Why is it reporting all the errors and technical terms while talking?" Real replies: "The voice model is
+likely glitching or the audio stream is corrupted. I cannot control the synthesis engine…", "Functioning within normal
+parameters. No errors to report.", "That is a word I do not recognize.", "My thinking brain (cloud LLM) is offline."
+
+- **Cause 1 — SOUL:** "Stiti is Tejmul's own JARVIS … British-butler understatement" + "never claim feelings" made the
+  model play a machine. **Cause 2 — truncation:** the briefing keeps only 1400 chars of SOUL; ours was ~1700, so the
+  whole "Never" section was cut every turn. New SOUL (live + `docs/persona/SOUL.jarvis.md` + `DEFAULT_SOUL`): a friend
+  who sounds like a person, "Sounds human" rules first, 1386 chars. No bare "Done." example (the model copied it).
+- **In code, for any LLM:** `psych.MACHINE` drops sentences where she describes HERSELF as software (my model/engine/
+  servers, normal parameters, synthesis engine, "word I do not recognize", rate-limited…) in `enforce`, `lint` and
+  `StreamLint`. His tech talk ("Postgres is a database", "status code 404", "your API key") is untouched — 12/12 kept.
+  If nothing human is left: `human_fallback` ("Good, thanks — quiet day on my side." / "Sorry, my voice is acting up a
+  bit." / "Sorry, I didn't catch that."); the voice loop speaks the clean reply if every streamed piece was cut.
+  A lone "Done." after a non-action reply is dropped.
+- Fixed lines: offline → "My head's a bit foggy right now…"; Telegram/web errors no longer read out exception names;
+  mail no longer mentions `.env`. Tests: `tests/human_talk_eval.py` (48, incl. 3 live-LLM lines).
+## D30: Cards play the change — added / done / cancelled animate on the list (2026-11-11)
+
+**Ask:** "I tell it a to-do → it's noted. I say 'okay, it has been done' → the card appears, the item is struck, and it
+goes away from the list. Same for everything else."
+
+- **What changed comes from the brain, not the reply text.** Fast-path writers call `cards.note(op, kind, ids)`
+  (to-do added / done / removed / cleared / restored; reminder set / cancelled / moved); the engine clears it at the
+  start of a turn and passes it to `cards.for_turn(event=)`. Cards are now always the whole list with a `focus`
+  (`todo_added` / `reminder_set` one-line pill confirmations are no longer produced; the pill path still exists).
+- **Timeline is pure** (`overlay/model.choreography` + `collapse`, unit-tested): rows rise in (45 ms stagger, ≤ 250 ms);
+  an arriving row gets a blue wash + icon bounce, settles at 1.6 s; a leaving row gets ✓ / ✕ / slashed bell and a
+  strike line drawn left → right at 0.55 s, holds 0.75 s, then folds (300 ms) while rows below close up, the card
+  shortens from the bottom and the eyebrow counts down ("All clear" when the last one goes). All within ~1.9 s, i.e.
+  while she is still saying it. Reduce Motion: no slides; strike + removal still happen.
+- **"It's done" with no task named** resolves to the task he just added / was just shown (15 min), else the only open
+  one, else she asks "Which one is done — …?" and shows the list. Guard: "I'm done" / "I am so done" is about HIM and
+  never ticks a to-do; a bare "done" only counts right after a to-do was in play.
+- Overlay panels stay excluded from screen capture; only `overlay.demo --shots` (fake data) lifts that, to check frames.
+- Tests: `tests/card_motion_eval.py` (42). Verified visually with `python -m stiti.overlay.demo --motion --shots DIR`.

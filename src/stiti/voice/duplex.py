@@ -7,6 +7,11 @@ reference, the mic is cleaned against it, then downsampled to 16 kHz for VAD/STT
 Barge-in controls (endpoint.py decides, this only does it): duck() lowers her to 30 % with a 30 ms ramp, pause()
 fades out and HOLDS the queue, resume() fades back in where she paused, stop_playback() fades out over 30 ms and
 drops the rest. Every play() gets an id and `done_id` says which pieces were fully played (= what he heard).
+
+Mic watchdog (2026-11-11 bug: she ran 12 h deaf after the Mac slept / the input device changed — PortAudio just stops
+calling back, no error): `health()` says what's wrong — no callback for STALL_S, or the RAW mic exactly 0.0 for ZERO_S
+(a real mic always has a noise floor) — and `heal()` reopens the stream on the CURRENT default devices (PortAudio is
+re-initialised so it re-reads the device list), at most once per REOPEN_EVERY_S.
 """
 from __future__ import annotations
 
@@ -26,6 +31,10 @@ BLOCK = 480            # 10 ms — what the WebRTC APM expects
 FADE_S = 0.03          # 30 ms ramps: no clicks on duck / pause / stop
 DUCK_GAIN = 0.3
 LEVEL_BLOCK = RATE * 40 // 1000        # 40 ms of samples per published level
+STALL_S = 3.0          # no audio callback this long = the stream is dead (device gone, Mac woke from sleep)
+ZERO_S = 30.0          # raw mic digitally silent this long = dead input
+REOPEN_EVERY_S = 30.0  # first retry gap; doubles while it stays dead (muted mic), capped at REOPEN_MAX_S
+REOPEN_MAX_S = 600.0
 
 
 def resample(audio: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
@@ -46,8 +55,10 @@ class Duplex:
         self.apm = rtc.AudioProcessingModule(echo_cancellation=aec, noise_suppression=True,
                                              high_pass_filter=True, auto_gain_control=False)
         self._init_playback()
-        self.stream = sd.Stream(samplerate=RATE, blocksize=BLOCK, channels=1, dtype="float32",
-                                latency="low", callback=self._cb)
+        self.stream = self._new_stream()
+
+    def _new_stream(self):
+        return sd.Stream(samplerate=RATE, blocksize=BLOCK, channels=1, dtype="float32", latency="low", callback=self._cb)
 
     def _init_playback(self) -> None:
         """Playback state only (tests build a Duplex without a sound device through this)."""
@@ -66,6 +77,57 @@ class Duplex:
         self.out_rms = 0.0
         self._lv_m = self._lv_o = 0.0     # running sums of squares for the current 40 ms block
         self._lv_n = 0
+        self.last_cb = time.monotonic()   # mic watchdog: last audio callback ...
+        self._zero_since: float | None = None   # ... since when the raw mic has been exactly 0.0 ...
+        self._last_sound = 0.0            # ... and the last block with real (non-zero) mic signal
+        self._opened_at = time.monotonic()
+        self._last_reopen = 0.0
+        self.reopens = 0
+        self._streak = 0                  # reopens in a row without the mic coming back
+
+    # ---------- mic watchdog ----------
+    def health(self, now: float | None = None) -> str | None:
+        """None = the mic is alive; otherwise a short reason."""
+        now = time.monotonic() if now is None else now
+        st = getattr(self, "stream", None)
+        if st is not None and not getattr(st, "active", True):
+            return "audio stream stopped"
+        if now - max(self.last_cb, self._opened_at) > STALL_S:
+            return f"no audio from the mic for {now - max(self.last_cb, self._opened_at):.0f} s"
+        if self._zero_since is not None and now - self._zero_since > ZERO_S:
+            return f"the mic has sent pure silence for {now - self._zero_since:.0f} s"
+        return None
+
+    def heal(self, now: float | None = None) -> str | None:
+        """Reopen the stream if the mic is dead (rate-limited). Returns the reason when it acted."""
+        now = time.monotonic() if now is None else now
+        why = self.health(now)
+        if why is None:
+            if self._last_sound > self._opened_at:
+                self._streak = 0                   # real sound since the last (re)open → it recovered
+            return None
+        if now - self._last_reopen < min(REOPEN_EVERY_S * 2 ** max(self._streak - 1, 0), REOPEN_MAX_S):
+            return None
+        self._last_reopen = now
+        self.reopens += 1
+        self._streak += 1
+        try:
+            self.stream.abort()
+            self.stream.close()
+        except Exception:
+            pass
+        try:
+            sd._terminate()                        # re-read the device list → follow the current default mic
+            sd._initialize()
+        except Exception:
+            pass
+        try:
+            self.stream = self._new_stream()
+            self._start()
+        except Exception as e:
+            why += f" (reopen failed: {e}; will retry)"
+        self._opened_at, self._zero_since = time.monotonic(), None
+        return why
 
     # ---------- playback side ----------
     def play(self, audio: np.ndarray, sr: int) -> int:
@@ -152,9 +214,15 @@ class Duplex:
 
     # ---------- the 10 ms audio callback ----------
     def _cb(self, indata, outdata, frames, t, status):
+        now = time.monotonic()
+        self.last_cb = now
         out = self._pull(frames)
         outdata[:, 0] = out
         mic = indata[:, 0]
+        if mic.any():
+            self._zero_since, self._last_sound = None, now
+        elif self._zero_since is None:
+            self._zero_since = now
         if frames == BLOCK:
             self.apm.process_reverse_stream(rtc.AudioFrame(_to_i16(out), RATE, 1, BLOCK))
             mf = rtc.AudioFrame(_to_i16(mic), RATE, 1, BLOCK)
@@ -172,13 +240,17 @@ class Duplex:
                 _overlay_level(self.mic_rms, self.out_rms)
         self.on_mic(mic.reshape(-1, 3).mean(axis=1) if len(mic) % 3 == 0 else resample(mic, RATE, 16000))
 
-    def __enter__(self):
+    def _start(self) -> None:
         self.stream.start()
         lat = self.stream.latency
         try:
             self.apm.set_stream_delay_ms(int(sum(lat) * 1000) if isinstance(lat, (tuple, list)) else int(lat * 2000))
         except Exception:
             pass
+
+    def __enter__(self):
+        self._start()
+        self._opened_at = time.monotonic()
         return self
 
     def __exit__(self, *a):

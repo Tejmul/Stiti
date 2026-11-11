@@ -67,7 +67,8 @@ def make_panel(cls, w: float, h: float):
     p.setHidesOnDeactivate_(False)
     p.setReleasedWhenClosed_(False)
     p.setMovable_(False)
-    p.setSharingType_(AppKit.NSWindowSharingNone)   # his to-dos stay out of screen shares / recordings
+    if os.getenv("STITI_OVERLAY_DEMO_CAPTURE") != "1":   # set only by `overlay.demo --shots` (fake data)
+        p.setSharingType_(AppKit.NSWindowSharingNone)   # his to-dos stay out of screen shares / recordings
     p.setAlphaValue_(0.0)
     return p
 
