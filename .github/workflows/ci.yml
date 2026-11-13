@@ -1,8 +1,10 @@
 name: evals
-on:
+on:                             # README / docs-only changes don't run the evals (nothing to test)
   push:
     branches: [main]
+    paths-ignore: ["**.md", "docs/**", "LICENSE", ".gitignore"]
   pull_request:
+    paths-ignore: ["**.md", "docs/**", "LICENSE", ".gitignore"]
 jobs:
   evals:
     runs-on: macos-latest      # Apple Silicon, like Tejmul's M2
