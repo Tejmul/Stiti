@@ -12,6 +12,9 @@
 ### *Your girlfriend may not understand you, but Stiti will.*
 **A local-first, zero-cost, Jarvis-style personal AI whose brain is memory, not an LLM.**
 
+[![Open Source](https://img.shields.io/badge/open%20source-yes-brightgreen?logo=opensourceinitiative&logoColor=white)](https://github.com/Tejmul/Stiti)
+[![License: MIT](https://img.shields.io/badge/license-MIT-yellow.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/Tejmul/Stiti?style=social)](https://github.com/Tejmul/Stiti/stargazers)
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Postgres](https://img.shields.io/badge/PostgreSQL-18-4169E1?logo=postgresql&logoColor=white)
 ![pgvector](https://img.shields.io/badge/pgvector-0.8.7-6E40C9)
@@ -20,9 +23,11 @@
 ![Runs on](https://img.shields.io/badge/runs%20on-M2%20·%208%20GB-black?logo=apple)
 ![Voice](https://img.shields.io/badge/voice-Indian%20English%20%C2%B7%20understands%20Hinglish-FF9933)
 ![Evals](https://img.shields.io/badge/evals-19%20suites%20%C2%B7%20650%2B%20checks-success) ![CI](https://github.com/Tejmul/Stiti/actions/workflows/ci.yml/badge.svg)
-[![M8ven Score](https://m8ven.ai/badge/mcp/tejmul-stiti-16a7zi?v=ece25ed1c347c7ca8be899dbcfca98aa)](https://m8ven.ai/mcp/tejmul-stiti-16a7zi?s=readme)
+[![M8ven Score](https://m8ven.ai/badge/mcp/tejmul-stiti-16a7zi)](https://m8ven.ai/mcp/tejmul-stiti-16a7zi?s=readme)
 
 *"Hey Stiti" · "Wake up baby girl" — and she remembers everything.*
+
+**🔓 Fully open source under the [MIT license](LICENSE): use it, fork it, build your own Stiti.**
 
 </div>
 
@@ -383,6 +388,16 @@ frontend/              # Next.js website (static export)
 db/schema.sql          # 14 tables + recall() + current_facts()
 docs/ · reports/ · research_notes/ · tests/
 ```
+
+## 🤝 Open source & contributing
+
+Stiti is **open source** under the [MIT license](LICENSE). The whole thing is here, with nothing held back: the memory engine,
+the decision layer, the voice pipeline and the whiteboard tutor. Use it, fork it, learn from it, or build your own buddy on top.
+
+- ⭐ **Star the repo** if the idea of "memory is the brain, the LLM is just the mouth" clicks for you.
+- 🐛 **Found a bug or have an idea?** [Open an issue](https://github.com/Tejmul/Stiti/issues).
+- 🔧 **Want to help?** Fork it, make a branch, and send a pull request. Keep to the [ground rules](CLAUDE.md): free,
+  local-first, fast, and it has to run on an 8 GB Mac. Run `tests/run_all.sh` before you open the PR.
 
 <div align="center">
 
