@@ -20,6 +20,7 @@
 ![Runs on](https://img.shields.io/badge/runs%20on-M2%20·%208%20GB-black?logo=apple)
 ![Voice](https://img.shields.io/badge/voice-Indian%20English%20%C2%B7%20understands%20Hinglish-FF9933)
 ![Evals](https://img.shields.io/badge/evals-19%20suites%20%C2%B7%20650%2B%20checks-success) ![CI](https://github.com/Tejmul/Stiti/actions/workflows/ci.yml/badge.svg)
+[![M8ven Score](https://m8ven.ai/badge/mcp/tejmul-stiti-16a7zi?v=ece25ed1c347c7ca8be899dbcfca98aa)](https://m8ven.ai/mcp/tejmul-stiti-16a7zi?s=readme)
 
 *"Hey Stiti" · "Wake up baby girl" — and she remembers everything.*
 
