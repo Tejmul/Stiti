@@ -69,6 +69,12 @@ CHAINS = {
                    ("cloudflare", "@cf/openai/gpt-oss-120b"), ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"),
                    ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("mistral", "mistral-small-latest")],
 }
+# night/nap memory extraction (D38): strict-JSON models first; Groq limits are per model, so its other models are real
+# fallbacks before a weaker one. Runs only while he's quiet (the voice chain's Groq qwen is never starved mid-talk).
+CHAINS["extract"] = [("cerebras", "gpt-oss-120b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
+                     ("groq", "openai/gpt-oss-20b"), ("cerebras", "qwen-3.8-27b"), ("zai", "glm-4.7-flash"),
+                     ("cloudflare", "@cf/openai/gpt-oss-120b"), ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+                     ("mistral", "mistral-small-latest"), ("zai", "glm-4.5-flash")]
 CHAINS["tutor_answer"] = [("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"),
                           ("cloudflare", "@cf/openai/gpt-oss-120b"), *NV_FAST,
                           ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"), ("zai", "glm-4.7-flash")]

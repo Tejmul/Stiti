@@ -640,3 +640,92 @@ one reply and Groq doesn't support them).
 - **Fragments**: a half sentence joined into the next one is marked importance 1 (out of recall), like `_incomplete`.
 - Verified: `tests/no_repeat_eval.py` (60); live Groq run on a made-up 11-line profile: 6 → 3 new → 3 new → 1 new →
   honest line, zero repeats. NOT verified on the mic yet.
+
+## D38: She learns from normal conversation — night extraction that works, real-time life updates, honest "noted" (2026-11-14)
+**Problem (measured on his real brain, 4 days, ~270 episodes):** 12 current facts, all from the day-one resume import;
+the two night runs extracted `{}` and `{"added": 1}` (a mishearing, later retracted); 2 entities; 1 lesson.
+"Actually, I left MVRX Labs… I left in September" → "Noted. I will mark that down." — nothing was written.
+Research: `docs/research/learn_from_chat.md` (13 systems: Mem0, Graphiti, MemGPT, A-MEM, LangMem, ChatGPT memory…).
+
+**Root causes found** (the old extractor is not dead: on a clean made-up English day it finds ~8 facts — it fails at
+everything around that)
+1. *Nothing in the turn.* Only keythings (likes/diet) wrote facts live; `REMEMBER_RX` replied "Noted — I'll remember
+   that." and wrote nothing; the LLM said "noted" freely (no rule against it, unlike "Added …" / "from now on").
+2. *The night job mostly didn't run* (Mac asleep at night; catch-up only once a day — 11-12/11-13 had no run), and the
+   MVRX turn (ep 285/286) was after the last watermark anyway.
+3. *His real windows had few durable statements, and the extractor saw them with no context*: of 127 lines sent, most
+   were questions, commands, wake words, Telugu/garbled STT; no Stiti line, so short answers meant nothing; STT half
+   sentences went twice.
+4. *Prompt/schema:* free-form JSON (no strict schema), template showed `"confidence":0.0` next to a `< 0.5` drop rule,
+   `object_is_entity` defaulted to true (junk "thing" entities), no examples, "skip … questions" with nothing about
+   what TO keep (relations, changes), and no view of existing facts — so "I left X" could never end "intern at X"
+   (resume facts are all predicate `noted`, no object entity).
+5. *Validation:* facts with no valid evidence id were pinned to the batch's last episode (not rejected); a `null`
+   confidence would crash the run; one bad JSON answer failed the whole run and the watermark never moved.
+6. *Directives:* free supersession keys → "Switch to Hindi" and "Switch to English" both active forever; one-off
+   commands ("shut up… get deactivated") became boundaries.
+7. *Standing profile:* top-10 self facts by confidence → 0.95 resume lines always won; rebuilt only at night; an empty
+   rebuild left the stale cache in place.
+
+**Fixes**
+- **Night/nap extraction** (`brain/sleep.py`): his statement sentences only (questions / greetings / commands / cut-off
+  fragments / already-extracted dropped locally, P2 never selected), each with Stiti's previous reply as context;
+  KNOWN FACTS (current, P≤1, his newest + those about entities named) with ids → the model returns `ends`
+  (`wrong=true` → retracted, else `valid` closed). Strict JSON schema (`router.complete(schema=…)`, new `extract`
+  chain: gpt-oss-120b → Groq's other models, each with its own TPM → weaker ones). Validation in code: evidence must be
+  his line ids, confidence ≥ 0.6, a subject/object word must appear in what he said, nothing "about Stiti", a tie
+  (works_at, plays…) whose sentence says it ended is rejected ("contradicted"), entities must be named in his lines.
+  "X is Ravi's sister" text → `X —sister_of→ owner` whatever direction the model used; relation placeholders
+  ("Ravi's sister") never fuzzy-merge. Directives: canonical keys (brevity / questions / call_me…), language rules and
+  `standing=false` skipped (D34 decides language per turn). Bad batch → skipped and counted, run continues; no
+  provider → wait 61 s once, then `partial` with the watermark. Rejection counts + a few examples in the stats.
+- **Writes with temporal validity** (`brain/factstore.py`, shared): add = merge on same (subj, pred, obj) or ≥ 0.92
+  embedding similarity; functional predicates end the old value (no overlapping ranges, never an empty range);
+  `close_ties` ends present-tense facts about X but keeps past-tense history ("was an intern at X, Aug–Sep").
+- **Real time** (`brain/lifeupdate.py`, deterministic, in the turn): I left / quit X, my internship at X is over,
+  maine X chhod diya · I joined / work at / intern at X (as role) · I moved to / live in X · my sister (Riya) moved to X ·
+  Riya is my sister · I don't play X anymore / I quit smoking · remember that … / "…, yaad rakhna" · actually it's X,
+  not Y (retract + restate, entity renamed). Month phrases date it ("in September" → valid from 1 Sep). Hypotheticals
+  ("if I left…"), questions, "remember to …" and reminder/todo/alarm turns are skipped. Saved → fast reply "Got it —
+  updated: you left MVRX Labs (September)." (no LLM), episode importance 7, standing profile + USER.md re-rendered in a
+  background thread. A life-update/correction the patterns can't parse ("actually…", "change it", job/moved words) →
+  the same extractor for that one turn, in a background thread after the reply (`background_smart`, never the voice
+  chain's model; P2 never).
+- **Honesty** (`psych.MEMORY_CLAIM_RX`, `Strategy.allow_memory_claim`): "noted / I'll remember / mark that down /
+  updated / yaad rakh liya" is cut (enforce + StreamLint, also mid-sentence) unless this turn really saved something;
+  the brief says "Nothing was saved to memory this turn" or lists what was. "I haven't saved that yet" is not a claim.
+  The hollow REMEMBER fast path is gone. A life update is no longer taken as a talk-style lesson / correction.
+- **Standing profile:** newest self facts first, then surest, then his people, then rules (≤ 900 chars, whole lines);
+  rebuilt after every real-time save and after each nap/night; deleted when empty.
+- **Night job runs and says so** (`app.py`): night run tracked as its own `consolidation_runs` row (`job='night'`);
+  plus a **nap** (extract → profile → USER.md, no backup) once ≥ 6 new lines are pending and he's been quiet 10 min, at
+  most every 2 h; one job at a time; each step isolated (a failing step doesn't stop the rest); one `[sleep]` log line
+  with counts (lines, facts +added =confirmed ~superseded, ended, corrected, entities, mentions, directives, rejected,
+  profile lines). Fixed: `busy` was undefined in the scheduler until the first 60-s pass; GRAPH_REPORT crashed on an
+  empty/ended range.
+
+**Numbers**
+- Selection on his real brain (read-only dry run, no LLM): 127 lines would have been sent before → 72 now (+ 66 with
+  her reply as context); 71 skipped locally (questions, greetings, commands, fragments). Real-time patterns would have
+  caught the MVRX turn and "Pugal is my son"; the to-do/alarm turns are not touched.
+- Live check (made-up 15-line day with a resume-style "intern at Ledgerly" + "hockey player", real Groq gpt-oss-120b,
+  ~3.2k tokens, ~5 s): **new** → 10 facts (Meera is his sister / works at Finlo / moving to Pune, "left Ledgerly in
+  September 2026", full-time on Tilecraft, Arjun is his friend, badminton, no longer hockey, biryani, no spicy food
+  after 9), **2 ended** (the internship + "hockey player"), 1 rule, "Switch to Hindi" skipped, 0 junk. **Old** prompt on
+  the same lines → 8 facts, **0 ended** (profile still said "intern at Ledgerly" and "hockey player"), no sister
+  relation, "Switch to Hindi for replies" saved as a forever-rule, 3 junk "thing" entities. When Groq's TPM is used up
+  the chain falls to GLM-4.7-Flash, which is clearly weaker (missed relations/ends in one run) — the code-side
+  safety net (`left`/`stopped` facts close ties, contradiction check) covers the worst of it.
+
+**Tests:** `tests/learn_from_chat_eval.py` (55, fake router → offline/deterministic): chat → facts/entities/mentions/
+rule; questions/commands/greetings/fragments/P2 not sent; Stiti's line, invented ids and low confidence rejected;
+"left Ledgerly" ends the internship (kept in history); repeat merged; standing profile + USER.md + GRAPH_REPORT;
+real-time "I left Orbitly" (dated September, no LLM), "I don't play hockey anymore" (not a lesson), "Pugal is my son",
+"remember that…", no hollow "noted" (complete + stream), background extraction for an unparsed update, hypotheticals /
+questions write nothing. Existing suites re-run green: learning, memory, mdsync, persona, honest_actions, no_repeat,
+intent, conversation, human_talk, whole_sentence, lang_switch, turn, realtime, card_motion, web, speed, proactive,
+emotion_learning, recall.
+
+**NOT verified:** on his mic/real conversations (only made-up data went to the LLM); the nap trigger inside the
+running Stiti.app; Telugu/Hindi-script lines through the extractor; the existing junk in his real brain (e.g. both
+"Switch to Hindi" and "Switch to English" active, "I said shut up…" as a boundary) is left as it is — his call.

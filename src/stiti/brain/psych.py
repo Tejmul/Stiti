@@ -88,6 +88,25 @@ OPEN_CLAIM_RX = re.compile(r"^\W*(?:(?:got it|okay|ok|sure|alright|done)\W+)?(?:
                            r"pull up|bring up|opening|launching)\b[^.!?]{0,25}\b(?:white ?board|board|app|lesson|tutor)\b|"
                            r"\bopening (?:the|your) (?:white ?board|board)\b|"
                            r"\bi (?:can'?t|cannot|can not|don'?t have)\b[^.!?]{0,30}\b(?:white ?board|board)\b", re.I)
+# "Noted. I will mark that down." — said on 2026-11-14 to "I left MVRX Labs", and nothing was written (D38). A memory
+# claim is only allowed when this turn really saved something (Strategy.allow_memory_claim).
+MEMORY_CLAIM_RX = re.compile(r"\b(noted|i'?ll (remember|keep (that|it|this) in mind|note (that|it|this)|make a note|"
+                             r"mark (that|it|this) down|update (that|it|my|your))|i will (remember|note|mark|keep (that|it) in "
+                             r"mind|update|make a note)|i'?ve (noted|saved|updated|recorded|made a note|marked|written|stored)|"
+                             r"i have (noted|saved|updated|recorded|stored)|(made|making) a note|mark(ed)? (that|it|this) down|"
+                             r"(saved|updated|stored) (that|it|this)|i'?ll never forget|won'?t forget|in my memory now|"
+                             r"yaad rakh (liya|li|lungi|loongi|lunga)|note kar (liya|li|lungi)|gurtupettukunta)\b", re.I)
+
+
+def _memclaim(text: str, s) -> bool:
+    if s is None or getattr(s, "allow_memory_claim", False):
+        return False
+    for m in MEMORY_CLAIM_RX.finditer(text):         # "I haven't saved that yet" is honest, not a claim
+        if not re.search(r"(n't|\bnot|\bnever|\bno|\bnothing)\s+(\w+\s+)?$", text[max(0, m.start() - 20):m.start()], re.I):
+            return True
+    return False
+
+
 HONEST_NO_BOARD = "I haven't opened the whiteboard yet. Say “teach me {topic} on the whiteboard” and I'll open it."
 HONEST_NOT_DONE = "I haven't saved that yet. Say “add it to my list” or “remind me at …” and I will."
 LONE_DONE = re.compile(r"(all )?done[.!]?", re.I)
@@ -210,6 +229,8 @@ def _keep(sentence: str, s, last: bool) -> bool:
         return False
     if s is not None and not s.allow_promise and PROMISE.search(st):
         return False                             # a promise with no saved rule behind it is a lie
+    if _memclaim(st, s):
+        return False                             # "noted / I'll remember" with nothing saved is a lie (D38)
     if s is not None and not s.advice and ADVICE.search(st):
         return False
     return True
@@ -262,7 +283,7 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
         last = i == len(sents) - 1               # later sentences may lean on it ("…Then revise graphs")
         fp = _first_piece(x) if i == 0 else x    # the voice judges sentence 1 by its first clause (spoken at once)
         if fp != x and _keep(fp, s, last):
-            if BANNED_RX.search(x) or MACHINE_RX.search(x):
+            if BANNED_RX.search(x) or MACHINE_RX.search(x) or _memclaim(x, s):
                 x = fp.rstrip(",;:—– ") + "."    # the voice ends the sentence where the bad part starts
             if k := _polish(x, s):
                 kept.append(k)
@@ -394,7 +415,7 @@ class StreamLint:
             self.skip = not ends
             return None
         if cont:
-            if BANNED_RX.search(piece) or MACHINE_RX.search(piece):
+            if BANNED_RX.search(piece) or MACHINE_RX.search(piece) or _memclaim(piece, s):
                 self.skip, self.open = not ends, False       # end the sentence here, drop the rest of it
                 return None
         elif not _keep(piece, s, False):
@@ -428,12 +449,14 @@ def minimum_viable_day(mood: str | None) -> bool:
     return mood in ("tired", "sad", "stressed")
 
 
-def rules_block(s, *, can_do: str, rule_saved: bool = False) -> str:
+def rules_block(s, *, can_do: str, rule_saved: bool = False, saved: list[str] | None = None) -> str:
     """[THIS TURN] + [REPLY RULES]: replaces the old CONTRACT. Every value is decided by Stiti, not the LLM."""
     from . import lang as lang_mod
     lang = lang_mod.PROMPT.get(s.lang, lang_mod.PROMPT["english"])
     promise = ("A rule was just saved, so you may say \"from now on\"." if rule_saved
                else "Don't promise future behaviour (\"from now on…\") — nothing was saved.")
+    memory = (f"Saved to memory this turn: {'; '.join(saved)}. You may say briefly that you've noted it." if saved
+              else "Nothing was saved to memory this turn: never say \"noted\", \"I'll remember\" or \"updated\".")
     return "\n".join([
         f"[THIS TURN] strategy={s.name} — {s.line}",
         "[REPLY RULES — you are SPEAKING to him, like JARVIS: brief, warm, dry wit only when it fits]",
@@ -449,6 +472,7 @@ def rules_block(s, *, can_do: str, rule_saved: bool = False) -> str:
         "- Don't restate his message. Don't philosophise or guess who he \"really is\". No guilt words. Honest beats "
         "flattering: if he's wrong, say so kindly with a fact.",
         f"- {promise}",
+        f"- {memory}",
         "- His words come from speech recognition and may be misheard: if a word doesn't fit, use the most likely "
         "meaning; never comment on odd words.",
         "- Don't reuse the opener you used last time.",

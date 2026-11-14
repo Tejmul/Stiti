@@ -200,7 +200,7 @@ class StitiApp(rumps.App):
     def _scheduler(self):
         from .life import alarms, proactive
         tracker, last_pro = proactive.PresenceTracker(), 0.0
-        present = True
+        present, busy = True, False
         if (m := alarms.missed_summary(mark=False)):     # e.g. the Mac was off this morning
             print(f"[alarms] {m}", flush=True)
             self._missed_pending = True
@@ -227,6 +227,9 @@ class StitiApp(rumps.App):
                 if self._sleep_due(now, busy=bool(busy)):
                     self.last_sleep_day = now.date()
                     self._bg(self._sleep)                  # never block alarms while the LLM job runs
+                elif self._nap_due(busy=bool(busy)):
+                    self._last_nap = time.time()
+                    self._bg(self._nap)                    # learn from today's talk without waiting for the night
             except Exception as e:
                 print(f"[scheduler] {e}", flush=True)
             self.stop.wait(5)
@@ -243,18 +246,51 @@ class StitiApp(rumps.App):
         """Nightly consolidation (facts, people, his instructions → rules). It used to run only if the Mac was
         awake at exactly 03:00, so it never ran. Now: at night, or as a catch-up once the last good run is a day
         old and he's been quiet for 15 min."""
-        if busy or self.last_sleep_day == now.date():
+        if busy or self.last_sleep_day == now.date() or getattr(self, "_napping", False):
             return False
         from .db import one
         last = one("""SELECT max(finished_at) t FROM consolidation_runs
-                      WHERE job='extract' AND status IN ('ok','partial')""")["t"]
+                      WHERE job='night' AND status IN ('ok','partial')""")["t"]   # naps log 'extract' (D38)
         stale = last is None or (now - last).total_seconds() > 20 * 3600
         quiet = self.loop is None or time.time() - getattr(self.loop, "last_activity", 0) > 15 * 60
         return stale and quiet and (2 <= now.hour <= 6 or last is None or (now - last).total_seconds() > 30 * 3600)
 
+    NAP_MIN_LINES, NAP_QUIET_S, NAP_EVERY_S = 6, 10 * 60, 2 * 3600
+
+    def _nap_due(self, busy: bool) -> bool:
+        """D38: a daytime learning pass once he has said a few new things and gone quiet for 10 min (at most every 2 h),
+        so a life update said at noon is in USER.md by the afternoon — not only after a night the Mac may sleep through."""
+        if busy or getattr(self, "_napping", False) or time.time() - getattr(self, "_last_nap", 0.0) < self.NAP_EVERY_S:
+            return False
+        if self.loop is not None and time.time() - getattr(self.loop, "last_activity", 0) < self.NAP_QUIET_S:
+            return False
+        from .brain.sleep import pending_lines
+        return pending_lines() >= self.NAP_MIN_LINES
+
     def _sleep(self):
-        from .brain.sleep import run
-        print(f"[sleep] {run(verbose=False).get('extract')}", flush=True)
+        from .brain.sleep import run, summary
+        self._napping = True                       # one learning job at a time (night run or nap)
+        t = time.time()
+        try:
+            out = run(verbose=False)
+            print(f"[sleep] {datetime.now(CFG.tz):%Y-%m-%d %H:%M} night run ({time.time() - t:.0f} s): {summary(out)}",
+                  flush=True)
+        except Exception as e:
+            print(f"[sleep] {datetime.now(CFG.tz):%Y-%m-%d %H:%M} night run FAILED: {type(e).__name__}: {e}", flush=True)
+        finally:
+            self._napping = False
+
+    def _nap(self):
+        from .brain.sleep import nap, summary
+        self._napping = True
+        t = time.time()
+        try:
+            out = nap(verbose=False)
+            print(f"[sleep] {datetime.now(CFG.tz):%Y-%m-%d %H:%M} nap ({time.time() - t:.0f} s): {summary(out)}", flush=True)
+        except Exception as e:
+            print(f"[sleep] {datetime.now(CFG.tz):%Y-%m-%d %H:%M} nap FAILED: {type(e).__name__}: {e}", flush=True)
+        finally:
+            self._napping = False
 
     def _ask(self, title: str, prompt: str) -> str | None:
         w = rumps.Window(message=prompt, title=title, default_text="", ok="Send", cancel="Cancel",

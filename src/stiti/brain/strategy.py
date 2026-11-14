@@ -129,6 +129,7 @@ class Strategy:
     max_items: int = 3
     reframe: bool = False           # LISTEN + thinking trap: one reframe backed by a real fact
     allow_promise: bool = False     # "from now on…" only if a rule was really saved this turn
+    allow_memory_claim: bool = False   # "noted / I'll remember" only if a fact was really saved this turn (D38)
     avoid_terms: list[str] = field(default_factory=list)   # recalled entities he didn't mention: never ask about them
     said: object = None             # norepeat.Ledger: what she already said this conversation (None = repeating is OK)
     more: bool = False              # he asked "what else?": only new things, or the honest "that's most of what I know"
