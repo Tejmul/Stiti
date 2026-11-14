@@ -54,6 +54,8 @@ class FakeAPM:
 
 
 D.sd = FakeSD                                     # never opens a real device
+MIC = {"id": 89}                                  # the fake "macOS default input" CoreAudio id
+D._default_input_id = lambda: MIC["id"]
 
 
 def make() -> D.Duplex:
@@ -176,6 +178,42 @@ check("first mic restart allowed", L._may_restart(now))
 check("second allowed", L._may_restart(now + 60))
 check("third within 10 min refused (no restart loop on a muted mic)", not L._may_restart(now + 120))
 check("allowed again after the window", L._may_restart(now + 700))
+
+# ---- macOS switched the default mic (2026-11-11: lid closed → iPhone mic → lid opened, she stayed on the iPhone) ----
+MIC["id"] = 89
+dx = make()
+feed(dx, True, t0 + 0.1)
+check("stream remembers the mic it opened on", dx._dev_id == 89)
+check("same default mic → healthy", dx.health(t0 + 2.5) is None)
+MIC["id"] = 120                                   # lid closed: macOS moved to the iPhone Continuity mic
+feed(dx, True, t0 + 3.0)                          # the old stream still delivers (quiet) sound — no other alarm
+check("checked at most every 2 s (no ask 0.5 s later)", dx.health(t0 + 3.0) is None)
+why = dx.heal(t0 + 5.0)
+check("default mic changed → heal() reopens", why is not None and why.startswith(D.SWITCHED) and dx.reopens == 1,
+      str(why))
+check("… on the new default mic", dx._dev_id == 120 and dx.stream.active)
+check("a switch is not a dead-mic streak (no backoff)", dx._streak == 0)
+MIC["id"] = 89                                    # lid opened: back to the MacBook mic, only 3 s later
+feed(dx, True, t0 + 7.5)
+why = dx.heal(t0 + 8.0)
+check("switching back reopens at once, ignoring the 30 s gap", why is not None and dx.reopens == 2 and dx._dev_id == 89,
+      str(why))
+check("then healthy again", dx.health(t0 + 10.5) is None and dx.heal(t0 + 13.0) is None and dx.reopens == 2)
+MIC["id"] = None                                  # CoreAudio can't tell (no mic / not macOS) → never a false switch
+feed(dx, True, t0 + 15.5)
+check("unknown default mic → no reopen", dx.health(t0 + 16.0) is None)
+MIC["id"] = 89
+dx = make()
+MIC["id"] = None
+dx2 = make()                                      # opened while there was no default mic at all …
+MIC["id"] = 89                                    # … then one appeared
+feed(dx2, True, t0 + 0.1)
+check("opened with no mic, then a mic appears → reopen", dx2.health(t0 + 3.0) == D.SWITCHED)
+
+from stiti.voice import coreaudio as CA                           # noqa: E402
+real = CA.default_input_id()
+check("CoreAudio query answers on this Mac (int) or None elsewhere, never raises",
+      real is None or (isinstance(real, int) and real > 0), repr(real))
 
 # ---- the loop wires it in ----
 src = open(os.path.join(os.path.dirname(__file__), "..", "src", "stiti", "voice", "loop.py")).read()
