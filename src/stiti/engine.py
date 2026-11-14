@@ -50,6 +50,7 @@ def _names_his_person(words: str) -> bool:
                        LIMIT 1""", {"w": words}))
 
 
+COMMAND_WORDS_RX = re.compile(r"\b(remind me|reminder|alarm|timer|to-?do|add .{1,40} to (my|the) list)\b", re.I)
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
 LIFE_RX = re.compile(r"\b(birthday|shaadi|wedding|job|offer|moved|shift|breakup|died|born|exam|interview|"
                      r"promotion|salary|health|hospital)\b", re.I)
@@ -446,6 +447,12 @@ class Engine:
             proactive.maybe_followup(text)
         from .brain import keythings
         learned = keythings.capture(text, user_ep) if domain not in ("todo", "time", "control") and not crisis else []
+        # D38: "I left X" / "Riya is my sister" / "remember that…" / "actually it's X, not Y" — written NOW, not at night
+        from .brain import lifeupdate
+        if self._spec and lifeupdate.hint(text):
+            raise NotSpeculable("life update")          # the real turn writes it (a held write would be rolled back)
+        upd = lifeupdate.Update() if (crisis or self._spec or COMMAND_WORDS_RX.search(text)) \
+            else lifeupdate.capture(text, user_ep, now=now, privacy=privacy)
         from .brain import learning
         from .voice.wake import is_stop
         after_offer = bool(re.search(r"anything else\?\s*$", self.last_reply_text or "", re.I)) and bool(NOTHING_RX.match(text))
@@ -458,10 +465,10 @@ class Engine:
         # "I didn't understand / what language is this" right after her reply = an implicit correction (REPAIR)
         confused = self.last_reply_text is not None and bool(strategy.CONFUSION_RX.search(text)) \
             and domain not in ("todo", "time") and not crisis
-        corrected = (undo or d.is_("is_correction", 0.6) or confused) and not crisis
+        corrected = (undo or d.is_("is_correction", 0.6) or confused) and not crisis and not upd.saved
         learning.score_lessons(self.last_lesson_ids, corrected)
         learning.mark_outcome(self.last_turn_id, "corrected" if corrected else "confirmed")
-        inferred_ack = None if d.is_("is_correction", 0.6) or crisis or taught else \
+        inferred_ack = None if d.is_("is_correction", 0.6) or crisis or taught or upd.saved else \
             learning.infer_from_turn(text, self.last_reply_full if self.last_interrupted and self.last_reply_full
                                      else self.last_reply_text, interrupted=self.last_interrupted)
 
@@ -484,6 +491,7 @@ class Engine:
                                 pending_offer=(self.last_reply_text or "").rstrip().endswith("?"),
                                 voice_mood=bool(emo.voice_label) and emo.voice_conf >= 0.5)
             s.allow_promise = rule_saved
+            s.allow_memory_claim = bool(upd.saved or learned)
             return s
 
         strat = pick(domain)
@@ -518,6 +526,10 @@ class Engine:
         elif _awaiting_label() and len(text.split()) <= 12 and not bye.is_bye(text):
             from .life import alarms           # she just asked "What's it for?" about a reminder
             reply = alarms.set_label(text)
+        elif upd.saved and len(text.split()) <= 45 and self.onboarding is None and self.chunker is None \
+                and self.woop is None and self.pending is None:   # his life update was written: say so (no LLM)
+            reply = upd.ack
+            strat = strategy.make("DO", strat.lang)
         elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
             reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
             strat = strategy.make("REPAIR" if corrected else "DO", strat.lang)
@@ -600,13 +612,11 @@ class Engine:
         elif psych.WOOP_START.search(text):
             self.woop = psych.Woop()
             reply = self.woop.start()
-        elif domain == "feedback" and d.is_("is_correction", 0.6):
+        elif domain == "feedback" and d.is_("is_correction", 0.6) and not upd.saved:
             _, reply = lessons.capture(text, mood=self.last_mood, lang=strat.lang,
                                        source_episode_ids=[i for i in (self.last_reply_ep, user_ep) if i])
         elif learned and len(text.split()) <= 14 and self.onboarding is None:
             reply = "Noted — " + ", ".join(learned) + "."
-        elif REMEMBER_RX.search(text) and not text.rstrip().endswith("?") and domain in ("memory", "chat"):
-            reply = "Yaad rakh liya." if re.search(r"\b(yaad|rakhna|mat|hai)\b", text, re.I) else "Noted — I'll remember that."
         elif domain == "control":
             reply = handlers.control(text)
         elif domain == "todo":
@@ -627,7 +637,7 @@ class Engine:
         if live_job is not None or live_res is not None:     # live news/web: read it out, may offer "want more?"
             strat = strategy.make("ANSWER", strat.lang, max_words=90, ask=True, callbacks=False)
 
-        if reply is not None and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
+        if reply is not None and not upd.saved and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
             q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))  # commands aren't memories
 
         # ---- LLM path ----
@@ -696,7 +706,8 @@ class Engine:
                 recent=recent, memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
                 strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
-                markers=markers, said=strat.said, more=more)
+                markers=markers, said=strat.said, more=more,
+                saved=[x if x != "__remember__" else "what he asked you to remember" for x in upd.saved] + learned)
             if live_job is not None:
                 try:
                     live_res = live_job.result(timeout=live.BUDGET_S + 1.5)
@@ -821,6 +832,9 @@ class Engine:
             print(f"[cards] {e}")
             self.last_card = None
         self.last_user_ep, self.last_reply_ep, self.last_mood = user_ep, reply_ep, emo.label
+        if upd.needs_llm and privacy < 2 and not (route == "fast_path" and domain in ("todo", "time", "control")):
+            lifeupdate.after_reply(user_ep, privacy)    # an update the patterns couldn't parse: the extractor reads
+                                                        # this one turn in the background (never on the hot path)
         self.last_debug = {"domain": str(domain), "domain_conf": round(d.conf.get("domain", 0), 2), "mood": str(emo.label), "mood_conf": round(emo.conf, 2),
                            "strategy": strat.name, "lang": strat.lang,
                            "privacy": privacy, "route": route, "provider": info.get("provider"),
