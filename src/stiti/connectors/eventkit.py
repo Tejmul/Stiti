@@ -127,6 +127,35 @@ def events(start: datetime, end: datetime) -> list[dict]:
     return out
 
 
+def can_read_events() -> bool:
+    """Already allowed to read the calendar? Never shows the macOS prompt (the morning brief and the meeting heads-up
+    run in the background: from a terminal a prompt would block for a minute). STITI_EVENTKIT=off → False (tests)."""
+    import os
+    if os.getenv("STITI_EVENTKIT", "on") == "off":
+        return False
+    if "events" in _granted:
+        return _granted["events"]
+    try:
+        EK = _ek()
+        return EK.EKEventStore.authorizationStatusForEntityType_(EK.EKEntityTypeEvent) == 3   # full access
+    except Exception:
+        return False
+
+
+def events_quiet(start: datetime, end: datetime) -> list[dict]:
+    """events() without ever prompting; [] when not allowed or on any error."""
+    try:
+        return events(start, end) if can_read_events() else []
+    except Exception:
+        return []
+
+
+def today_events_quiet(now: datetime | None = None) -> list[dict]:
+    now = now or datetime.now(CFG.tz)
+    start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return events_quiet(start, start + timedelta(days=1))
+
+
 def today_events(now: datetime | None = None) -> list[dict]:
     now = now or datetime.now(CFG.tz)
     start = now.replace(hour=0, minute=0, second=0, microsecond=0)
