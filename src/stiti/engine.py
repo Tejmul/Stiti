@@ -137,6 +137,7 @@ class Engine:
         self.lang_pref: str | None = None                   # his "talk in Telugu" (held while he speaks it / English)
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
+        self.askme = None                         # active "ask me questions" round (brain/askme.py, D37)
         self.last_nudge: tuple[int, float] | None = None   # (nudge_id, sent_time) for feedback
         self.ended = False                                  # text/Telegram: he said bye
         self.last_offer: tuple[str, float] | None = None   # ("intro", time) — what "turn this off" refers to
@@ -295,14 +296,14 @@ class Engine:
         """Why this text must NOT be started speculatively (None = it's a plain chat turn). Pure checks only — no
         writes — so a fast path / action / flow / correction never runs before he has surely finished."""
         from . import farewell as bye
-        from .brain import instructions, learning, onboarding
+        from .brain import askme, instructions, learning, onboarding
         from .life import habits, proactive
         from .voice.wake import is_stop
         t = normalize(text)
         now = time.time()
         if self._held is not None or self._spec:
             return "busy"
-        if any(x is not None for x in (self.pending, self.clarify, self.onboarding, self.chunker, self.woop)):
+        if any(x is not None for x in (self.pending, self.clarify, self.onboarding, self.askme, self.chunker, self.woop)):
             return "flow"
         if (self.last_nudge and now - self.last_nudge[1] < 180) or (self.nudged and now - self.nudged < 900):
             return "nudge"
@@ -313,7 +314,8 @@ class Engine:
         checks = (HOLD_RX.match(t), strategy.is_crisis(t), learning.UNDO_RX.match(t), learning.SHORTER_RX.search(t),
                   strategy.CONFUSION_RX.search(t), NOTHING_RX.match(t), is_stop(t), bye.is_bye(t),
                   proactive.DISABLE_RX.search(t), self.INTRO_OFF_RX.search(t), self.INTRO_ON_RX.search(t),
-                  onboarding.START_RX.search(t), chunker.START_RX.search(t), psych.WOOP_START.search(t),
+                  onboarding.START_RX.search(t), askme.START_RX.search(t), chunker.START_RX.search(t),
+                  psych.WOOP_START.search(t),
                   CAL_RX.search(t), MAIL_RX.search(t), PLAN_RX.search(t), GREET_RX.search(t), REMEMBER_RX.search(t),
                   TOOL_HINT_RX.search(t), habits.NEW_RX.search(t), habits.DONE_RX.search(t),
                   re.search(r"\b(habits?|alarm|remind|timer|todos?|task)\b", t, re.I))
@@ -437,8 +439,12 @@ class Engine:
         from . import cards
         cards.take()                                    # forget a change noted outside a turn (scheduler, web)
         low = psych.minimum_viable_day(emo.label)
-        from .brain import instructions, onboarding
+        from .brain import askme, instructions, onboarding
         from .life import proactive
+        if self.askme is not None and askme.is_aside(text):
+            self.askme = None           # "set an alarm for 6" mid-round: the round waits (state is saved), the command runs
+        in_ask = self.askme is not None
+        flow_turn = False
         if self.last_nudge and time.time() - self.last_nudge[1] < 180:      # his reaction to her nudge
             proactive.feedback(self.last_nudge[0], "dismissed" if proactive.DISMISS_RX.match(text) else "accepted")
             self.last_nudge = None
@@ -446,12 +452,13 @@ class Engine:
         if domain in ("chat", "memory") and privacy < 2:
             proactive.maybe_followup(text)
         from .brain import keythings
-        learned = keythings.capture(text, user_ep) if domain not in ("todo", "time", "control") and not crisis else []
+        learned = keythings.capture(text, user_ep) if domain not in ("todo", "time", "control") and not crisis \
+            and not in_ask else []         # (an ask-me answer is stored by the round itself, once)
         # D38: "I left X" / "Riya is my sister" / "remember that…" / "actually it's X, not Y" — written NOW, not at night
         from .brain import lifeupdate
         if self._spec and lifeupdate.hint(text):
             raise NotSpeculable("life update")          # the real turn writes it (a held write would be rolled back)
-        upd = lifeupdate.Update() if (crisis or self._spec or COMMAND_WORDS_RX.search(text)) \
+        upd = lifeupdate.Update() if (crisis or self._spec or in_ask or COMMAND_WORDS_RX.search(text)) \
             else lifeupdate.capture(text, user_ep, now=now, privacy=privacy)
         from .brain import learning
         from .voice.wake import is_stop
@@ -460,7 +467,7 @@ class Engine:
         # "no, I said Tejmul" / "spell it T-E-J-M-U-L" / "add Zonuly to your vocabulary": she misheard a WORD (D27) —
         # learn it for the ears; it's not an undo of her last action and not a lesson about how she talks
         taught = None if crisis else vocab.parse(text, self.last_user_text)
-        undo = not taught and bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None \
+        undo = not taught and not in_ask and bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None \
             and not after_offer
         # "I didn't understand / what language is this" right after her reply = an implicit correction (REPAIR)
         confused = self.last_reply_text is not None and bool(strategy.CONFUSION_RX.search(text)) \
@@ -468,7 +475,7 @@ class Engine:
         corrected = (undo or d.is_("is_correction", 0.6) or confused) and not crisis and not upd.saved
         learning.score_lessons(self.last_lesson_ids, corrected)
         learning.mark_outcome(self.last_turn_id, "corrected" if corrected else "confirmed")
-        inferred_ack = None if d.is_("is_correction", 0.6) or crisis or taught or upd.saved else \
+        inferred_ack = None if d.is_("is_correction", 0.6) or crisis or taught or upd.saved or in_ask else \
             learning.infer_from_turn(text, self.last_reply_full if self.last_interrupted and self.last_reply_full
                                      else self.last_reply_text, interrupted=self.last_interrupted)
 
@@ -513,8 +520,22 @@ class Engine:
             reply = self.clarify.question()
         elif inferred_ack:
             reply = inferred_ack
-        elif (is_stop(text) or bye.is_bye(text)) and self.onboarding is None and self.chunker is None and self.woop is None:
+        elif ((is_stop(text) and not in_ask) or (bye.is_bye(text) and not (in_ask and askme.PAUSE_RX.match(text)))) \
+                and self.onboarding is None and self.chunker is None and self.woop is None:
             reply, self.ended = bye.farewell(text, self.last_mood, now), True
+            self.askme = None           # a goodbye mid-round: it continues next time he asks
+        elif in_ask:
+            reply, finished = self.askme.answer(text, user_ep)
+            flow_turn = True
+            if finished:
+                self.askme = None
+        elif self.onboarding is None and (askme.START_RX.search(text) or (onboarding.done() and re.search(
+                r"\b(get to know me|mujhe jaano|mere baare mein jaano)\b", text, re.I))):
+            self.askme = askme.AskMe()
+            reply, on = self.askme.start()
+            flow_turn = True
+            if not on:
+                self.askme = None
         elif self.nudged and time.time() - self.nudged < 900 and self.last_strategy is not None \
                 and self.last_strategy.name == "NUDGE" and not re.search(r"\b(alarm|remind|timer|todo)\b", text, re.I):
             reply = strategy.nudge_followup(now)        # one warning only — then "As you wish."
@@ -637,7 +658,7 @@ class Engine:
         if live_job is not None or live_res is not None:     # live news/web: read it out, may offer "want more?"
             strat = strategy.make("ANSWER", strat.lang, max_words=90, ask=True, callbacks=False)
 
-        if reply is not None and not upd.saved and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
+        if reply is not None and not upd.saved and not flow_turn and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
             q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))  # commands aren't memories
 
         # ---- LLM path ----

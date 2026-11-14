@@ -729,3 +729,42 @@ emotion_learning, recall.
 **NOT verified:** on his mic/real conversations (only made-up data went to the LLM); the nap trigger inside the
 running Stiti.app; Telugu/Hindi-script lines through the extractor; the existing junk in his real brain (e.g. both
 "Switch to Hindi" and "Switch to English" active, "I said shut up…" as a boundary) is left as it is — his call.
+
+## D37: Ask me questions — a get-to-know-you round of 10, learned by the brain, no LLM (2026-11-14)
+**Ask:** "for knowing me you have to ask questions — ask me 10 questions when I say to ask, which gathers info about
+what I want, ambitions, shows, animes I see, characters I like, etc." Research basis: `research_notes/Key things to
+know intake/intake_research.md` §5 (OARS reflections, summary read-back, easy → personal order, skip / pause), §7
+(consent, P2 for worries, no re-ask of a skipped sensitive item for 30 days), §9.4 (drip-feed, not one long form).
+- **`brain/askme.py`** replaces the never-wired `brain/intake.py` (it imported a `guide.py` that never existed; deleted).
+  The old 10-Q `onboarding.py` stays as the first intro (name, people, routine…); this is the open-ended follow-up.
+- **Bank: 48 questions, 21 categories** (dreams, this month / year, career, anime, favourite characters + why, shows &
+  movies, music, books, games, sports, food, people he admires, relaxing, what annoys him, what drives him, values,
+  worries / fears, a perfect day, places, learning, how to talk to him). Each has a key, a fact template, a
+  second-person "said" template, and optionally an entity kind for the names in it or a directive template.
+- **Triggers** (en / Hinglish / Telugu): "ask me questions / something", "get to know me better", "know me better",
+  "quiz me about myself", "mujhse sawaal pucho", "kuch pucho mujhse", "nannu prashnalu adugu". Not: "ask me later",
+  "can you ask Priya", "ask me questions about python", "quiz me on …". Plain "get to know me" stays the onboarding
+  intro until that's done, then it means this.
+- **A round** = 10 unanswered questions, round-robin over the categories from where the last round stopped (fun and
+  deep interleaved, worries last). Again later → the next 10. All answered → the skipped ones, then the oldest
+  answers come back as "Quick check — you're into X. Still the same?" ("yes" refreshes it, a new answer supersedes,
+  "not anymore" ends it). One question per turn, a short reflection of his answer from templates ("Vinland Saga and
+  One Piece — good taste."), "Halfway there." / "Last one.", and a one-line read-back at the end ("That's the round.
+  Got it — you're into …, you want to build …, and you like Zoro for his loyalty."). "skip / pass / nothing / pata
+  nahi" skip; "bas / later / stop / that's it" pause (the next "ask me questions" picks up the same question); "why?"
+  explains; a bare "ok" gets one nudge; a command mid-round ("set an alarm…") pauses the round and runs; "bye" says
+  goodbye and keeps the round. Answers: fillers stripped ("umm", "I think", "mostly"), his words kept.
+- **Storage (the learning):** his words → episode importance 8 (+ P2 for worries); one current self-fact per question
+  (`about_<key>`, functional, origin `ask_me`, embedded; the old answer's interval is closed and `invalidated_by`
+  set — history kept, never duplicated); names (anime, characters, shows, artists, places…) → `topic` / `place`
+  entities, each with its own fact linked to him (`in_<key>`), plus "Zoro is a character in One Piece"; directives
+  for how to talk to him / boundaries (`ask_<key>` supersession keys). After every answer the standing profile and
+  USER.md are rebuilt, so the next LLM turn already knows it, and a pause loses nothing.
+- **`sleep.standing_profile()`**: directives are now always kept and facts fill the remaining room (1,000 chars,
+  up to 14 facts) — before, ten facts came first and a 700-char cut could drop every directive, i.e. his boundaries.
+- Keythings capture and the "she was cut off / too long" lesson inference are skipped on round answers (no double
+  facts, no fake lessons from "what annoys you?"); the undo path too. Spec: the trigger and every mid-round turn are
+  never speculative (`spec_block`).
+- Tests: `tests/ask_me_eval.py` (129): triggers, bank, cleanup, a full engine round with zero LLM calls, skip / pause
+  / resume, supersede, P2, profile + USER.md, round two all new, refresh. Engine turn ≈ 50–200 ms on the M2.
+  NOT verified on the mic yet.

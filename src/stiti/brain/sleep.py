@@ -506,36 +506,38 @@ def decay() -> None:
          WHERE occurred_at < now() - interval '1 day'""")
 
 
-PROFILE_CHARS = 900
+PROFILE_CHARS = 1000      # ~250 tokens of the 1,500-token briefing
 
 
 def standing_profile() -> str:
-    """The always-on 'who he is' block (briefing_cache): his newest facts first (a life update must show up the same
-    day, not lose to day-one resume lines), then his most certain ones, then his people, then his standing rules."""
+    """The always-on 'who he is' block (briefing_cache). His rules (directives) always fit (D37: an "ask me questions"
+    round adds ~10 facts at once and must never push his boundaries out). Facts fill the rest: his newest first (a life
+    update must show up the same day, not lose to day-one resume lines, D38), then his most certain ones, then his
+    people."""
     cur = """upper_inf(f.recorded) AND f.valid @> now() AND f.privacy <= 1"""
     newest = q(f"""SELECT f.id, f.fact_text FROM facts f JOIN entities e ON e.id=f.subj_id
                    WHERE e.kind='self' AND {cur} ORDER BY GREATEST(lower(f.valid), lower(f.recorded)) DESC, f.id DESC
                    LIMIT 6""")
     surest = q(f"""SELECT f.id, f.fact_text FROM facts f JOIN entities e ON e.id=f.subj_id
-                   WHERE e.kind='self' AND {cur} ORDER BY f.confidence DESC, f.id DESC LIMIT 8""")
+                   WHERE e.kind='self' AND {cur} ORDER BY f.confidence DESC, f.id DESC LIMIT 10""")
     people = q(f"""SELECT f.id, f.fact_text FROM facts f JOIN entities s ON s.id=f.subj_id
                    LEFT JOIN entities o ON o.id=f.obj_id
                    WHERE {cur} AND s.kind <> 'self' AND (o.kind='self' OR s.kind='person')
                    ORDER BY f.confidence DESC, f.id DESC LIMIT 4""")
     dirs = q("SELECT directive FROM user_directives WHERE status='active' ORDER BY category, id LIMIT 10")
-    seen, lines = set(), []
+    dir_lines = [f"- {r['directive']}"[:160] for r in dirs]
+    room = PROFILE_CHARS - sum(len(x) + 1 for x in dir_lines)
+    seen, fact_lines = set(), []
     for r in newest + surest + people:
-        if r["id"] not in seen:
-            seen.add(r["id"])
-            lines.append(f"- {r['fact_text']}")
-    lines += [f"- {r['directive']}" for r in dirs]
-    out, n = [], 0
-    for line in lines:                      # whole lines only, within budget
-        if n + len(line) + 1 > PROFILE_CHARS:
+        if r["id"] in seen:
             continue
-        out.append(line)
-        n += len(line) + 1
-    text = "\n".join(out)
+        seen.add(r["id"])
+        line = f"- {r['fact_text']}"[:160]
+        if len(line) + 1 > room:                # whole lines only, within budget
+            continue
+        fact_lines.append(line)
+        room -= len(line) + 1
+    text = "\n".join(fact_lines + dir_lines)
     if text:
         q("""INSERT INTO briefing_cache(key, content, tokens) VALUES ('standing_profile', %s, %s)
              ON CONFLICT (key) DO UPDATE SET content=EXCLUDED.content, tokens=EXCLUDED.tokens, built_at=now()""",
