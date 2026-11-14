@@ -44,7 +44,7 @@
 
 ## 2. Runtime layout
 `~/.stiti/` (STITI_HOME): SOUL.md, USER.md & LESSONS.md (two-way synced with Postgres), GRAPH_REPORT.md, graph.html,
-mood.html, exemplars.jsonl, onboarding/intake json, mcp.json, health.json, logs/app.log, backups/*.enc, models/.
+mood.html, exemplars.jsonl, onboarding/askme json, mcp.json, health.json, logs/app.log, backups/*.enc, models/.
 **Stiti.app** (~/Applications, menubar, LaunchAgent `com.tejmul.stiti`) runs `.venv/bin/python -m stiti app`; it
 also serves the web app on 127.0.0.1:7317 (menu: "Open Stiti (chat + memory)"). `~/.stiti/me/resume.md` = his resume
 (ingested). Owner profile set: name/call_me Tejmul, pronouns he.
@@ -62,7 +62,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - `decide.py` (exemplar kNN + rule floors; Laya OFF), `embed.py` (EmbeddingGemma-300M 4-bit ONNX, 768-d, ~7 ms),
   `router.py` (custom free-tier chain, per-provider `max_privacy`, quotas in `llm_usage`, P2 never leaves the Mac), `profile.py` (owner name/pronouns).
 - `brain/` memory, compiler, lessons, learning, sleep (night job + daytime nap, D38), lifeupdate (in-turn facts),
-  factstore (temporal fact writes), mdsync, onboarding (old 10-Q), intake (new engine),
+  factstore (temporal fact writes), mdsync, onboarding (old 10-Q), askme ("ask me questions" rounds, D37), norepeat (D36),
   keythings, emotion, psych, ingest (documents/chunks), graphview, moodview, backup.
 - `fastpath/` Hinglish dates + handlers · `life/` planner (CP-SAT), habits, chunker, brief, proactive.
 - `voice/` duplex (AEC3), vad, stt (mlx-whisper small q4), tts (Kokoro int8 + ClauseChunker), turn (Smart Turn), wake,
@@ -76,7 +76,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Feature | Status | Where to read more |
 |---|---|---|
 | Memory/brain, fast paths, voice, proactive, Mac connectors, backups, app | ✅ built + tested (see `docs/BUILD_LOG.md`) | BUILD_LOG |
-| Key-things intake v2 (`brain/intake.py`) | 🟡 only `intake.py` exists (the `guide.py`/`understanding.py` named here before were never committed) and nothing calls it; question set + adaptations TODO | `research_notes/Key things to know intake/intake_research.md`, DECISIONS D13 |
+| Ask me questions (`brain/askme.py`) — the key-things intake | 🟢 "ask me questions" / "get to know me better" / "mujhse sawaal pucho" → 10 unanswered questions per round from a 48-question bank (21 categories: dreams, anime, characters, shows, music, food, values, fears…), skip / pause / resume / why, template reflections + a read-back; answers → self-facts (superseding), entities, directives; standing profile + USER.md rebuilt per answer. No LLM. Old `intake.py` deleted (never wired); `onboarding.py` stays the first intro. NOT verified on the mic | DECISIONS D37, `research_notes/Key things to know intake/intake_research.md` |
 | Whiteboard tutor (`src/stiti/tutor/`) | 🟢 any book (PDF/scanned/EPUB/TXT/MD/DOCX) + any topic, live LLM lessons verified; one-night crash course + FSRS revision (§6) | DECISIONS D14/D15/D19 |
 | Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20) | `docs/research/alarms.md` |
 | Live internet info (`connectors/live.py`) | 🟢 news/tech/AI/papers/placements/web, streamed with sources (D21); NOT verified on the mic | `docs/research/live_info.md` |
