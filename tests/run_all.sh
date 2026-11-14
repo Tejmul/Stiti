@@ -49,4 +49,5 @@ run "talks like a person (no machine-talk)" tests/human_talk_eval.py
 run "card motion (added / done / cancelled)" tests/card_motion_eval.py
 run "mic watchdog (dead mic → reopen)" tests/mic_watchdog_eval.py
 run "learns from normal conversation (D38)" tests/learn_from_chat_eval.py
+run "ask me questions (get to know you)" tests/ask_me_eval.py
 exit $fail
