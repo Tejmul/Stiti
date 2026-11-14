@@ -103,6 +103,7 @@ class StitiApp(rumps.App):
         if telegram.token():
             threading.Thread(target=telegram.TelegramBot(Engine).run, args=(self.stop,), daemon=True).start()
         self.loop = VoiceLoop(Engine("voice"), aec=os.getenv("STITI_AEC", "on") != "off")
+        self.loop.ack_control = self._ack_voice           # "ok / got it" stops a nagging reminder (D39)
         self._set_status("Say “Hey Stiti” or “Wake up baby girl”")
         self._voice_alive = True
         try:
@@ -124,11 +125,16 @@ class StitiApp(rumps.App):
             print(f"[app] eventkit check failed: {e}", flush=True)
 
     def _deliver(self, text: str, kind: str, present: bool) -> str | None:
-        """Where a proactive nudge goes: voice if he's here, Telegram if away (important ones), else nowhere."""
+        """Where a proactive nudge goes: voice if he's here, Telegram if away (important ones), else nowhere.
+        On a call or in a whiteboard lesson: the banner only (research alarms.md §2e)."""
         from .connectors import telegram
+        from .life import proactive
         subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(text)} with title "Stiti"'])
         if present and self.loop is not None and not self.loop.paused.is_set():
             if self.loop.silenced:            # he told her to stop: notification only until he wakes her
+                return "notification"
+            from .voice.loop import _tutor_active
+            if _tutor_active() or proactive.in_call():
                 return "notification"
             threading.Thread(target=self.loop.say, args=(text,), kwargs={"nudge": True}, daemon=True).start()
             return "voice"
@@ -146,6 +152,14 @@ class StitiApp(rumps.App):
         for r in rows:
             if r["ek_identifier"] in done:
                 q("UPDATE intents SET state='done' WHERE id=%s", (r["id"],))
+        nagging = q("""SELECT n.id, i.ek_identifier FROM reminder_nags n JOIN intents i ON i.id = n.intent_id
+                       WHERE n.state='open' AND i.ek_identifier IS NOT NULL""")
+        if nagging:                                   # ticked on his phone after she said it → stop repeating it
+            ticked = set(eventkit.completed_ids([r["ek_identifier"] for r in nagging]))
+            for r in nagging:
+                if r["ek_identifier"] in ticked:
+                    q("UPDATE reminder_nags SET state='acked', next_at=NULL, acked_at=now(), ack_via='reminders_app' "
+                      "WHERE id=%s", (r["id"],))
 
     def _ring(self, row: dict):
         """Alarm / timer: ring (tone + voice, louder each round) until 'band karo' / '5 minute aur' / timeout."""
@@ -167,6 +181,8 @@ class StitiApp(rumps.App):
     def stop_alarm(self, _=None):
         if getattr(self, "ringer", None) is not None:
             self.ringer.stop()
+        from .life import alarms
+        self._bg(lambda: alarms.ack_all("click"))          # the menu click also stops a nagging reminder
 
     def _fire(self, present: bool):
         from .connectors import telegram
@@ -187,7 +203,9 @@ class StitiApp(rumps.App):
                 where = self._deliver(text, "reminder", present and not alarms.quiet_now())
                 if where != "voice" and telegram.token() and telegram.owner():
                     telegram.send(f"⏰ {msg}")
+                    where = where or "telegram"
                 q_done(r)
+                alarms.nag_start(r, where)                    # not acknowledged → it comes back (D39)
             else:                                     # check-ins / nudges
                 self._deliver(msg, k, present)
                 q_done(r)
@@ -197,9 +215,29 @@ class StitiApp(rumps.App):
                 subprocess.Popen(["osascript", "-e", f'display notification {json.dumps(m)} with title "Stiti"'])
                 self._missed_pending = True
 
+    def _busy_speaking(self) -> bool:
+        d = getattr(self.loop, "duplex", None) if self.loop is not None else None
+        return bool(d is not None and d.playing)
+
+    def _nag(self, present: bool):
+        """Repeat delivered reminders he hasn't acknowledged (D39). Away / quiet hours → wait (not counted);
+        she's speaking → wait, at most 2 min, then say it anyway."""
+        from .life import alarms
+        nowt = datetime.now(CFG.tz)
+        for n in alarms.nags_due(nowt):
+            if not present or alarms.quiet_now(nowt):
+                alarms.nag_defer(n["id"], nowt)
+                continue
+            if self._busy_speaking() and (nowt - n["next_at"]).total_seconds() < alarms.NAG_BUSY_MAX_S:
+                continue
+            text = alarms.nag_text(n)
+            print(f"⏰ [nag {n['sent'] + 1}] {text}", flush=True)
+            alarms.nag_sent(n["id"], self._deliver(text, "reminder", present), nowt)
+
     def _scheduler(self):
         from .life import alarms, proactive
-        tracker, last_pro = proactive.PresenceTracker(), 0.0
+        from .connectors import weather
+        tracker, last_pro, last_wx = proactive.PresenceTracker(), 0.0, 0.0
         present, busy = True, False
         if (m := alarms.missed_summary(mark=False)):     # e.g. the Mac was off this morning
             print(f"[alarms] {m}", flush=True)
@@ -207,6 +245,7 @@ class StitiApp(rumps.App):
         while not self.stop.is_set():
             try:
                 self._fire(present)
+                self._nag(present)
                 if getattr(self, "_missed_pending", False) and self.loop is not None and self.loop.awake:
                     self._missed_pending = False          # tell him once, the next time he talks to her
                     if (m := alarms.missed_summary()):
@@ -216,6 +255,9 @@ class StitiApp(rumps.App):
                     self._health()
                     self._sync_reminders()
                     rotate_logs()
+                    if time.time() - last_wx >= 30 * 60 and 5 <= datetime.now(CFG.tz).hour < 23:
+                        last_wx = time.time()
+                        weather.refresh_async()       # the morning brief reads this cache, never the network
                     pres = tracker.sample()
                     present = bool(getattr(pres, "present", True))
                     busy = self.loop is not None and (self.loop.awake or (self.loop.duplex and self.loop.duplex.playing))
@@ -233,6 +275,12 @@ class StitiApp(rumps.App):
             except Exception as e:
                 print(f"[scheduler] {e}", flush=True)
             self.stop.wait(5)
+
+    def _ack_voice(self, text: str) -> str | None:
+        """Voice loop hook: "ok / got it / ho gaya" right after a reminder stops it (no wake word needed for 90 s)."""
+        from .life import alarms
+        window = alarms.NAG_ACK_WINDOW_S if self.loop is not None and self.loop.awake else alarms.NAG_ACK_ASLEEP_S
+        return alarms.ack(text, via="voice", window_s=window)
 
     # ---------- menu actions ----------
     def _bg(self, fn):

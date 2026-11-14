@@ -78,7 +78,8 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Memory/brain, fast paths, voice, proactive, Mac connectors, backups, app | ✅ built + tested (see `docs/BUILD_LOG.md`) | BUILD_LOG |
 | Ask me questions (`brain/askme.py`) — the key-things intake | 🟢 "ask me questions" / "get to know me better" / "mujhse sawaal pucho" → 10 unanswered questions per round from a 48-question bank (21 categories: dreams, anime, characters, shows, music, food, values, fears…), skip / pause / resume / why, template reflections + a read-back; answers → self-facts (superseding), entities, directives; standing profile + USER.md rebuilt per answer. No LLM. Old `intake.py` deleted (never wired); `onboarding.py` stays the first intro. NOT verified on the mic | DECISIONS D37, `research_notes/Key things to know intake/intake_research.md` |
 | Whiteboard tutor (`src/stiti/tutor/`) | 🟢 any book (PDF/scanned/EPUB/TXT/MD/DOCX) + any topic, live LLM lessons verified; one-night crash course + FSRS revision (§6) | DECISIONS D14/D15/D19 |
-| Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20) | `docs/research/alarms.md` |
+| Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20); unacked reminders repeat +2/+5 min (important ×3 more every 10 min), "ok/got it/ho gaya" stops (migration 010); ring cap alarm 10 / timer 5 min (D39); nag acks NOT tried on the mic | `docs/research/alarms.md`, D39 |
+| Weather + morning brief + meeting heads-up (`connectors/weather.py`, `life/brief.py`, `life/proactive.py`) | 🟢 Open-Meteo (keyless, CC BY 4.0) fast path, no LLM; brief ≤ 3 sentences (weather · next events + counts · one cached headline); "Heads-up — X in 10 minutes" once per event. City = profile `city` ("my city is …") → `STITI_CITY` → tz city. NOT verified on the mic / his real calendar | D39 |
 | Live internet info (`connectors/live.py`) | 🟢 news/tech/AI/papers/placements/web, streamed with sources (D21); NOT verified on the mic | `docs/research/live_info.md` |
 | Always-on app (Stiti.app + LaunchAgent) | 🟢 reinstalled 2026-11-10 pointing at ~/Desktop/Stiti (was broken: old ~/Stiti path) | `install_app.py` |
 | Web app (`src/stiti/web/` + `frontend/`) | 🟢 Next.js: landing, chat (memory receipts), Memory page — see §6b | DECISIONS D16/D23 |
@@ -145,7 +146,9 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 Streamline) before the repo is promoted. 8. Talk to Stiti for real: overlay pill/cards, the language switch
 (English ↔ Telugu ↔ Hindi), a lesson (one board only), "it's done" on a to-do. 9. Optional: a different English voice
 (`~/.stiti/voice_samples/english/`, note: that lineup predates the "Tej" fix). 10. Re-check goonj's licence before
-any public build (trained on synthetic ElevenLabs/Fish voices).
+any public build (trained on synthetic ElevenLabs/Fish voices). 11. After merging D39: apply `db/migrations/010_reminder_nags.sql` to
+`stiti` + `stiti_test`, then tell Stiti "my city is <your city>" once (weather + brief; until then she uses the
+timezone's city and says so).
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-11 (b) — four languages, voices, bug sweep (D30–D35, PRs #23–#32):** root cause of "to-do list empty":

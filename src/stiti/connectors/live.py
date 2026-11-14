@@ -132,6 +132,22 @@ def clear_cache() -> None:
     _cache.clear()
 
 
+def cached_headline(max_age_s: float = 6 * 3600) -> str | None:
+    """The top world/India headline already in the cache — never touches the network (the morning brief's
+    optional line). Headlines are outside text: spoken as-is, never handed to the LLM as instructions."""
+    now = time.time()
+    for url in (f"{GN}?{GN_Q}", "https://feeds.bbci.co.uk/news/world/rss.xml",
+                f"{GN}/headlines/section/topic/WORLD?{GN_Q}", f"{GN}/headlines/section/topic/NATION?{GN_Q}"):
+        hit = _cache.get(url)
+        if not hit or now - hit[0] > max_age_s:
+            continue
+        for it in hit[1] or []:
+            title = clean(getattr(it, "title", ""), 200).rstrip(" .")
+            if 4 <= len(title.split()) <= 18:
+                return title
+    return None
+
+
 # ---------------------------------------------------------------- parsing (offline-testable)
 _TAG = re.compile(r"<[^>]+>")
 _WS = re.compile(r"\s+")

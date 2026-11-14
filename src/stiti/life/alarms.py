@@ -34,7 +34,7 @@ RING_IF_LATE_UNDER = timedelta(minutes=10)   # alarm 10–30 min late: a short s
 QUIET = (23, 7)                              # reminders/check-ins are not SPOKEN 23:00–07:00 (alarms still ring)
 SNOOZE_MIN = int(os.getenv("STITI_SNOOZE_MIN", "9"))
 MAX_SNOOZES = 3
-RING_MAX_S = 10 * 60                   # then stop ringing and report it as missed
+RING_MAX_S = {"alarm": 10 * 60, "timer": 5 * 60}   # then stop ringing and report it as missed (research §2c)
 RING_ROUND_S = 20                      # tone + voice line, repeated with rising volume
 
 DAYS = {"mo": ("monday", "mondays", "somvar", "som"), "tu": ("tuesday", "tuesdays", "mangalvar", "mangal"),
@@ -165,7 +165,8 @@ def create(text: str, ref: datetime | None = None) -> str | None:
         return "What time should I remind you? Say it like “at 7 pm”."
     label = _label(text) if kind == "reminder" else None
     say = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, NO_LABEL_SAY)
-    payload = {"say": say, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120]}
+    payload = {"say": say, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120],
+               "important": bool(IMPORTANT_RX.search(text))}     # "zaroor" / "must": nags longer if not acked (D39)
     row = one("""INSERT INTO intents(kind, fire_at, rrule, payload, user_set) VALUES (%s,%s,%s,%s,true) RETURNING id""",
               ("alarm" if kind in ("alarm", "timer") else "reminder", when, rule, json.dumps(payload)))
     cards.note("set", "intent", row["id"])
@@ -434,9 +435,143 @@ def tone(round_no: int, sr: int = 24000):
     return (np.concatenate([one_ring, np.zeros(int(sr * 0.25)), one_ring]) * vol).astype("float32"), sr
 
 
+def ring_limit_s(row: dict) -> int:
+    k = (row.get("payload") or {}).get("kind") or row.get("kind")
+    return RING_MAX_S["timer" if k == "timer" else "alarm"]
+
+
+# ------------------------------------------------------------------------------------------------ reminders that nag
+# A delivered reminder that he doesn't acknowledge comes back: +2 min, then +5 min (3 deliveries in all). One he
+# marked important ("zaroor", "must", "important", "don't let me forget") then keeps going every 10 min, 3 more
+# times. "ok" / "got it" / "done" / "haan" / "ho gaya" (voice, text, web, Telegram), the menu's stop item, or
+# ticking it in Apple Reminders stops it. Repeats wait while he's away / it's quiet hours / she's mid-sentence
+# (that last one at most 2 min — research §2e). (D39)
+NAG_STEPS_MIN = (2, 5)
+NAG_IMPORTANT_EVERY_MIN = 10
+NAG_IMPORTANT_EXTRA = 3
+NAG_ACK_WINDOW_S = 5 * 60          # "ok" counts as an ack this long after the last delivery (awake / typed)
+NAG_ACK_ASLEEP_S = 90              # …without the wake word, only right after she said it
+NAG_GIVE_UP_H = 3                  # a repeat that kept waiting (away all afternoon) is dropped after this
+NAG_BUSY_MAX_S = 120
+IMPORTANT_RX = re.compile(r"\b(important|imp|zaroor\w*|jaroor\w*|must|urgent\w*|definitely|pakka|critical|asap|"
+                          r"don'?t (let me )?forget|do not (let me )?forget|bhool\w* (mat|nahi)|mat bhool\w*)\b", re.I)
+ACK_RX = re.compile(r"^\W*(?:(?:hey|hi|ok|okay)\s+)?(?:stiti\W+)?(?:ok(?:ay)?|okk+|k|done|got it|gotcha|haan?|han|ha|ji|"
+                    r"yes|yeah|yep|yup|theek hai|thik hai|ho gaya|ho gayi|kar liya|kar diya|kar li|on it|will do|"
+                    r"noted|sure|alright|all right|accha|achha|acha|i know|i'?m on it|thanks|thank you|stop|"
+                    r"bas|band karo|chup|samajh gaya|samajh gayi|yaad hai)\b", re.I)
+
+
+def is_important(payload: dict) -> bool:
+    if payload.get("important"):
+        return True
+    return bool(IMPORTANT_RX.search(" ".join(str(payload.get(k) or "") for k in ("say", "label", "heard"))))
+
+
+def nag_gap(sent: int, important: bool) -> timedelta | None:
+    """Wait before delivery number sent+1, or None = no more."""
+    if sent <= len(NAG_STEPS_MIN):
+        return timedelta(minutes=NAG_STEPS_MIN[sent - 1])
+    if important and sent < 1 + len(NAG_STEPS_MIN) + NAG_IMPORTANT_EXTRA:
+        return timedelta(minutes=NAG_IMPORTANT_EVERY_MIN)
+    return None
+
+
+def nag_start(row: dict, channel: str | None, at: datetime | None = None) -> int:
+    """Called right after a reminder's first delivery."""
+    at = at or now()
+    p = row.get("payload") or {}
+    say = p.get("label") or p.get("say") or "your reminder"
+    imp = is_important(p)
+    q("UPDATE reminder_nags SET state='gave_up', next_at=NULL WHERE intent_id=%s AND state='open'", (row["id"],))
+    nid = one("""INSERT INTO reminder_nags(intent_id, say, important, first_at, last_at, next_at, channels)
+                 VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+              (row["id"], say, imp, at, at, at + nag_gap(1, imp), [channel or "none"]))["id"]
+    return nid
+
+
+def nags_due(ref: datetime | None = None) -> list[dict]:
+    """Open nags whose next repeat is due (oldest first). Also closes finished / stale ones."""
+    ref = ref or now()
+    q("""UPDATE reminder_nags SET state='gave_up', next_at=NULL WHERE state='open' AND
+         ((next_at IS NULL AND last_at < %s) OR first_at < %s)""",
+      (ref - timedelta(seconds=NAG_ACK_WINDOW_S), ref - timedelta(hours=NAG_GIVE_UP_H)))
+    return q("""SELECT id, intent_id, say, important, sent, first_at, last_at, next_at FROM reminder_nags
+                WHERE state='open' AND next_at <= %s ORDER BY next_at""", (ref,))
+
+
+def nag_text(n: dict) -> str:
+    """What she says on repeat number n['sent'] (+1 delivery). Short, a friend's voice, never the same line twice."""
+    what = second_person(n["say"]).rstrip(".")
+    k = n["sent"] + 1
+    last = nag_gap(k, n["important"]) is None
+    if last:
+        return f"Last nudge on this one — {what}."
+    if k == 2:
+        return f"Reminder again: {what}."
+    if k == 3:
+        return f"Still pending — {what}. Say “got it” and I'll stop."
+    return f"This one's important — {what}."
+
+
+def nag_sent(nag_id: int, channel: str | None, ref: datetime | None = None) -> None:
+    ref = ref or now()
+    r = one("SELECT sent, important FROM reminder_nags WHERE id=%s", (nag_id,))
+    if not r:
+        return
+    gap = nag_gap(r["sent"] + 1, r["important"])
+    q("""UPDATE reminder_nags SET sent = sent + 1, last_at=%s, next_at=%s, channels = channels || %s::text
+         WHERE id=%s""", (ref, ref + gap if gap else None, channel or "none", nag_id))
+
+
+def nag_defer(nag_id: int, ref: datetime | None = None, minutes: float = 1) -> None:
+    """Away / quiet hours: try again later without counting it."""
+    q("UPDATE reminder_nags SET next_at=%s WHERE id=%s AND state='open'",
+      ((ref or now()) + timedelta(minutes=minutes), nag_id))
+
+
+def nag_open(ref: datetime | None = None, window_s: float = NAG_ACK_WINDOW_S) -> list[dict]:
+    ref = ref or now()
+    return q("""SELECT id, say, last_at FROM reminder_nags WHERE state='open' AND last_at >= %s ORDER BY last_at DESC""",
+             (ref - timedelta(seconds=window_s),))
+
+
+def ack_matches(text: str) -> bool:
+    return bool(ACK_RX.match(text or "")) and len((text or "").split()) <= 6
+
+
+def ack(text: str, via: str = "voice", ref: datetime | None = None, window_s: float = NAG_ACK_WINDOW_S) -> str | None:
+    """His "ok / got it / ho gaya" right after a reminder: stop nagging. None = not an ack (or nothing open)."""
+    if not ack_matches(text):
+        return None
+    rows = nag_open(ref, window_s)
+    if not rows:
+        return None
+    return _close(rows, via, ref or now(), text)
+
+
+def ack_all(via: str = "click", ref: datetime | None = None) -> int:
+    """Menu "Stop" / Apple Reminders tick: every open nag ends."""
+    rows = q("SELECT id, say, last_at FROM reminder_nags WHERE state='open'")
+    if rows:
+        _close(rows, via, ref or now(), "")
+    return len(rows)
+
+
+def _close(rows: list[dict], via: str, ref: datetime, text: str) -> str:
+    for r in rows:
+        lat = max(0.0, (ref - r["last_at"]).total_seconds())
+        q("""UPDATE reminder_nags SET state='acked', next_at=NULL, acked_at=%s, ack_via=%s, ack_latency_s=%s
+             WHERE id=%s""", (ref, via, lat, r["id"]))
+        print(f"[nag] #{r['id']} acked via {via} after {lat:.0f} s", flush=True)
+    if re.search(r"\b(done|ho gaya|ho gayi|kar liya|kar diya|kar li)\b", text, re.I):
+        return "Nice, done."
+    return "Okay, I won't remind you again."
+
+
 class Ringer:
     """Rings one alarm/timer through Stiti's voice output (echo-cancelled, so "band karo" is heard over it),
-    or through macOS sounds when the voice loop is off. Stops on dismiss / snooze / RING_MAX_S."""
+    or through macOS sounds when the voice loop is off. Stops on dismiss / snooze / ring_limit_s (alarm 10 min,
+    timer 5 min)."""
 
     def __init__(self, row: dict, loop=None, log=print):
         self.row, self.loop, self.log = row, loop, log
@@ -464,7 +599,8 @@ class Ringer:
 
     def run(self) -> str:
         t0, k = time.time(), 0
-        while not self.done.is_set() and time.time() - t0 < RING_MAX_S:
+        limit = ring_limit_s(self.row)
+        while not self.done.is_set() and time.time() - t0 < limit:
             line = _ring_line(self.row, k)
             if self.loop is not None and getattr(self.loop, "duplex", None) is not None and not self.loop.paused.is_set():
                 self.loop.duplex.play(*tone(k))
@@ -483,5 +619,7 @@ class Ringer:
               (self.row["id"],))
         if self.outcome in ("dismissed", "missed") and not self.row.get("rrule"):
             q("UPDATE intents SET state='done' WHERE id=%s AND state='fired'", (self.row["id"],))
-        self.log(f"[alarm] #{self.row['id']} {self.outcome}")
+        via = "voice" if self.loop is not None and getattr(self.loop, "duplex", None) is not None else "mac-say"
+        self.log(f"[alarm] #{self.row['id']} {self.outcome} after {int(time.time() - t0)} s "
+                 f"({k} round{'s' if k != 1 else ''}, via {via})")     # ack latency + channel (research §2e)
         return self.outcome
