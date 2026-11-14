@@ -81,6 +81,14 @@ MACHINE_RX = re.compile("|".join(MACHINE), re.I)
 CLAIM_RX = re.compile(r"^\W*(done\s*[—–-]\s*(added|set|saved|removed|cancelled)\b|added\b(?! bonus)|i'?ve (added|set|saved|created|put|scheduled|booked|sent|cancelled)\b|"
                       r"i (added|saved|scheduled|booked|sent)\b|(your )?(reminder|alarm|timer) (is )?(set|added|saved)\b|"
                       r"set (a|the|your) (reminder|alarm|timer)\b|(saved|scheduled|sent|booked)\b(?! (you|me|us)\b))", re.I)
+# "Opened the whiteboard app." / "Got it, I'll open the whiteboard." / "I can't draw on a whiteboard" — all said by the
+# LLM on 2026-11-11 while no lesson was started. Only tutor.launch() opens it; the LLM never can.
+OPEN_CLAIM_RX = re.compile(r"^\W*(?:(?:got it|okay|ok|sure|alright|done)\W+)?(?:i'?ve |i have |i'?ll |i will |let me |"
+                           r"i'?m |i )?(?:just )?(?:opened|launched|started|pulled up|brought up|open|launch|start|"
+                           r"pull up|bring up|opening|launching)\b[^.!?]{0,25}\b(?:white ?board|board|app|lesson|tutor)\b|"
+                           r"\bopening (?:the|your) (?:white ?board|board)\b|"
+                           r"\bi (?:can'?t|cannot|can not|don'?t have)\b[^.!?]{0,30}\b(?:white ?board|board)\b", re.I)
+HONEST_NO_BOARD = "I haven't opened the whiteboard yet. Say “teach me {topic} on the whiteboard” and I'll open it."
 HONEST_NOT_DONE = "I haven't saved that yet. Say “add it to my list” or “remind me at …” and I will."
 LONE_DONE = re.compile(r"(all )?done[.!]?", re.I)
 NOT_HEARD_RX = re.compile(r"\b(recognize|process|compute|invalid)\b", re.I)
@@ -369,7 +377,8 @@ class StreamLint:
             if ends:
                 self.skip, self.open = False, False
             return None
-        if not cont and CLAIM_RX.match(piece):         # a streamed reply never ran a tool: "Added …" would be a lie
+        if not cont and (CLAIM_RX.match(piece) or OPEN_CLAIM_RX.search(piece)):   # a streamed reply never ran a tool:
+                                                                                  # "Added …" / "Opened …" would be a lie
             self.skip = not ends
             return None
         if cont:

@@ -62,7 +62,9 @@ def can_do(max_privacy: int = 1) -> str:
         titles = []
     docs = f"his ingested documents ({', '.join(titles)})" if titles else "documents he ingests"
     return ("You CAN: read his todos, alarms and reminders, calendar and mail (read-only), " + docs +
-            ", live news and the web; set reminders, alarms, timers and todos. Never claim you can't see his files.")
+            ", live news and the web; set reminders, alarms, timers and todos; teach any topic on a whiteboard (it opens "
+            "only when he says \"teach me <topic> on the whiteboard\" — this turn did NOT open it, so never say you opened "
+            "it and never say you can't). Never claim you can't see his files.")
 
 
 def tokens(s: str) -> int:
