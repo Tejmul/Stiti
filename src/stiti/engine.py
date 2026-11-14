@@ -19,9 +19,18 @@ from .db import one, q
 from .decide import decide
 from .fastpath import handlers
 from .life import brief as nudge, chunker, habits, planner
-from .connectors import live
+from .connectors import live, weather
 from .connectors.mac import music_fastpath
 from .tools import registry
+
+def _nag_ack_pending(text: str) -> bool:
+    """Pure read: would this text acknowledge a reminder she just repeated?"""
+    from .life import alarms
+    try:
+        return alarms.ack_matches(text) and bool(alarms.nag_open())
+    except Exception:
+        return False
+
 
 def _awaiting_label() -> bool:
     from .life import alarms
@@ -165,6 +174,7 @@ class Engine:
         self.nudged: float | None = None                    # when she last pushed back (late night) — once per session
         if os.getenv("STITI_LIVE_WARM", "1") != "0":
             live.warm()                                     # news caches filled in the background, once per process
+            weather.refresh_async()                         # so the morning brief has weather without waiting (D39)
 
     def _llm(self, brief: str, text: str, qvec, privacy: int, use_tools: bool) -> tuple[str, dict]:
         """LLM call with an optional tool loop (≤3 rounds, risk-gated, taint-aware)."""
@@ -311,6 +321,10 @@ class Engine:
             return "learning"                       # "she was cut off" feeds a brevity lesson (writes LESSONS.md)
         if self.live_last and live.MORE_RX.match(t):
             return "live"
+        if weather.detect(t) is not None or weather.city_from_text(t) is not None:
+            return "action"                         # weather fast path / "my city is …" (D39)
+        if _nag_ack_pending(t):
+            return "action"                         # "ok" right after a reminder stops its repeats (D39)
         checks = (HOLD_RX.match(t), strategy.is_crisis(t), learning.UNDO_RX.match(t), learning.SHORTER_RX.search(t),
                   strategy.CONFUSION_RX.search(t), NOTHING_RX.match(t), is_stop(t), bye.is_bye(t),
                   proactive.DISABLE_RX.search(t), self.INTRO_OFF_RX.search(t), self.INTRO_ON_RX.search(t),
@@ -503,9 +517,12 @@ class Engine:
 
         strat = pick(domain)
         from . import farewell as bye
+        from .life import alarms
         if crisis:
             reply = strategy.crisis_reply(strat.lang)
             self.crisis_at = time.time()
+        elif not taught and (nag_ack := alarms.ack(text, via=self.channel)) is not None:
+            reply = nag_ack                     # "ok / got it / ho gaya" right after a reminder: stop repeating it
         elif after_offer:
             from .brain import lang as lang_mod
             reply = lang_mod.phrase("here", strat.lang)
@@ -550,6 +567,8 @@ class Engine:
         elif upd.saved and len(text.split()) <= 45 and self.onboarding is None and self.chunker is None \
                 and self.woop is None and self.pending is None:   # his life update was written: say so (no LLM)
             reply = upd.ack
+            if (c := weather.city_from_text(text)) is not None:
+                reply = weather.set_city(c)     # "I live in Porto" is his home AND his weather city (D38 + D39)
             strat = strategy.make("DO", strat.lang)
         elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
             reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
@@ -602,6 +621,8 @@ class Engine:
             live_res, live_from, _ = self.live_last             # "want more?" → "haan": next items, no refetch
             if live_from >= len(live_res.items):
                 reply, live_res = "That's everything I found for now.", None
+        elif not corrected and (wx := weather.answer(text, now=now, on_slow=lambda: ack("web"))) is not None:
+            reply = wx                          # weather / "my city is Pune": Open-Meteo + code, no LLM (D39)
         elif privacy < 2 and not corrected and (lreq := live.detect(text, known=_names_his_person)) is not None:
             ack("web")                      # "ek sec, internet pe dekhti hoon" while sources load in parallel
             live_job = live.start(lreq)     # only his extracted words leave the Mac; recall runs meanwhile
