@@ -17,6 +17,8 @@ from types import SimpleNamespace
 
 import numpy as np
 
+from .ears import EchoGuard
+
 
 class SilentAudio:
     """No sound. `scale` < 1 makes lessons run faster than real time (tests)."""
@@ -24,6 +26,7 @@ class SilentAudio:
     def __init__(self, scale: float = 1.0):
         self.scale = scale
         self._until = 0.0
+        self.guard = EchoGuard()
 
     def synth(self, text: str, speed: float = 1.0):
         ms = (len(text.split()) / 2.6 / speed) * 1000 + 300
@@ -38,6 +41,7 @@ class SilentAudio:
 
     def stop(self) -> None:
         self._until = 0
+        self.guard.stopped()
 
     def close(self) -> None:
         pass
@@ -50,6 +54,7 @@ class _Kokoro:
             tts = TTS()
         self.tts = tts
         self._lock = threading.Lock()
+        self.guard = EchoGuard()
 
     def synth(self, text: str, speed: float = 1.0):
         from ..voice.tts import speakable
@@ -76,6 +81,7 @@ class SpeakerAudio(_Kokoro):
     def stop(self) -> None:
         import sounddevice as sd
         sd.stop()
+        self.guard.stopped()
 
     def close(self) -> None:
         self.stop()
@@ -105,6 +111,8 @@ class VoiceAudio(_Kokoro):
         self.barged = threading.Event()
         self._stop = threading.Event()
         self._ctx = None
+        # her own voice coming back through the mic must not even STOP her (the barge-in verdict asks the guard)
+        self.vl.tt.veto = lambda text, res, start_t: self.guard.barge_ok(text, res, at=start_t)
 
     def start(self) -> "VoiceAudio":
         from ..voice.duplex import Duplex
@@ -115,6 +123,8 @@ class VoiceAudio(_Kokoro):
         return self
 
     def _ears(self):
+        """Committed segments → transcript (the turn-taker's early one when it has it) → the tutor's queue, with what
+        the echo guard needs: when his speech started, Whisper's confidence, and whether it was a real barge-in."""
         from ..voice import stt
         from ..voice.vad import SR
         while not self._stop.is_set():
@@ -124,19 +134,21 @@ class VoiceAudio(_Kokoro):
                 continue
             if len(seg) < SR * 0.3:
                 continue
+            r = getattr(seg, "res", None)
             try:
-                r = self.vl._stt.submit(stt.transcribe_ex, seg).result()
+                if r is None:
+                    r = self.vl._stt.submit(stt.transcribe_ex, seg).result()
             except Exception as e:                       # never let one bad segment make the lesson deaf
                 print(f"   [ears] {type(e).__name__}: {e}")
                 continue
-            text, ms = r.text, r.ms
-            if text and not keep_heard(text, r.unclear):
-                print(f"   (unclear, ignored: {text!r})")      # 2026-11-11: noise like "Nim nil to nara" got answered
+            text = (seg.text if getattr(seg, "res", None) is not None else r.text) or ""
+            if not text.strip():
                 continue
-            if text:
-                if self.debug:
-                    print(f"   (heard {text!r}, {ms:.0f} ms)")
-                self.events.put({"type": "voice", "text": text})
+            if self.debug:
+                print(f"   (heard {text!r}, {r.ms:.0f} ms, no_speech {r.no_speech_prob:.2f}, logprob {r.avg_logprob:.2f})")
+            self.events.put({"type": "voice", "text": text, "at": getattr(seg, "start_t", None),
+                             "no_speech": r.no_speech_prob, "logprob": r.avg_logprob,
+                             "barged": bool(getattr(seg, "barged", False))})
 
     def play(self, audio, ms: int) -> None:
         self.vl._interrupted.clear()
@@ -154,6 +166,7 @@ class VoiceAudio(_Kokoro):
 
     def stop(self) -> None:
         self.vl.duplex.stop_playback()
+        self.guard.stopped()
 
     def close(self) -> None:
         self._stop.set()
