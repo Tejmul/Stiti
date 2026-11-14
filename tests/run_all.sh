@@ -44,6 +44,7 @@ run "whole sentences (no missing words)" tests/whole_sentence_eval.py
 run "language switching (D34)" tests/lang_switch_eval.py
 run "intent: life updates are chat" tests/intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
+run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
 run "card motion (added / done / cancelled)" tests/card_motion_eval.py

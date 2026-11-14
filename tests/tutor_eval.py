@@ -114,7 +114,7 @@ class FakeSrv:
 
 
 t = Tutor(L, audio=SilentAudio(0.005), events=ev, server=FakeSrv(), persist=True, log=lambda *_: None,
-          idle_resume_s=0.3)
+          idle_resume_s=0.3, pace=0.05)
 res = t.run()
 verdicts = [x["verdict"] for x in res["results"]]
 check("scripted lesson finishes", res["finished"], str(res))
@@ -122,7 +122,7 @@ check("checks: predict + 4 correct (hint ladder used)", verdicts == ["predict", 
       and res["results"][1]["hints"] == 1, str(verdicts))
 check("confidence recorded on quiz checks", [x["confidence"] for x in res["results"][3:]] == [4, 5])
 check("question answered locally + resumed", res["questions"] == 1 and any(
-    m["type"] == "status" and "Achha, wapas" in str(m.get("caption")) for m in sent))
+    m["type"] == "status" and "back to" in str(m.get("caption")).lower() for m in sent))
 check("pause / repeat replay the cue (board reset)", sum(m["type"] == "reset" for m in sent) >= 2)
 check("hook revisited at the wrap-up", any("Remember your guess" in str(m.get("caption")) for m in sent))
 from stiti.db import one  # noqa: E402

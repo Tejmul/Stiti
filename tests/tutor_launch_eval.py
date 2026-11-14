@@ -27,6 +27,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 from stiti import tutor                                                # noqa: E402
+_REAL_LAUNCH = tutor.launch
 
 spawned: list[list[str]] = []
 procs: list[subprocess.Popen] = []
@@ -159,6 +160,84 @@ check("engine: bare 'open whiteboard' after 'explain me lexical analysis' launch
 for p in procs:
     p.kill()
 tutor.LOCK.unlink(missing_ok=True)
+
+print("the lock under races (D40: a kernel flock, not check-then-write)")
+import threading as _th                                                # noqa: E402
+import time as _time                                                   # noqa: E402
+subprocess.Popen = _real_popen
+tutor.LOCK.unlink(missing_ok=True)
+HOLDER = ("import sys,time; from stiti import tutor; t0=float(sys.argv[1]); time.sleep(max(0,t0-time.time())); "
+          "ok=tutor.acquire_lesson(); print('GOT' if ok else 'NO', flush=True); time.sleep(float(sys.argv[2]))")
+env = {**os.environ, "PYTHONPATH": os.path.join(os.path.dirname(__file__), "..", "src")}
+go = _time.time() + 2.5                                     # both start the SAME instant (same second, same ms)
+racers = [_real_popen([sys.executable, "-c", HOLDER, str(go), "20"], stdout=subprocess.PIPE, text=True, env=env)
+          for _ in range(3)]
+outs = [r.stdout.readline().strip() for r in racers]
+check("three lesson processes starting in the same instant → exactly ONE gets the lock", outs.count("GOT") == 1,
+      str(outs))
+check("while it runs, tutor_active() is True", tutor.tutor_active())
+tutor.LOCK.write_text("999999")                             # a voice launch overwrote the pid with a child that died
+check("…even if the pid in the file is dead (the flock still says a lesson runs)", tutor.tutor_active())
+spawned.clear()
+subprocess.Popen = fake_popen
+tutor.launch = _REAL_LAUNCH                                 # (the engine section above swapped in a recorder)
+r = tutor.launch("compilers")
+check("a voice launch while a terminal lesson runs → 'already open', nothing spawned", not spawned
+      and r == "Your lesson's already open on the whiteboard.", f"{r} {spawned}")
+subprocess.Popen = _real_popen
+res = tutor.teach(["compiler", "--silent", "--no-board"])
+check("a second `stiti teach` refuses before loading anything", res == {"finished": False})
+holder = next(r for r, o in zip(racers, outs) if o == "GOT")
+for r in racers:
+    r.kill()
+    r.wait()
+_time.sleep(0.1)
+tutor.LOCK.write_text("")
+check("the holder dies (even kill -9) → the lock is free, no stale lock", not tutor.tutor_active())
+check("and the next lesson can take it", tutor.acquire_lesson() and tutor.tutor_active())
+tutor.release_lesson()
+check("released at the end of a lesson", not tutor.tutor_active() and tutor.LOCK.exists())
+
+spawned.clear()
+subprocess.Popen = fake_popen
+tutor.LOCK.unlink(missing_ok=True)
+bar = _th.Barrier(6)
+replies: list[str] = []
+
+
+def _fire():
+    bar.wait()
+    replies.append(tutor.launch("compilers"))
+
+
+ths = [_th.Thread(target=_fire) for _ in range(6)]
+for t_ in ths:
+    t_.start()
+for t_ in ths:
+    t_.join()
+check("six voice requests in the same instant (threads) → ONE lesson spawned", len(spawned) == 1,
+      f"{len(spawned)} spawned, {replies}")
+for p_ in procs:
+    p_.kill()
+tutor.LOCK.unlink(missing_ok=True)
+subprocess.Popen = _real_popen
+
+print("the always-on voice stays silent during a lesson")
+from types import SimpleNamespace                                      # noqa: E402
+from stiti.voice import loop as vloop                                  # noqa: E402
+heard: list = []
+fake = SimpleNamespace(silenced=False, ring_control=None, awake=False, _speak=lambda parts, mood: heard.append(parts))
+assert tutor.acquire_lesson()
+vloop.VoiceLoop.say(fake, "You have a meeting in 10 minutes.")
+vloop.VoiceLoop.say(fake, "Mm-hm?")
+check("no nudge / reprompt / missed-alarm line while a lesson runs", heard == [], str(heard))
+fake.ring_control = object()
+vloop.VoiceLoop.say(fake, "Wake up! Your 7 am alarm.")
+check("an alarm that is ringing still speaks", len(heard) == 1)
+tutor.release_lesson()
+fake.ring_control = None
+vloop.VoiceLoop.say(fake, "Hi again.")
+check("after the lesson she talks again", len(heard) == 2)
 
 subprocess.Popen = _real_popen
 print(f"tutor launch: {passed}/{total} checks passed")
