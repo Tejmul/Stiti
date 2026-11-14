@@ -2,7 +2,7 @@
 
 Presence: HID idle time + screen lock + frontmost app (no permissions needed).
 Candidates (checked every minute):
-  meeting_soon  — calendar event starting in ~10 min
+  meeting_soon  — "Heads-up — <title> in 10 minutes." once per event, never all-day ones (D39)
   deadline      — open task due within 2 h
   break         — present & active ~2.5 h straight
   evening_wrap  — once, ~9 PM, if he's at the Mac
@@ -155,22 +155,68 @@ def maybe_followup(text: str) -> int | None:
                 fire + timedelta(days=2)))["id"]
 
 
+# ---------------- meeting heads-up + calls ----------------
+HEADSUP_MAX_MIN = 10.5      # first said when the event is ≤ ~10 min away (the scheduler looks once a minute)
+HEADSUP_MIN_MIN = 1.0       # busy until a minute before? then it's too late to be useful — skip it
+
+
+def meeting_key(e: dict) -> str:
+    return f"meet:{e['title']}:{e['start']:%Y%m%d%H%M}"
+
+
+def meeting_headsups(events: list[dict], now: datetime, sent: set[str]) -> list[tuple[str, str]]:
+    """[(spoken line, dedupe key)] for timed events starting in 1–10.5 min that weren't announced yet."""
+    out = []
+    for e in events:
+        if e.get("all_day"):
+            continue
+        mins = (e["start"] - now).total_seconds() / 60
+        if not HEADSUP_MIN_MIN <= mins <= HEADSUP_MAX_MIN:
+            continue
+        key = meeting_key(e)
+        if key in sent:
+            continue
+        n = max(1, round(mins))
+        out.append((f"Heads-up — {e['title']} in {n} minute{'s' if n != 1 else ''}.", key))
+    return out
+
+
+_call_cache: list = [0.0, False]
+CALL_APPS = {"FaceTime", "zoom.us", "Microsoft Teams", "Webex", "Discord"}
+
+
+def in_call() -> bool:
+    """Best-effort "he's on a call" (research §2e: banner only, speak after the call). Zoom runs its CptHost process
+    only during a meeting; FaceTime frontmost; or a call app frontmost while the screen is awake. Cached 20 s."""
+    t = time.time()
+    if t - _call_cache[0] < 20:
+        return _call_cache[1]
+    busy = False
+    try:
+        busy = subprocess.run(["pgrep", "-x", "CptHost"], capture_output=True).returncode == 0
+    except Exception:
+        pass
+    if not busy:
+        app = frontmost_app()
+        busy = app in ("FaceTime",)
+    _call_cache[:] = [t, busy]
+    return busy
+
+
 # ---------------- candidates ----------------
 def candidates(p: Presence, now: datetime | None = None) -> list[tuple[str, str, dict]]:
     now = now or datetime.now(CFG.tz)
     out: list[tuple[str, str, dict]] = []
     sent = {r["key"] for r in q("""SELECT payload->>'key' AS key FROM nudges
                                     WHERE sent_at > now() - interval '20 hours' AND payload ? 'key'""")}
-    # meetings in 8–12 minutes
+    # meeting heads-up ~10 min before (once per event; all-day events skipped)
     try:
         from ..connectors import eventkit
-        for e in eventkit.events(now + timedelta(minutes=8), now + timedelta(minutes=12)):
-            key = f"meet:{e['title']}:{e['start']:%Y%m%d%H%M}"
-            if not e["all_day"] and key not in sent and e["start"] >= now + timedelta(minutes=8):
-                out.append(("meeting_soon", f"Heads up — {e['title']} at {e['start']:%I:%M %p}, in 10 minutes.",
-                            {"key": key}))
+        evs = eventkit.events_quiet(now, now + timedelta(minutes=HEADSUP_MAX_MIN + 1))
     except Exception:
-        pass
+        evs = []
+    for text, key in meeting_headsups(evs, now, sent):
+        out.append(("meeting_soon", text, {"key": key}))
     # deadlines within 2 h
     for t in q("""SELECT id, title, due FROM tasks WHERE status='open' AND due BETWEEN now() AND now() + interval '2 hours'"""):
         key = f"due:{t['id']}"
@@ -230,7 +276,9 @@ def tick(p: Presence, deliver, busy: bool = False, now: datetime | None = None) 
             continue
         if not urgent and not allowed():
             continue
-        if not want(kind):
+        if urgent and _arm(kind)["disabled"]:      # facts (meeting soon, deadline): no coin-flip, only his "stop"
+            continue
+        if not urgent and not want(kind):
             continue
         channel = deliver(text, kind, p.present)
         if channel:
