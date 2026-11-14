@@ -134,7 +134,8 @@ PROS = {"calm": (-27, 130, 18, 2.5), "tired": (-35, 112, 10, 1.6), "stressed": (
 
 def synth(days: int, per_day: int, signal: float, generic_acc: float, pros_acc: float = 0.35):
     q("TRUNCATE voice_turns, emotion_labels RESTART IDENTITY CASCADE")
-    base = datetime.now(CFG.tz) - timedelta(days=days)
+    # noon anchor: run near midnight, the minutes offsets below spilled the turns into one extra calendar day
+    base = (datetime.now(CFG.tz) - timedelta(days=days)).replace(hour=12, minute=0, second=0, microsecond=0)
     sid = 0
     for d in range(days):
         for m in SAY:
