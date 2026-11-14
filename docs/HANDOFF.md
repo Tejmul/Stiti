@@ -4,7 +4,7 @@
 > Do **not** read all of `docs/`, `research_notes/`, `reports/` up front — open them only when the task needs
 > that specific detail (pointers below). **Every session must update this file before it ends** (see bottom).
 >
-> Last updated: **2026-11-11** (session: conversation quality, overlay, voices, four languages, bug sweep)
+> Last updated: **2026-11-14** (session: mic follows macOS, whiteboard asks, no-repeat, learns from chat, ask-me, anticipation, tutor overhaul)
 
 ---
 
@@ -160,8 +160,22 @@ Streamline) before the repo is promoted. 8. Talk to Stiti for real: overlay pill
 any public build (trained on synthetic ElevenLabs/Fish voices). 11. After merging D39: apply `db/migrations/010_reminder_nags.sql` to
 `stiti` + `stiti_test`, then tell Stiti "my city is <your city>" once (weather + brief; until then she uses the
 timezone's city and says so).
+12. Decide: clean the junk already in his brain (both "Switch to Hindi" + "Switch to English" active, "I said shut up…"
+saved as a boundary, misheard "Newton's Club" fact) — show him the rows first. 13. Talk-test D36–D40 on the mic: "ask me
+questions", "what do you know about me?" → "what else?", "I live in …" → "weather?", a whiteboard lesson with a doubt
+mid-sentence (echo thresholds in `tutor/ears.py` were tuned on logs, not his room). 14. Which accounts to connect
+(GitHub PAT, Gmail) for "doing things".
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
+- **2026-11-12/14 — mic, whiteboard asks, Jarvis gaps (D36–D40, PRs: one per branch, stacked):** mic follows macOS
+  default-input switches (CoreAudio, lid close/open). Whiteboard opens however he asks; no fake "opened it". No-repeat
+  (said-ledger, "what else?" → only new / honest "that's all"). Audit found the brain learned ~nothing from chat (12 facts,
+  all resume; hollow "noted") → in-turn life updates, night + daytime nap extraction that ends/merges facts (D38).
+  "Ask me questions" rounds of 10 (D37). Weather/brief/meeting heads-up/nagging reminders (D39). Tutor: 3 lessons at
+  once (lock race → flock), heard her own TTS (EchoGuard), demo lessons had no LLM, "Shall we continue?" spam (D40).
+  All 34 suites green on the merged stack. NOT verified on his mic/speakers. Next (his call): decision layer (one
+  learned pass instead of per-feature regexes) or background mind (proactive thinking loop); richer tutor drawings
+  (arrays + pointers, trees, traces); connectors with his keys; personas.
 - **2026-11-11 (b) — four languages, voices, bug sweep (D30–D35, PRs #23–#32):** root cause of "to-do list empty":
   the mic stream died silently for 12 h → watchdog. Cards animate add/done/cancel; "it's done" resolves "it".
   Machine-talk cut + SOUL fits the 1400-char cap. Two voices (Jessica / hf_alpha) + speed + say-as. Three lessons
