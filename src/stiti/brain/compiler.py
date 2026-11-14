@@ -96,7 +96,7 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
           memories: list[dict], facts: list[dict], lessons: list[dict], open_loops: str | None,
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None, strategy=None,
           rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False,
-          said=None, more: bool = False) -> tuple[str, int]:
+          said=None, more: bool = False, saved: list[str] | None = None) -> tuple[str, int]:
     """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29).
     said = norepeat.Ledger (what she already said this conversation), more = he asked "what else?" (D36): every line
     she already covered is left out and an ALREADY-SAID block tells the LLM to bring only new things."""
@@ -164,7 +164,7 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
                          + "\n".join(f"- {x}" for x in new_items))
         elif more:
             parts.append("[NOTHING NEW LEFT] Say plainly that's most of what you know so far, and that he can tell you more.")
-        parts.append(psych.rules_block(strategy, can_do=can_do(min(privacy, 1)), rule_saved=rule_saved))
+        parts.append(psych.rules_block(strategy, can_do=can_do(min(privacy, 1)), rule_saved=rule_saved, saved=saved))
         if markers:
             from .turnmark import RULES
             parts.append(RULES)
