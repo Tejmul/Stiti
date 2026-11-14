@@ -75,6 +75,7 @@ class VoiceLoop:
         self.duplex: Duplex | None = None
         self.paused = threading.Event()  # menubar "mute"
         self.ring_control = None         # set while an alarm rings: "band karo" / "5 minute aur" (no wake word needed)
+        self.ack_control = None          # app: "ok / got it" right after a reminder stops its repeats (D39)
         self._interrupted = threading.Event()
         self._resume: tuple[list[str], str] | None = None
         self.fillers: list[tuple[np.ndarray, int]] = []
@@ -395,6 +396,11 @@ class VoiceLoop:
                     self.duplex.stop_playback()
                     self.say(said)
                     continue
+                if self.ack_control is not None and (said := _safe(self.ack_control, text)):
+                    print(f"You: {text}")
+                    self.say(said)
+                    self.last_activity = now
+                    continue
                 engaged = self.awake or now - self.last_activity < 10      # awake, or she just spoke (a nudge)
                 # after her "…Anything else?", "that's it / okay / bas / not yet" is an answer, not a goodbye:
                 # the engine says "Okay, I'm here." and the session stays open (only a real bye or the timeout ends it)
@@ -505,6 +511,15 @@ def _may_restart(now: float | None = None) -> bool:
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(" ".join(str(t) for t in stamps + [now]))
     return True
+
+
+def _safe(fn, text: str):
+    """A hook must never kill the voice loop (a DB hiccup → just not an ack)."""
+    try:
+        return fn(text)
+    except Exception as e:
+        print(f"[voice] hook failed: {e}", flush=True)
+        return None
 
 
 def _tutor_active() -> bool:
