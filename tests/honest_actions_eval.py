@@ -72,6 +72,22 @@ router.complete = lambda msgs, **kw: {"text": "Added it to your list.", "provide
 r = e.turn("Put that somewhere I'll remember")
 router.complete = orig
 check("engine: LLM claims 'Added …' but nothing ran → honest line", r == psych.HONEST_NOT_DONE, r)
+
+print("never claims it opened the whiteboard (2026-11-11 23:45)")
+for t in ("Opened the whiteboard app. Lexical analysis scans source code.", "Got it, I'll open the whiteboard for you.",
+          "I've opened the whiteboard app for you.", "I can't draw on a whiteboard, but I can walk you through it."):
+    check(f"open claim: {t[:50]!r}", bool(psych.OPEN_CLAIM_RX.search(t)))
+for t in ("Lexical analysis scans source code into tokens.", "I started college in 2022, you said.",
+          "Sure, I'll start with the basics: tokens.", "The board meeting went well.", "Let me open up about that."):
+    check(f"not an open claim: {t!r}", not psych.OPEN_CLAIM_RX.search(t))
+sl = psych.StreamLint(policy=strategy.make("ACKNOWLEDGE", "english"))
+check("streamed 'Opened the whiteboard app.' is never spoken", sl.feed("Opened the whiteboard app.") is None)
+router.complete = lambda msgs, **kw: {"text": "I've opened the whiteboard app for you.", "provider": "fake",
+                                      "model": "fake", "ms": 1}
+r = e.turn("Is the whiteboard thing working these days?")
+router.complete = orig
+check("engine: LLM claims it opened the board → honest line", r.startswith("I haven't opened the whiteboard"), r)
+
 q("DELETE FROM tasks")
 print(f"honest actions: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

@@ -144,10 +144,27 @@ check("'nothing' → no fake note", alarms.set_label("nothing").startswith("Okay
 from stiti.engine import Engine  # noqa: E402
 q("DELETE FROM intents")
 eng = Engine("text")
-r = eng.turn("Remind me at 10 tonight")
+r = eng.turn("Remind me tomorrow at 10 pm")     # not "tonight": after 10 PM that time has passed
 r2 = eng.turn("Call mom")
 lab = one("SELECT payload FROM intents ORDER BY id DESC LIMIT 1")
 check("engine: 'Call mom' after 'What's it for?' is the note", lab and lab["payload"].get("label") == "Call mom", f"{r} | {r2} | {lab}")
+
+print("questions about reminders list them, never create one (2026-11-11 23:45)")
+q("DELETE FROM intents")
+from stiti.life import alarms as _A                                    # noqa: E402
+for t in ("Can you tell me about the reminders I have today?", "do I have any reminders", "any reminders for tomorrow?",
+          "reminders today?", "Any alarm set for tomorrow?", "is there any reminder set for today?",
+          "kya koi alarm laga hai?"):
+    r = _A.handle(t)
+    check(f"list, not create: {t!r}", not q("SELECT 1 FROM intents") and r is not None, str(r))
+night = datetime(2026, 11, 11, 23, 50, tzinfo=CFG.tz)
+r = _A.create("remind me today to call mom", ref=night)
+check("'remind me today …' at 11:50 PM asks the time (no reminder in the past)",
+      r is not None and r.startswith("What time") and not q("SELECT 1 FROM intents"), str(r))
+r = _A.create("remind me at 10 tonight", ref=night)
+check("'at 10 tonight' said at 11:50 PM → 'already passed', nothing set",
+      r is not None and "already passed" in r and not q("SELECT 1 FROM intents"), str(r))
+check("'set an alarm for 6 am' still sets one", (_A.handle("set an alarm for 6 am") or "").startswith("Done — alarm"))
 
 q("DELETE FROM intents")
 print(f"alarms: {ok}/{ok + fail} checks passed")

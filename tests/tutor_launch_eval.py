@@ -114,6 +114,52 @@ check("unclear noise is ignored ('Nim nil to nara')", not keep_heard("Nim nil to
 check("unclear but a command still counts ('ruko')", keep_heard("ruko", True) and keep_heard("phir se", True))
 check("a clear question always counts", keep_heard("What is a token in lexical analysis?", False))
 
+print("his real whiteboard asks (2026-11-11 23:45: none of these opened it)")
+REAL = {
+    "So, I want you to explain me lexical analysis using a whiteboard.": "lexical analysis",
+    "Okay then, open the whiteboard and explain me lexical analysis.": "lexical analysis",
+    "Can you teach me lexical analysis using whiteboard?": "lexical analysis",
+    "Can you explain me deadlocks on the board?": "deadlocks",
+    "use the whiteboard to explain how DNS works": "how DNS works",
+    "whiteboard pe recursion samjhao": "recursion",
+    "No, you have the access to open whiteboard.": None,
+    "Can you hear my command? I ask you open whiteboard. That's it.": None,
+    "Bro, leave that open whiteboard and explain. I ask you to leave whiteboard and explain. I mean open whiteboard "
+    "and explain.": None,
+    "explain it on the whiteboard": None,
+}
+for t, want in REAL.items():
+    check(f"opens the board: {t[:60]!r} → {want!r}", vr(t) == (want, False), str(vr(t)))
+for t in ("close the whiteboard", "don't open the whiteboard, just explain it", "explain lexical analysis",
+          "what is a whiteboard", "I bought a whiteboard today", "remind me to clean the whiteboard",
+          "add buy whiteboard markers to my to-do list", "set an alarm for 6"):
+    check(f"not a board request: {t!r}", vr(t) is None, str(vr(t)))
+
+print("'open the whiteboard' after 'explain X' teaches X")
+from stiti.tutor import topic_hint                                     # noqa: E402
+check("hint from 'explain me lexical analysis'", topic_hint("So, I want you to explain me lexical analysis.")
+      == "lexical analysis")
+check("hint from 'what is a lexer?'", topic_hint("what is a lexer?") == "lexer")
+for t in ("Can you tell me about the reminders I have today?", "what are my reminders", "explain my code", "How are you?"):
+    check(f"no lesson hint from {t!r}", topic_hint(t) is None, str(topic_hint(t)))
+for p in procs:
+    p.kill()
+tutor.LOCK.unlink(missing_ok=True)
+calls.clear()                                          # tutor.launch is the recording fake from "through the engine"
+from stiti import router as _router                                    # noqa: E402
+_orig = _router.complete
+_router.complete = lambda msgs, **kw: {"text": "Lexical analysis splits code into tokens.", "provider": "fake",
+                                       "model": "fake", "ms": 1}
+e2 = Engine("text")
+e2.turn("explain me lexical analysis")
+r = e2.turn("No, you have the access to open whiteboard.")
+_router.complete = _orig
+check("engine: bare 'open whiteboard' after 'explain me lexical analysis' launches THAT lesson",
+      calls == [("lexical analysis", False)] and r.startswith("Opening the whiteboard"), f"{r} | {calls}")
+for p in procs:
+    p.kill()
+tutor.LOCK.unlink(missing_ok=True)
+
 subprocess.Popen = _real_popen
 print(f"tutor launch: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
