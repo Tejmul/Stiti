@@ -263,6 +263,7 @@ class Pending:
     cancelled: bool = False
     action: dict | None = None        # fast-path write the engine did for it (undone if it gets joined)
     work: Any = None                  # the engine thread
+    user_ep: int | None = None        # the episode the engine stored for it (a joined fragment is kept out of recall)
 
     def covers(self, start_t: float) -> bool:
         return start_t >= self.committed_t - 0.05 and (

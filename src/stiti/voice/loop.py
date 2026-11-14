@@ -248,6 +248,7 @@ class VoiceLoop:
             except Exception as e:
                 result["reply"] = "Sorry, something went wrong."
                 print(f"[turn] {type(e).__name__}: {e}")
+            pend.user_ep = getattr(self.engine, "cur_user_ep", None)
             try:
                 if pend.cancelled or result.get("cancelled"):
                     return
@@ -320,6 +321,12 @@ class VoiceLoop:
         undo it, the joined sentence does it properly."""
         if pend.work is not None and pend.work.is_alive():
             pend.work.join(WORK_JOIN_S)
+        fn = getattr(self.engine, "forget_fragment", None)
+        if fn is not None and pend.user_ep:
+            try:
+                fn(pend.user_ep)                         # the joined sentence holds the whole thought (D36)
+            except Exception as e:
+                print(f"[fragment] {type(e).__name__}: {e}")
         if pend.action:
             try:
                 from ..brain import learning
