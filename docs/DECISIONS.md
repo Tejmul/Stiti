@@ -768,3 +768,46 @@ know intake/intake_research.md` §5 (OARS reflections, summary read-back, easy �
 - Tests: `tests/ask_me_eval.py` (129): triggers, bank, cleanup, a full engine round with zero LLM calls, skip / pause
   / resume, supersede, P2, profile + USER.md, round two all new, refresh. Engine turn ≈ 50–200 ms on the M2.
   NOT verified on the mic yet.
+
+## D39: Anticipating him — weather, brief, meeting heads-up, reminders that don't give up (2026-11-14)
+**Ask:** Jarvis moments where she speaks first, without being annoying. Research reused (not redone):
+`docs/research/alarms.md` §2c/§2e (nag policy, ring caps, presence → channel, "in a call → banner only"),
+`docs/research/live_info.md` §5 (Open-Meteo is the easy keyless weather), `research_notes/…/productivity_and_psychology.md`
+§6 (budgeted, breakpoint-timed nudges; over-intervention is the failure mode), public-apis list → Open-Meteo.
+- **Weather** (`connectors/weather.py`): Open-Meteo geocoding (cached forever on disk, `~/.stiti/cache/geo.json`) +
+  forecast (current + today/tomorrow high/low/rain %, cached 30 min in memory, 1.5 s timeout per call, a failed refresh
+  answers from a copy < 6 h old, offline → None). Fast path in `Engine.turn` before live news, no LLM: "what's the
+  weather / mausam kaisa hai / will it rain today / kal baarish hogi / bahar kitni garmi hai / weather in Porto" →
+  "It's 24 and sunny in Lisbon, up to 31 later, no rain." / "Probably not — only 10% chance of rain in Lisbon today."
+  "Later" is judged on the city's own clock. Cold cache → the "Let me look that up." ack. Its regex is in `spec_block`.
+  **City is never hard-coded:** owner_profile `city` (by voice: "my city is …", "I live in …", "main … mein rehta hoon";
+  checked with the geocoder) → `STITI_CITY` → the timezone's city (said out loud, plus a one-time "tell me your city").
+  Only the city name leaves the Mac. **Licence (checked on Open-Meteo's own README, 2026-11-14; the /terms page
+  reset the connection):** free for non-commercial use, no key, fair use — contact them above 10,000 requests/day
+  (Stiti makes ~50/day); data CC BY 4.0 (credit Open-Meteo where data is displayed); server code AGPLv3 (not used).
+- **Morning brief** (`life/brief.py`, same gates: once a day, nudge budget): ≤ 3 sentences — greeting + cached
+  weather one-liner · next 1–2 timed calendar events + to-do / reminder count (or "first up, …") · ONE cached headline
+  (`live.cached_headline`, else a habit). Nothing waits on the network: the app refreshes weather every 30 min
+  (05–23 h) and `live.warm()` fills news. Calendar is read only if access was already granted
+  (`eventkit.events_quiet` never prompts — from a terminal the prompt blocked 60 s). Low energy → "Just one thing
+  matters today: …", no news.
+- **Meeting heads-up** (`proactive.meeting_headsups`): "Heads-up — Design review in 10 minutes." once per event
+  (dedupe key in `nudges`), window 10.5 → 1 min before (says the real minutes if caught late), all-day skipped.
+  Facts (meeting / deadline) no longer go through the bandit coin-flip — only his "don't remind me about meetings"
+  stops them. Same `_deliver` path as reminders; `_deliver` now gives the banner only during a whiteboard lesson or a
+  call (`proactive.in_call`: Zoom's in-meeting `CptHost` process or FaceTime frontmost — heuristic).
+- **Reminders that don't give up** (`alarms.nag_*`, migration 010 `reminder_nags`): delivered and not acknowledged →
+  again at +2 min ("Reminder again: …"), then +5 min ("Last nudge on this one — …") = 3 in all; "important / zaroor /
+  must / don't let me forget" (flag saved at creation) → every 10 min, 3 more ("This one's important — …"). Ack =
+  "ok / got it / done / haan / theek hai / ho gaya / thanks" (≤ 6 words): voice hook in the loop (no wake word for
+  90 s after she said it, 5 min while awake), any typed channel through the engine, the menu "Stop alarm" item, or
+  ticking it in Apple Reminders. Repeats wait (uncounted) while he's away or in quiet hours, and while she's speaking
+  (max 2 min); dropped after 3 h. Logged per reminder: channel of every delivery, ack channel, ack latency (Laya data).
+- **Ring caps split:** alarm 10 min, timer 5 min (`RING_MAX_S` dict, `ring_limit_s`); the ring log line now has
+  ack latency + channel.
+- Tests: `tests/anticipate_eval.py` (121; fake HTTP, fake calendar, fake clock — no real network); alarms 44,
+  proactive, conversation 12, realtime 77, live 91, overlay 78, no_repeat 60, honest 32, human_talk 45, intent 34,
+  lang_switch 50, persona 54, speed 22, card_motion 43 all green. One live Open-Meteo call (Lisbon, Berlin): parser OK,
+  ~0.7 s cold, 0 ms cached.
+- **NOT verified live:** on the mic (nag acks by voice, heads-up spoken while he works), the in-call heuristic on a
+  real Zoom / Meet call (Meet in a browser is NOT detected), the brief on a real first wake with his calendar.
