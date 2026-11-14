@@ -124,12 +124,21 @@ def handle(text: str) -> str | None:
         return snooze_latest()
     if fixed := fix_ampm(text):
         return fixed
-    if re.search(r"\b(my|kitne|which|what|list|kaunse|show|upcoming|saare|all)\b.*\b(alarms?|reminders?|timers?)\b", t) \
-            and not re.search(r"\bset\b", t):
+    if LIST_ASK_RX.search(t) and (not MAKE_RX.search(t) or ASKING_RX.search(t)):
         return list_all()
     if not ASK_RX.search(t):
         return None          # "what should I study this evening?" mentions a time; it is not asking for a reminder
     return create(text)
+
+
+# "Can you tell me about the reminders I have today?" CREATED a reminder called "the reminders I have ?" (2026-11-11):
+# a question about his alarms/reminders is a list, never a new one.
+LIST_ASK_RX = re.compile(r"\b(my|kitne|which|what|list|kaunse|show|upcoming|saare|all|any|tell|about|have|batao|bata do|"
+                         r"kya|check|today'?s|tomorrow'?s|pending|scheduled)\b.*\b(alarms?|reminders?|timers?)\b|"
+                         r"\b(alarms|reminders|timers)\b[^.!]*\?|^\W*(alarms|reminders|timers)\W*$", re.I)
+ASKING_RX = re.compile(r"^\W*(?:(?:hey |hi )?stiti\W+)?(?:any|do i|did i|have i|is there|are there|is any|are any|what(?! about)|"
+                       r"which|how many|kitne|kya|kaunse)\b(?!.*\bremind me\b)", re.I)   # "any alarm set for tomorrow?"
+MAKE_RX = re.compile(r"\b(set|setting|add|adding|create|make|remind me|lagao|laga do|laga de|rakh do|wake me|put)\b", re.I)
 
 
 # He has to ASK for one (2026-11-11: "Namaskar, aaj shaam ko main kya padhun?" and "what about tomorrow morning?"
@@ -149,6 +158,11 @@ def create(text: str, ref: datetime | None = None) -> str | None:
     rule = recurrence(text, when) if kind != "timer" else None
     if rule:
         when = next_time(rule, (ref or now()) - timedelta(seconds=1)) or when
+    if when <= (ref or now()):
+        # "remind me today to …" at 11:50 PM parsed as 9 AM today → it fired at once as "you missed it" (2026-11-11)
+        if re.search(r"\d", text):
+            return f"{when.strftime('%I:%M %p').lstrip('0').replace(':00', '')} has already passed. Say “tomorrow at …” and I'll set it."
+        return "What time should I remind you? Say it like “at 7 pm”."
     label = _label(text) if kind == "reminder" else None
     say = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, NO_LABEL_SAY)
     payload = {"say": say, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120]}

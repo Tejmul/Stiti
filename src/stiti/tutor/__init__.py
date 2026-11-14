@@ -11,6 +11,7 @@ Flags: --type (speakers + keyboard, no mic) · --silent (no sound) · --no-board
 from __future__ import annotations
 
 import os
+import re
 import queue
 import sys
 import threading
@@ -292,11 +293,14 @@ def voice_request(text: str) -> tuple | None:
     if (m := re.search(r"\bcrash ?course (?:on|of|for|from) (.+)", t, re.I)):
         return m.group(1).strip(" ,.") or None, False, "night"
     if not TEACH_RX.search(t):
-        return None
+        return board_request(text)
     topic = re.sub(r"^(?:(?:hey |hi )?stiti,? )?(?:can you |please |pls )?", "", t, flags=re.I)
     topic = re.sub(r"^(teach me|tutor me)( about)?|^mujhe|(padhao|padha do|sikhao|sikha do|samjhao)$|"
-                   r"(on|pe) (the )?(white ?board|board)$|^(explain|samjhao)|^(start|open) (the )?(white ?board|tutor)",
-                   "", topic, flags=re.I).strip(" ,.")
+                   r"(on|pe) (the )?(white ?board|board)$|^(explain|samjhao)( me| us)?( about)?|"
+                   r"^(start|open) (the )?(white ?board|tutor)", "", topic, flags=re.I).strip(" ,.")
+    topic = BOARD_TAIL_RX.sub("", topic).strip(" ,.")     # "teach me X using whiteboard" → X
+    if _NOT_TOPIC.match(topic):
+        topic = ""                                        # "explain it on the whiteboard" → ask / use context
     if NIGHT_RX.search(t):
         topic = NIGHT_RX.sub("", topic or "").strip(" ,.")
         topic = re.sub(r"\b(in|me|mein|mai|tak|a|the)$", "", topic, flags=re.I).strip(" ,.")
@@ -305,6 +309,71 @@ def voice_request(text: str) -> tuple | None:
 
 
 ASK_TOPIC = "Sure! What should I teach you?"
+
+# 2026-11-11: none of his real asks matched TEACH_RX (it only knew sentence STARTS like "teach me …"):
+#   "So, I want you to explain me lexical analysis using a whiteboard." · "open the whiteboard and explain me X"
+#   "No, you have the access to open whiteboard." · "I ask you open whiteboard. That's it."
+# so the LLM answered instead and claimed "Opened the whiteboard app" three times. Now ANY sentence that names the
+# whiteboard and asks for it (open / explain / teach / show / use …), anywhere in the line, is a lesson request.
+_BOARD = r"(?:white ?-?board|black ?board)"
+BOARD_RX = re.compile(rf"\b{_BOARD}\b|\bboard (?:pe|par|mein)\b|\b(?:on|using) (?:the |a )?board\b", re.I)
+BOARD_ASK_RX = re.compile(r"\b(?:open|start|launch|use|using|bring|show|draw|explain|teach|tutor|on|pe|par|kholo|"
+                          r"khol do|samjhao|samjha do|padhao|sikhao|access)\b", re.I)
+BOARD_NO_RX = re.compile(rf"\b(?:close|don'?t|do not|dont|no need (?:for|of)?|without|stop|bina)\b(?:\W+\w+){{0,3}}?"
+                         rf"\W+(?:the |a |that )?(?:{_BOARD}|board)\b|\b{_BOARD}\b.{{0,20}}\b(?:band karo|mat kholo|"
+                         rf"close karo|nahi chahiye)\b", re.I)
+BOARD_TAIL_RX = re.compile(rf"\s*\b(?:using|on|with|in|via|through|pe|par|mein)\s+(?:the |a |my )?(?:{_BOARD}|board)\b.*$",
+                           re.I)
+TOPIC_RX = re.compile(r"\b(?:explain|teach|tutor|show|draw|walk me through|tell me about)\s+(?:me\s+|us\s+)?"
+                      r"(?:about\s+|on\s+)?(?P<a>.+)$|"
+                      r"^(?P<b>.+?)\s+(?:samjhao|samjha do|padhao|padha do|sikhao|sikha do)\b", re.I)
+_NOT_TOPIC = re.compile(r"^(?:it|this|that|them|me|everything|something|anything|now|please|again|there|here|"
+                        r"properly|to me|that'?s it|the whiteboard|whiteboard|board|it to me|that again)$", re.I)
+
+
+def _topic_in(sentence: str) -> str | None:
+    """'open the whiteboard and explain me lexical analysis' / 'explain me X using a whiteboard' → 'lexical analysis'."""
+    s = re.sub(rf"^.*?\b(?:open|start|launch|use|bring up|kholo)\s+(?:the |a |my |that )?(?:{_BOARD}|board)\s*"
+               r"(?:and|aur|then|,)?\s*", "", sentence, flags=re.I)
+    s = BOARD_TAIL_RX.sub("", s).strip(" ,.?!")
+    s = re.sub(rf"^(?:{_BOARD}|board)\s+(?:pe|par|mein|on)\s+", "", s, flags=re.I)   # "whiteboard pe X samjhao"
+    m = TOPIC_RX.search(s)
+    if not m:
+        return None
+    topic = (m.group("a") or m.group("b") or "").strip(" ,.?!")
+    topic = re.sub(r"^(?:so|okay|ok|then|bro|please|also|now|the concept of)\s+", "", topic, flags=re.I)
+    topic = re.sub(r"\s+(?:please|pls|now|to me|properly|again|yaar|bro)$", "", topic, flags=re.I).strip(" ,.?!")
+    return None if not topic or _NOT_TOPIC.match(topic) or len(topic.split()) > 8 else topic
+
+
+_PERSONAL_RX = re.compile(r"\b(?:my|your|our)\s+\w+|\b(?:reminders?|alarms?|to-?dos?|tasks?|calendar|e?mails?|schedule|"
+                          r"weather|news|time is it)\b", re.I)
+
+
+def topic_hint(text: str) -> str | None:
+    """What he asked her to explain, even without the whiteboard ('explain me lexical analysis', 'what is a lexer?'):
+    remembered for a few minutes so a bare 'open the whiteboard' that follows teaches THAT."""
+    if NOT_A_LESSON_RX.search(text) or _PERSONAL_RX.search(text):
+        return None
+    for x in reversed([x for x in re.split(r"(?<=[.?!])\s+", text) if x.strip()]):
+        if (topic := _topic_in(x)):
+            return topic
+        m = re.search(r"\bwhat (?:is|are|does) (?:a |an |the )?(.{3,60}?)(?: mean)?\s*[?.!]*$", x, re.I)
+        if m and len(m.group(1).split()) <= 5 and not _NOT_TOPIC.match(m.group(1).strip()):
+            return m.group(1).strip(" ,.?!")
+    return None
+
+
+def board_request(text: str) -> tuple | None:
+    """A line that asks for the whiteboard → (topic or None, False); None if it doesn't, or says NOT to open it."""
+    sentences = [x for x in re.split(r"(?<=[.?!])\s+|\bi mean\b", text, flags=re.I) if x.strip()]
+    asks = [x for x in sentences if BOARD_RX.search(x) and BOARD_ASK_RX.search(x)]
+    if not asks or BOARD_NO_RX.search(asks[-1]):      # the LAST thing he said about the board wins ("… I mean open it")
+        return None
+    for x in [asks[-1], *reversed(sentences)]:        # the topic may sit in another sentence of the same line
+        if (topic := _topic_in(x)):
+            return topic, False
+    return None, False
 
 
 def _spawn(args: list[str]) -> None:
