@@ -61,7 +61,8 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
   recall + compiler briefing (≤1,500 tok) + router + psych.lint. Degraded mode answers from memory when no LLM.
 - `decide.py` (exemplar kNN + rule floors; Laya OFF), `embed.py` (EmbeddingGemma-300M 4-bit ONNX, 768-d, ~7 ms),
   `router.py` (custom free-tier chain, per-provider `max_privacy`, quotas in `llm_usage`, P2 never leaves the Mac), `profile.py` (owner name/pronouns).
-- `brain/` memory, compiler, lessons, learning, sleep (night job), mdsync, onboarding (old 10-Q), intake (new engine),
+- `brain/` memory, compiler, lessons, learning, sleep (night job + daytime nap, D38), lifeupdate (in-turn facts),
+  factstore (temporal fact writes), mdsync, onboarding (old 10-Q), intake (new engine),
   keythings, emotion, psych, ingest (documents/chunks), graphview, moodview, backup.
 - `fastpath/` Hinglish dates + handlers · `life/` planner (CP-SAT), habits, chunker, brief, proactive.
 - `voice/` duplex (AEC3), vad, stt (mlx-whisper small q4), tts (Kokoro int8 + ClauseChunker), turn (Smart Turn), wake,
@@ -85,6 +86,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Cloud LLM router (D17) | 🟢 live with Groq/OpenRouter/Gemini; P1 backup needs a Z.ai or Cloudflare key | `docs/research/free_llm_providers.md` |
 | Conversation quality (D24–D29) | 🟢 turn-taking, JARVIS-psych persona + strategies, STT glossary + Groq 2nd opinion, personal emotion, preemptive replies | DECISIONS D24–D29 |
 | Talks like a person + whole sentences + honesty (D31, D35) | 🟢 no machine-talk, no missing words, never claims an undone action | DECISIONS D31/D35 |
+| Learns from normal conversation (D38, `brain/lifeupdate.py`, `brain/factstore.py`, `brain/sleep.py`) | 🟢 in-turn life updates ("I left X", "Riya is my sister", "remember that…", "actually it's X, not Y"), night/nap extraction with ends + merge + validation, honest "noted" only when saved; NOT tried on his mic/real chats | DECISIONS D38, `docs/research/learn_from_chat.md` |
 | Never repeats herself (D36, `brain/norepeat.py`) | 🟢 said-ledger, "what else?" → only new things / honest "that's all", repeat filter in code; NOT heard on the mic | DECISIONS D36, `docs/research/no_repeat.md` |
 | Desktop overlay (D26, D30) | 🟢 pill + cards that animate add/done/cancel; NOT seen by him on screen yet | DECISIONS D26/D30 |
 | Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
