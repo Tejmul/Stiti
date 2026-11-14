@@ -154,8 +154,10 @@ class VoiceLoop:
 
     def say(self, text: str, mood: str = "calm", *, nudge: bool = False):
         """Speak sentence by sentence. Nudges stay silent while he has told her to stop."""
-        if (self.silenced or _tutor_active()) and nudge:
+        if self.silenced and nudge:
             return
+        if getattr(self, "ring_control", None) is None and _tutor_active():
+            return                                 # a lesson owns the speakers: ONE voice (D40); alarms still ring
         print(f"Stiti: {text}")
         shown = self.awake                         # on screen only while awake (asleep = nothing on screen)
         if shown:
@@ -365,6 +367,9 @@ class VoiceLoop:
                     c = self.segq.get(timeout=0.5)
                 except queue.Empty:
                     c = None
+                if self.awake and _tutor_active():      # a lesson started: she goes quiet now, not at his next word
+                    self.awake = False                  # (an "Mm-hm?" reprompt or a missed-alarm line would talk over it)
+                    overlay.set_state("hidden")
                 if self.rt is not None:
                     self.rt.tick(c)
                 if c is None and not _tutor_active() and (why := d.heal()):

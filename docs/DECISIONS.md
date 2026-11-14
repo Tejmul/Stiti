@@ -811,3 +811,58 @@ know intake/intake_research.md` §5 (OARS reflections, summary read-back, easy �
   ~0.7 s cold, 0 ms cached.
 - **NOT verified live:** on the mic (nag acks by voice, heads-up spoken while he works), the in-call heuristic on a
   real Zoom / Meet call (Meet in a browser is NOT detected), the brief on a real first wake with his calendar.
+
+## D40: The tutor teaches like a teacher — one voice, never hears herself, answers doubts on the board (2026-11-14)
+**Problem (his words):** "I ask it to teach something: it's going and suddenly breaking … two other voices are
+breaking the speaking voice … once I ask how it is done or any doubt, it should be able to explain." The real log
+(2026-11-11) showed the causes. Research: `docs/research/tutor_teacher.md` (14 sources: LiveKit/Pipecat
+interruption handling, Whisper Bag of Hallucinations ICASSP 2025, Careless Whisper, AEC3, echo-text matching,
+Tutor CoPilot, ChalkTalk, OpenMAIC, LearnLM, human-tutoring studies).
+- **Causes found.** (1) Three lessons at once: D33's lock was a pid file, check-then-write, so two launches in one
+  second, or a voice launch while a terminal `stiti teach` was loading, could both pass. (2) Her own TTS came back
+  through the mic ("Chalo today … let's go step by step", "Good question"), so she cut herself off, replayed the cue
+  (the duplicate "Chalo! Today …") or answered herself. Whisper phantoms ("Two minutes, time's going to tell", a
+  looping "Kale, malawad …") did the same. (3) **"I can't answer that one properly without my cloud brain"**: only
+  in the built-in demo lesson. `make_lesson()` gives the demo and `--resume` no planner, and `_answer()` asked the
+  LLM only when a planner existed. The `.env` and router were fine (the LLM lessons in the same log did answer).
+  (4) "Shall we continue?" ended every answer. (5) Found while live-testing: the board auto-focuses the answer box on
+  every check, which sent a "raised hand", so every check started with "Sure, take a moment. Say continue …" (also in
+  the 11 Nov log).
+- **One lesson, proven under races:** `tutor.lock` is a kernel `flock` held for the lesson process's whole life
+  (`acquire_lesson()` is the first thing `teach()` does, before any model loads). The pid is still written for
+  readers. `tutor_active()` = flock held **or** pid alive. The file is never unlinked. `launch()` is serialised with
+  a thread lock. The always-on loop's `say()` is silent while a lesson runs (only a ringing alarm speaks), and it
+  drops "awake" as soon as a lesson starts.
+- **One voice inside the lesson:** every utterance goes through `Tutor._play()`, which stops current playback first.
+  The doubt's acknowledgement, filler and answer lines never overlap (the tests count overlaps).
+- **She never hears herself** (`tutor/ears.py` `EchoGuard`, pure code). It runs on every voice transcript and as a
+  `TurnTaker.veto` on the barge-in verdict, so echo never even stops her. Rules: Bag-of-Hallucinations phrases;
+  the same line again within 20 s (looping); low Whisper confidence → commands only; inside her echo window
+  (playing + 1.5 s), ≥ 60 % of the content words, or a ≥ 60 % in-order run, matching what she said in the last 15 s
+  = her own voice; inside the window a non-command needs ≥ 3 words or a doubt opener; "bye" must be confident.
+  "ruko / wait / stop / ek doubt" always pass instantly. All thresholds are named constants.
+- **Doubts like a teacher:** stop → "Good question." (rotating, never twice in a row) → a doubt board under the
+  current page (`begin_aside`; the lesson board is untouched) → `planner.answer()` in a background thread (strict
+  JSON, `tutor_answer`), with a filler only if it takes > 0.8 s → 2–4 sentences that draw ≤ 4 ops in sync (ops that
+  could flip or erase the lesson board are dropped) → a follow-up within 45 s ("samajh nahi aaya") is asked again
+  with the earlier answer and "simpler, everyday example" → "Back to where we were." → the interrupted cue replays
+  from its start. Its snapshot is rebased so the doubt board stays on the canvas. A doubt during a check, or after a
+  finished cue, re-asks the check instead of replaying anything. LLM down: one honest line ("I can't reach my
+  thinking brain right now, so here's the short version from this lesson.") + a local lookup + parked, said ONCE;
+  later doubts get "Parked that one too." **Every lesson gets an answerer** (`tutor.answerer()`), the demo, resumed
+  lessons and crash-course glue included.
+- **Pacing:** "Shall we continue?" removed. A 0.6 s breath at section ends. A check-in ("Any doubt so far? Just ask,
+  or I'll carry on.") only after a teaching section with no check of its own, at most every 2 min. A paused lesson
+  says one gentle line after 90 s of silence. The board's auto-focus no longer raises a hand.
+- Tests: `tests/tutor_teacher_eval.py` (new), simulated with fake audio, fake transcripts and a fake LLM: her echoed
+  sentences from the real log, phantoms, "ruko" < 150 ms, a doubt mid-cue (stop, ack, filler, drawn answer on its
+  own board, same cue resumed, doubt board kept), a follow-up, LLM down once, check-in frequency, a check with a
+  focus event, planner strict JSON, answerer, the TurnTaker veto. `tests/tutor_launch_eval.py` +12: three processes
+  racing in the same instant, six threads launching at once, a voice launch while a terminal lesson runs, kill -9
+  frees the lock, and the voice loop silent during a lesson.
+- **Live (free Groq, `--silent`-style driver, real board on localhost):** "binary search", typed doubt mid-cue "how
+  does it decide which half to throw away?" → "Good question." → "Let me draw it out." → 3 sentences + a box on a
+  doubt board → "Back to where we were." → the same cue again.
+- **NOT verified on his real speakers/mic:** the echo thresholds (1.5 s tail, 60 %, 3 words) are tuned on the
+  logged lines, not on his room; real AEC residue and barge-in latency on the M2 still need his ears. Alarms still
+  ring during a lesson, but he can't dismiss them by voice then (the loop ignores the mic during lessons).

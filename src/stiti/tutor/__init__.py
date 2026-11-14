@@ -23,26 +23,99 @@ LOCK = CFG.home / "tutor.lock"
 BOOK_EXTS = {".pdf", ".epub", ".md", ".txt", ".docx", ".html", ".htm", ".pptx", ".rtf"}
 
 
-def tutor_active() -> bool:
-    """True while a lesson runs (Stiti's always-on voice loop stays out of the way)."""
+LOCK_WAIT_S = 1.5        # a lesson waits this long for the lock (readers hold it for microseconds), then gives up
+_held_fd: int | None = None
+_launch_lock = threading.Lock()
+
+
+def _pid_in_lock() -> int | None:
     try:
-        pid = int(LOCK.read_text().strip())
+        return int(LOCK.read_text().strip())
+    except (FileNotFoundError, ValueError, OSError):
+        return None
+
+
+def _alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
         os.kill(pid, 0)
         return True
-    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+    except (ProcessLookupError, PermissionError, OSError):
         return False
+
+
+def _flock_held() -> bool:
+    """Some process holds the lesson lock (kernel flock: released by the kernel when that process dies)."""
+    import fcntl
+    try:
+        fd = os.open(LOCK, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(fd, fcntl.LOCK_SH | fcntl.LOCK_NB)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+        return False
+    except OSError:
+        return True
+    finally:
+        os.close(fd)
+
+
+def tutor_active() -> bool:
+    """True while a lesson runs or is loading (Stiti's always-on voice loop stays out of the way)."""
+    return _flock_held() or _alive(_pid_in_lock())
 
 
 def _other_lesson() -> bool:
-    """Another live lesson holds the lock (launch() writes OUR pid before we start, so that one is us)."""
-    try:
-        pid = int(LOCK.read_text().strip())
-        if pid == os.getpid():
-            return False
-        os.kill(pid, 0)
-        return True
-    except (FileNotFoundError, ValueError, ProcessLookupError, PermissionError):
+    """Another live lesson holds the lock (a lesson that holds it itself, or whose own pid is written, is us)."""
+    if _held_fd is not None:
         return False
+    if _flock_held():
+        return True
+    pid = _pid_in_lock()
+    return pid != os.getpid() and _alive(pid)
+
+
+def acquire_lesson(wait_s: float = LOCK_WAIT_S) -> bool:
+    """Take the one-lesson lock for this process's whole life, or return False (another lesson has it).
+    D33 used a pid file: check-then-write, so two launches in the same second, or a voice launch while a terminal
+    `stiti teach` was still loading, could both start (three voices, 2026-11-11). A kernel flock is atomic; the
+    pid is still written for readers. The file is never unlinked (that would break flock exclusivity)."""
+    import fcntl
+    import time
+    global _held_fd
+    if _held_fd is not None:
+        return True
+    LOCK.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+    deadline = time.monotonic() + wait_s
+    while True:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            break
+        except OSError:
+            if time.monotonic() >= deadline:
+                os.close(fd)
+                return False
+            time.sleep(0.02)
+    os.ftruncate(fd, 0)
+    os.pwrite(fd, str(os.getpid()).encode(), 0)
+    _held_fd = fd
+    return True
+
+
+def release_lesson() -> None:
+    import fcntl
+    global _held_fd
+    fd, _held_fd = _held_fd, None
+    if fd is None:
+        return
+    try:
+        os.ftruncate(fd, 0)
+        fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
 
 
 def _arg(args: list[str], flag: str, default=None):
@@ -100,10 +173,37 @@ def make_lesson(target: str | None, args: list[str], say=print):
 
 
 def teach(args: list[str]) -> dict:
+    """One lesson process. The lock is taken FIRST (before any model loads or any sound), held for the whole life."""
     try:
         sys.stdout.reconfigure(line_buffering=True)        # logs show up live even when launched by the app
     except Exception:
         pass
+    if not acquire_lesson():
+        print("A lesson is already running; not starting a second one.")
+        return {"finished": False}
+    try:
+        return _teach(args)
+    finally:
+        release_lesson()
+
+
+def answerer(planner=None, lesson=None):
+    """Every lesson can answer doubts with the cloud LLM when a free key exists — the built-in demo and resumed
+    lessons too. 2026-11-11: the demo had planner=None, so every doubt got 'I can't answer that one properly
+    without my cloud brain' although Groq was up."""
+    if planner is not None:
+        return planner
+    try:
+        from .. import router
+        if not any(s["key"] for s in router.status()):
+            return None
+        from .planner import Planner
+        return Planner(None)
+    except Exception:
+        return None
+
+
+def _teach(args: list[str]) -> dict:
     from . import audio as au
     from .player import Tutor
     from .server import BoardServer
@@ -114,9 +214,6 @@ def teach(args: list[str]) -> dict:
     holder: dict = {}
     srv = BoardServer(on_connect=lambda: holder["t"].on_connect() if "t" in holder else []) if board else None
     events = srv.events if srv else queue.Queue()
-    if _other_lesson():
-        print("A lesson is already running; not starting a second one.")
-        return {"finished": False}
     print("Stiti is getting ready… (voice, whiteboard)" if mode == "voice" else "Stiti is getting ready…")
     audio = au.make(mode, events, debug="--debug" in args)
     if "--night" in args or "--resume-course" in args or "--revise" in args:
@@ -132,7 +229,7 @@ def teach(args: list[str]) -> dict:
         print(f"Couldn't plan that lesson right now ({type(e).__name__}: {str(e)[:160]}).\n"
               "Try again in a minute, or run the built-in lesson: uv run stiti teach")
         return {"finished": False}
-    tutor = Tutor(lesson, audio=audio, events=events, server=srv, planner=planner, start=start)
+    tutor = Tutor(lesson, audio=audio, events=events, server=srv, planner=answerer(planner, lesson), start=start)
     holder["t"] = tutor
     stop = threading.Event()
     if srv:
@@ -141,17 +238,15 @@ def teach(args: list[str]) -> dict:
         if "--no-open" not in args:
             srv.open_browser()
         srv.connected.wait(15)
-    if mode != "silent" and sys.stdin.isatty():
+    if mode != "voice" or sys.stdin.isatty():     # --silent / --type read typed lines (piped too); the app gives DEVNULL
         threading.Thread(target=_stdin_reader, args=(events, stop), daemon=True).start()
     print("Talk any time: ruko / continue / phir se / peeche / skip / dheere / tez / bas karo — or just ask.\n"
           if mode == "voice" else "Type answers or questions here or on the board. Commands: pause, continue, "
                                   "repeat, back, skip, slower, faster, end.\n")
-    LOCK.write_text(str(os.getpid()))
     try:
         result = tutor.run()
     finally:
         stop.set()
-        LOCK.unlink(missing_ok=True)
         audio.close()
         if srv:
             srv.stop()
@@ -181,8 +276,7 @@ def _course_session(args: list[str], target: str | None, audio, events, srv, sto
                 print("Nothing due for revision right now. 🎉")
                 return {"finished": True}
             _open_board(srv, args)
-            LOCK.write_text(str(os.getpid()))
-            t = Tutor(lesson, audio=audio, events=events, server=srv)
+            t = Tutor(lesson, audio=audio, events=events, server=srv, planner=answerer())
             res = t.run()
             from . import srs
             for r in res.get("results") or []:
@@ -209,7 +303,6 @@ def _course_session(args: list[str], target: str | None, audio, events, srv, sto
         for k, x in enumerate(plan["lessons"]):
             print(f"   {k + 1:2}. {x['title']}" + (f"   (p.{x['unit']['label']}+)" if x.get("unit") else ""))
         _open_board(srv, args)
-        LOCK.write_text(str(os.getpid()))
         res = course.Night(cid, audio=audio, events=events, server=srv).run()
         print(f"\n✅ {'Finished' if res['finished'] else 'Paused'} the course: {res['lessons_done']}/{res['lessons']} "
               f"lessons." + ("" if res["finished"] else " Resume: uv run stiti teach --resume-course"))
@@ -218,7 +311,6 @@ def _course_session(args: list[str], target: str | None, audio, events, srv, sto
         print(f"Couldn't run the crash course ({type(e).__name__}: {str(e)[:200]}).")
         return {"finished": False}
     finally:
-        LOCK.unlink(missing_ok=True)
         audio.close()
         if srv:
             srv.stop()
@@ -389,7 +481,13 @@ def _spawn(args: list[str]) -> None:
 
 
 def launch(topic: str | None, resume: bool = False, mode: str | None = None) -> str:
-    """Start a lesson / crash course / revision as its own process (voice + board), from the always-on assistant."""
+    """Start a lesson / crash course / revision as its own process (voice + board), from the always-on assistant.
+    Serialised: two requests in the same second (two threads) can't both pass the check and spawn."""
+    with _launch_lock:
+        return _launch(topic, resume, mode)
+
+
+def _launch(topic: str | None, resume: bool, mode: str | None) -> str:
     if tutor_active():
         return "Your lesson's already open on the whiteboard."
     if not topic and not resume and mode is None:

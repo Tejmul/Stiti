@@ -77,7 +77,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 |---|---|---|
 | Memory/brain, fast paths, voice, proactive, Mac connectors, backups, app | ✅ built + tested (see `docs/BUILD_LOG.md`) | BUILD_LOG |
 | Ask me questions (`brain/askme.py`) — the key-things intake | 🟢 "ask me questions" / "get to know me better" / "mujhse sawaal pucho" → 10 unanswered questions per round from a 48-question bank (21 categories: dreams, anime, characters, shows, music, food, values, fears…), skip / pause / resume / why, template reflections + a read-back; answers → self-facts (superseding), entities, directives; standing profile + USER.md rebuilt per answer. No LLM. Old `intake.py` deleted (never wired); `onboarding.py` stays the first intro. NOT verified on the mic | DECISIONS D37, `research_notes/Key things to know intake/intake_research.md` |
-| Whiteboard tutor (`src/stiti/tutor/`) | 🟢 any book (PDF/scanned/EPUB/TXT/MD/DOCX) + any topic, live LLM lessons verified; one-night crash course + FSRS revision (§6) | DECISIONS D14/D15/D19 |
+| Whiteboard tutor (`src/stiti/tutor/`) | 🟢 any book (PDF/scanned/EPUB/TXT/MD/DOCX) + any topic, live LLM lessons verified; one-night crash course + FSRS revision (§6); D40: one lesson (flock), one voice, echo/phantom guard, doubts answered on a doubt board + resume — NOT heard on his speakers/mic yet | DECISIONS D14/D15/D19/D40, `docs/research/tutor_teacher.md` |
 | Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20); unacked reminders repeat +2/+5 min (important ×3 more every 10 min), "ok/got it/ho gaya" stops (migration 010); ring cap alarm 10 / timer 5 min (D39); nag acks NOT tried on the mic | `docs/research/alarms.md`, D39 |
 | Weather + morning brief + meeting heads-up (`connectors/weather.py`, `life/brief.py`, `life/proactive.py`) | 🟢 Open-Meteo (keyless, CC BY 4.0) fast path, no LLM; brief ≤ 3 sentences (weather · next events + counts · one cached headline); "Heads-up — X in 10 minutes" once per event. City = profile `city` ("my city is …") → `STITI_CITY` → tz city. NOT verified on the mic / his real calendar | D39 |
 | Live internet info (`connectors/live.py`) | 🟢 news/tech/AI/papers/placements/web, streamed with sources (D21); NOT verified on the mic | `docs/research/live_info.md` |
@@ -105,13 +105,23 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
   proportional time, since Kokoro int8 has no word timings).
 - **Event loop** (`player.py`): one queue merges browser controls, typed text and voice transcripts; `commands.py`
   classifies Hinglish controls locally before anything else; questions → LLM answer or local lookup (embedder).
+- **Teacher behaviour (D40):** every utterance goes through `Tutor._play()` (stops current playback first → never two
+  voices). `ears.py` `EchoGuard` drops her own echo (fuzzy match vs her last 15 s, during playback + 1.5 s), Whisper
+  phantoms, looping lines and low-confidence non-commands; it also vetoes the barge-in verdict (`TurnTaker.veto`).
+  A doubt → "Good question." → `planner.answer()` in a background thread (filler after 0.8 s) → 2–4 sentences drawn
+  on a doubt board under the page (`begin_aside`) → follow-up "samajh nahi aaya" = simpler + example → "Back to where
+  we were." → the cut cue replays (snapshot rebased, doubt board kept). LLM down → honest line once, then "parked".
+  `tutor.answerer()` gives EVERY lesson (demo, resume, course glue) the cloud answerer. No "Shall we continue?";
+  check-ins only at teaching-section ends, ≥ 2 min apart. Constants at the top of `ears.py` / `player.py`.
 - **Grading** (`grade.py`): local (MCQ parsing, expectation coverage via keywords + embedder, partial credit,
   ≤2 hints) — the LLM never judges right/wrong.
 - **Books** (`book.py`): structure from the file (TOC → printed Contents parser with page offset → heading regex),
   page-tagged extractive sources; the LLM never sees the whole book; citations checked against source pages.
 - **Persistence** (`store.py`, migration 006): `tutor_lessons`, `tutor_sessions` (resume cursor, results),
-  `study_cards` (FSRS fields), plus one memory episode per lesson. `~/.stiti/tutor.lock` makes the always-on
-  voice loop yield the mic. Server: same localhost security model as the web app (§6b).
+  `study_cards` (FSRS fields), plus one memory episode per lesson. `~/.stiti/tutor.lock` is a kernel flock held for
+  the lesson process's life (`acquire_lesson()`, first thing in `teach()`; never unlink it) + the pid for readers:
+  exactly one lesson even under same-second races; the always-on loop yields the mic and stays SILENT (only a ringing
+  alarm speaks). Server: same localhost security model as the web app (§6b).
 - **Any book** (`book.py`): PDF TOC → printed Contents → headings → page units; scanned → lazy Apple-Vision OCR;
   EPUB/DOCX/HTML via markitdown; TXT/MD → ~2,500-char pseudo-pages + chapter-style detection (Contents deduped).
 - **Crash course** (`course.py`, migration 007, D19): local unit scoring → one course-map LLM call → diagnostic
@@ -120,8 +130,9 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - Planner robustness: per-part relevant sources (Groq 8k TPM), patience + anonymised P0 fallback, router JSON shape check.
 - Run: `stiti teach [demo|topic|book --chapter N]`, `stiti teach --night <book|subject> [--hours 3] [--goal …]`,
   `--resume-course`, `--revise`, `stiti book <file>`. Voice: "teach me X tonight", "crash course on <book>".
-- Verified: `tutor_eval.py` 27/27, `course_eval.py` 16/16, live lessons (topic + Aho + Darwin/Wells planning), a simulated
-  full night (500× speed). NOT verified: a real spoken night on the mic; offline board bundle.
+- Verified: `tutor_eval.py` 27/27, `course_eval.py` 15/15, `tutor_teacher_eval.py` 80/80, `tutor_launch_eval.py` 63/63,
+  live typed doubt mid-lesson with free Groq (answer drawn + resumed), live lessons (topic + Aho + Darwin/Wells planning), a simulated
+  full night (500× speed). NOT verified: a real spoken night on the mic; D40 echo thresholds on his real speakers/mic; offline board bundle.
 
 ## 6b. Web app (`src/stiti/web/`) — backend design
 - **Same brain, new channel:** `/ws` runs each message through `Engine("text").turn()` (one Engine per connection,

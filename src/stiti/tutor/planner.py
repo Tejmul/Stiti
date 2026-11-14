@@ -83,16 +83,23 @@ Example cue: {{"say":"Phase one is the lexer. It chops characters into tokens, l
 "pages":null,"ops":[{{"type":"box","id":"lex","text":"Lexer","ref":null,"place":"next_line","region":null,
 "shape":"rectangle","style":"blue","at":"lexer","nodes":null,"edges":null,"rows":null}}]}}"""
 
-ANSWER_PROMPT = """The learner interrupted the lesson with a question. Answer it on the side board.
+ANSWER_PROMPT = """The learner interrupted the lesson with a doubt. Answer it like a good teacher at a whiteboard.
 LESSON: {lesson} · current part: {segment} · you just said: {said}
 BOARD (id | type | label):
 {board}
 {sources}
-QUESTION: {question}
-Decide intent + strategy first. Then say: 1–3 short spoken sentences, a direct answer (clarify → answer
-briefly + one example; tangent → one line, offer to park it; out of scope → say so kindly). ops: ≤3 board ops
-for the side board (text / box / arrow / formula / small graph), each with "at" = a word from your sentences.
-Unused op fields = null. Facts about a book only from SOURCES; otherwise label them as general knowledge."""
+{followup}QUESTION: {question}
+Decide intent + strategy first. Then say: 2–4 short spoken sentences (≤22 words each), a direct answer: the core idea
+in plain words, then one concrete example or analogy (clarify → answer + example; ahead → a one-line preview;
+tangent → one line, offer to park it; out of scope → say so kindly). Do NOT start with "Good question" (you already
+said it). Don't say "shall we continue". ops: 2–4 board ops that DRAW the answer on a fresh doubt board (box /
+arrow / small graph / table / formula / text), each with "at" = a word copied from the sentence it belongs to, ids
+d1, d2, … Labels ≤4 words. Unused op fields = null. Facts about a book only from SOURCES; otherwise general knowledge."""
+
+ANSWER_NO_OPS = {"new_page", "focus", "erase", "strike", "title"}
+FOLLOWUP_BLOCK = """EARLIER DOUBT: {q}
+YOUR EARLIER ANSWER: {a}
+{simpler}"""
 
 
 def _learner() -> str:
@@ -211,13 +218,26 @@ class Planner:
         return self._fix_pages(seg) if seg else None
 
     def answer(self, question: str, ctx: dict) -> dict:
+        """One doubt → {intent, strategy, say: 2–4 sentences, ops: ≤4 board ops}. ctx["previous"] = the doubt just
+        answered (a follow-up builds on it); ctx["simpler"] = he still didn't get it → simpler + an everyday example."""
+        prev = ctx.get("previous") or None
+        followup = ""
+        if prev:
+            followup = FOLLOWUP_BLOCK.format(
+                q=str(prev.get("q", ""))[:200], a=" ".join(prev.get("a") or [])[:500],
+                simpler=("The learner STILL didn't get it: explain it more simply, from a different angle, with an "
+                         "everyday example (not the same one as before).\n" if ctx.get("simpler") else ""))
+        elif ctx.get("simpler"):
+            followup = "The learner didn't get this part: explain it more simply, with an everyday example.\n"
         d = _call(STYLE.format(name=_name()),
                   ANSWER_PROMPT.format(lesson=ctx["lesson"], segment=ctx["segment"],
                                        said=" ".join(ctx["last_said"])[-600:], board=ctx["board"] or "(empty)",
-                                       sources=_sources_block(self.sources, 4000), question=question),
-                  ANSWER_SCHEMA, "answer", 900, route="tutor_answer", reasoning="low")
-        d["ops"] = [o for o in (sanitize_op(x) for x in d.get("ops") or [] if isinstance(x, dict)) if o][:3]
-        d["say"] = [s for s in d.get("say") or [] if isinstance(s, str) and s.strip()][:3]
+                                       sources=_sources_block(self.sources, 4000), followup=followup,
+                                       question=question),
+                  ANSWER_SCHEMA, "answer", 1200, route="tutor_answer", reasoning="low")
+        d["ops"] = [o for o in (sanitize_op(x) for x in d.get("ops") or [] if isinstance(x, dict))
+                    if o and o.type not in ANSWER_NO_OPS][:4]    # the doubt board never flips/erases the lesson
+        d["say"] = [s.strip() for s in d.get("say") or [] if isinstance(s, str) and s.strip()][:4]
         return d
 
 
