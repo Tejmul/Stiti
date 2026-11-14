@@ -617,3 +617,26 @@ goes away from the list. Same for everything else."
   never ticks a to-do; a bare "done" only counts right after a to-do was in play.
 - Overlay panels stay excluded from screen capture; only `overlay.demo --shots` (fake data) lifts that, to check frames.
 - Tests: `tests/card_motion_eval.py` (42). Verified visually with `python -m stiti.overlay.demo --motion --shots DIR`.
+
+## D36: She never says the same thing twice in one conversation (2026-11-14)
+**Problem (his real morning):** "what do you know about me?" → school, projects, sport. "Okay, what else?" → the same
+school, projects, sport + one new line. "And what else?" → again. Causes: no record of what she'd already said; every
+turn got the same top profile lines; RECENT cut her own replies to 160 chars; "what else" was not a request of its own;
+cut-off half sentences sat in RECENT twice. Research: `docs/research/no_repeat.md` (16 approaches; all that fit keep
+the state in code — grounding / information-state, Rasa slots, MMR, Alexa paging; sampling penalties only work inside
+one reply and Groq doesn't support them).
+- **Ledger** (`brain/norepeat.py`, immutable, on the Engine): the sentences she said in the last 20 min + their content
+  words. Only what he HEARD counts (barge-in → `truncate_last_reply` replaces it).
+- **MORE** (regex, en / Hinglish / Telugu: "what else", "is there some other thing", "aur batao", "inka cheppu"), only
+  within 10 min of an informational answer: recall uses the PREVIOUS question (not the words "what else"); the
+  compiler drops every profile / fact / memory line she already covered and lists the next ≤ 3 unsaid ones as
+  [NOT SAID YET] (a weak model told "only new things" otherwise just says "that's all"). Nothing unsaid left →
+  honest line from the brain, no LLM call, and a different wording the 2nd / 3rd time.
+- **Filter in code** (StreamLint + `enforce`): a sentence whose ≥ 3 content words were all said already is dropped.
+  Same question asked again, nothing new → the same answer stays (that's right). REPEAT ("say that again", "kya bola")
+  and REPAIR turns switch it off. Regex + sets: microseconds, no embedding on the hot path.
+- **RECENT**: last 10 episodes, her replies ≤ 480 chars, his ≤ 240; cut-off fragments collapsed; this conversation's
+  own turns no longer come back as "memories". RECENT is trimmed (oldest first, last 2 exchanges kept) for the budget.
+- **Fragments**: a half sentence joined into the next one is marked importance 1 (out of recall), like `_incomplete`.
+- Verified: `tests/no_repeat_eval.py` (60); live Groq run on a made-up 11-line profile: 6 → 3 new → 3 new → 1 new →
+  honest line, zero repeats. NOT verified on the mic yet.
