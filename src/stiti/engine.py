@@ -72,6 +72,7 @@ HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek secon
                      r"let me think|soch(ne do| ke batata hoon| ke batati hoon| raha hoon| rahi hoon)|"
                      r"hmm+,? let me think)[.!…, ]*$", re.I)
 # "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
+TOPIC_HINT_S = 300.0    # "open the whiteboard" with no topic uses what he asked her to explain in the last 5 min
 TEACH_ASK_S = 90.0      # after "what should I teach you?", his next short line is the topic …
 COMMAND_RX = re.compile(r"\b(add|remind\w*|alarms?|to-?do|todos?|tasks?|delete|list|timers?)\b", re.I)   # … unless a command
 CANCEL_ASK_RX = re.compile(r"^\W*(never ?mind|cancel|leave it|forget it|no|nahi|rehne do|chhodo|nothing)\W*$", re.I)
@@ -121,6 +122,7 @@ class Engine:
         self.woop: psych.Woop | None = None
         self.chunker: chunker.Chunker | None = None
         self.teach_ask_at = 0.0                             # she asked "what should I teach you?" (tutor launch)
+        self.topic_hint: tuple[str, float] | None = None    # (what he last asked her to explain, when) → "open whiteboard"
         self.lang_prev: str | None = None                   # her last reply language (D34: "ok"/"bye" keep it)
         self.lang_pref: str | None = None                   # his "talk in Telugu" (held while he speaks it / English)
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
@@ -405,6 +407,9 @@ class Engine:
         route, reply, info, recalled_ids, lesson_ids, brief_tokens, brief = "fast_path", None, {}, [], [], None, None
         live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
 
+        from .tutor import topic_hint
+        if (h := topic_hint(text)):
+            self.topic_hint = (h, time.time())
         if self.teach_ask_at and (COMMAND_RX.search(text) or domain in ("todo", "time")):
             self.teach_ask_at = 0.0     # he moved on to a command: drop the pending "what should I teach you?"
         # ---- fast paths (no LLM) ----
@@ -529,6 +534,8 @@ class Engine:
             reply = self.chunker.start()
         elif (tr := _tutor_request(text)) is not None:
             from .tutor import ASK_TOPIC, launch
+            if (tr == (None, False) and self.topic_hint and time.time() - self.topic_hint[1] < TOPIC_HINT_S):
+                tr = (self.topic_hint[0], False)    # "explain lexical analysis" … "no, open the whiteboard" → that topic
             reply = launch(*tr)
             self.teach_ask_at = time.time() if reply == ASK_TOPIC else 0.0
         elif (time.time() - self.teach_ask_at < TEACH_ASK_S and len(text.split()) <= 10
@@ -728,6 +735,9 @@ class Engine:
         if (route == "llm" and not info.get("ran_tools") and psych.CLAIM_RX.match(reply or "")
                 and not (self.pending is not None and reply.startswith("Should I go ahead"))):
             reply = psych.HONEST_NOT_DONE           # the LLM said "Added …" but nothing was added (2026-11-11 audit)
+        if route == "llm" and psych.OPEN_CLAIM_RX.search(reply or ""):
+            hint = self.topic_hint[0] if self.topic_hint and time.time() - self.topic_hint[1] < TOPIC_HINT_S else None
+            reply = psych.HONEST_NO_BOARD.format(topic=hint or "the topic")   # "Opened the whiteboard app" — it didn't
         if route == "llm" and not (self.pending is not None and reply.startswith("Should I go ahead")):
             reply = psych.enforce(reply, strat, user_text=text)   # strategy shape, banned tics, machine-talk — in code
             if mems and not strategy.asks_about_past(text, domain):
