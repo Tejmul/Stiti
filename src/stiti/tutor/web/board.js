@@ -210,7 +210,9 @@ function showCheck(m) {
     box.appendChild(b);
   });
   $("q").placeholder = m.options?.length ? "Pick an option, or type / say your answer…" : "Type your answer (or just say it)…";
+  autoFocus = true;           // focusing the box for his answer is not a raised hand (it paused every check, D40)
   $("q").focus();
+  autoFocus = false;
 }
 function hideCheck() { $("check").hidden = true; $("q").placeholder = "✋ Ask a question or type your answer…  (H)"; }
 function onSelection(st) {
@@ -232,7 +234,8 @@ $("ask").onsubmit = (e) => {
   if (t) send({ type: "text", text: t });
   $("q").value = "";
 };
-$("q").addEventListener("focus", () => send({ type: "hand" }));
+let autoFocus = false;
+$("q").addEventListener("focus", () => { if (!autoFocus) send({ type: "hand" }); });
 addEventListener("keydown", (e) => {
   if (e.target.tagName === "INPUT" || e.target.closest?.(".excalidraw textarea")) return;
   const map = { " ": $("pp").dataset.cmd, ArrowLeft: "back", ArrowRight: "next", r: "repeat", R: "repeat" };
