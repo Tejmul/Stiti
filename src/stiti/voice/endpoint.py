@@ -351,6 +351,7 @@ class TurnTaker:
         self.barge: str | None = None          # None | "ducked" | "paused"
         self.run_ms = 0                        # consecutive speech
         self.rt_events = False                 # also emit speech_start / speculate / unspeculate (voice/realtime.py)
+        self.veto: Callable | None = None      # veto(text, res, start_t) -> False = her own echo, don't stop (tutor, D40)
         self._speculated = False
         self._reset()
 
@@ -459,6 +460,8 @@ class TurnTaker:
             self._take_spec()
         if self.res is not None:
             v = barge_verdict(self.res.text, getattr(self.res, "confident", True))
+            if v == "stop" and self.veto is not None and not self.veto(self.res.text, self.res, self.start_t):
+                v = "resume"                        # her own voice / a Whisper phantom: keep talking
             self._say(f"barge-in verdict {v} on {self.res.text!r}")
             self.barge = None
             if v == "stop":
