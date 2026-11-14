@@ -130,6 +130,8 @@ class Strategy:
     reframe: bool = False           # LISTEN + thinking trap: one reframe backed by a real fact
     allow_promise: bool = False     # "from now on…" only if a rule was really saved this turn
     avoid_terms: list[str] = field(default_factory=list)   # recalled entities he didn't mention: never ask about them
+    said: object = None             # norepeat.Ledger: what she already said this conversation (None = repeating is OK)
+    more: bool = False              # he asked "what else?": only new things, or the honest "that's most of what I know"
 
     def ask_rule(self) -> str:
         return ("at most one short offer to act (e.g. \"Want me to set it?\"), only if truly needed"

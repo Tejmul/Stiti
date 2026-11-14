@@ -248,6 +248,15 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
         lines.append(l.strip())
     out = re.sub(r"[*_`#>]", "", " ".join(x for x in lines if x))
     sents = [x for x in _SENT.split(out) if x.strip()]
+    said = getattr(s, "said", None)
+    if said is not None and getattr(said, "said", None):  # D36: never say the same thing twice in one conversation
+        new = [x for x in sents if not said.is_repeat(x)]
+        if new:
+            sents = new
+        elif getattr(s, "more", False):              # "what else?" and nothing new: honest, not a re-run
+            from .norepeat import honest
+            return honest(s.lang, said)
+        # else: he asked the same thing again — the same answer is the right one
     kept: list[str] = []
     for i, x in enumerate(sents):                # a dropped sentence AFTER she has said something ends the reply:
         last = i == len(sents) - 1               # later sentences may lean on it ("…Then revise graphs")
@@ -376,6 +385,9 @@ class StreamLint:
         if self.skip:                                        # the rest of a dropped / cut sentence
             if ends:
                 self.skip, self.open = False, False
+            return None
+        if not cont and getattr(s, "said", None) is not None and s.said.is_repeat(piece):
+            self.skip = not ends                             # D36: she said this already — skip it, the rest may be new
             return None
         if not cont and (CLAIM_RX.match(piece) or OPEN_CLAIM_RX.search(piece)):   # a streamed reply never ran a tool:
                                                                                   # "Added …" / "Opened …" would be a lie

@@ -75,7 +75,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Feature | Status | Where to read more |
 |---|---|---|
 | Memory/brain, fast paths, voice, proactive, Mac connectors, backups, app | ✅ built + tested (see `docs/BUILD_LOG.md`) | BUILD_LOG |
-| Key-things intake v2 (`brain/guide.py`, `brain/understanding.py`) | 🟡 engine built; question set + adaptations TODO | `research_notes/Key things to know intake/intake_research.md`, DECISIONS D13 |
+| Key-things intake v2 (`brain/intake.py`) | 🟡 only `intake.py` exists (the `guide.py`/`understanding.py` named here before were never committed) and nothing calls it; question set + adaptations TODO | `research_notes/Key things to know intake/intake_research.md`, DECISIONS D13 |
 | Whiteboard tutor (`src/stiti/tutor/`) | 🟢 any book (PDF/scanned/EPUB/TXT/MD/DOCX) + any topic, live LLM lessons verified; one-night crash course + FSRS revision (§6) | DECISIONS D14/D15/D19 |
 | Alarms / reminders / timers / todos (`life/alarms.py`, `fastpath/`) | 🟢 recurring, real ring + voice snooze/dismiss, missed-while-off policy (D20) | `docs/research/alarms.md` |
 | Live internet info (`connectors/live.py`) | 🟢 news/tech/AI/papers/placements/web, streamed with sources (D21); NOT verified on the mic | `docs/research/live_info.md` |
@@ -85,6 +85,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Cloud LLM router (D17) | 🟢 live with Groq/OpenRouter/Gemini; P1 backup needs a Z.ai or Cloudflare key | `docs/research/free_llm_providers.md` |
 | Conversation quality (D24–D29) | 🟢 turn-taking, JARVIS-psych persona + strategies, STT glossary + Groq 2nd opinion, personal emotion, preemptive replies | DECISIONS D24–D29 |
 | Talks like a person + whole sentences + honesty (D31, D35) | 🟢 no machine-talk, no missing words, never claims an undone action | DECISIONS D31/D35 |
+| Never repeats herself (D36, `brain/norepeat.py`) | 🟢 said-ledger, "what else?" → only new things / honest "that's all", repeat filter in code; NOT heard on the mic | DECISIONS D36, `docs/research/no_repeat.md` |
 | Desktop overlay (D26, D30) | 🟢 pill + cards that animate add/done/cancel; NOT seen by him on screen yet | DECISIONS D26/D30 |
 | Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
 | Four languages (D34) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; NOT tested on his real voice | `docs/research/language_switching.md` |

@@ -6,6 +6,8 @@ oldest memory lines. Directives + lessons sit right before his words (PrefEval o
 """
 from __future__ import annotations
 
+import re
+
 from datetime import datetime
 
 from ..config import CFG
@@ -76,6 +78,10 @@ def _short(md: str, limit_chars: int) -> str:
     return body[:limit_chars]
 
 
+RECENT_N = 10      # episodes in [RECENT CONVERSATION] (D36: was 6)
+RECENT_KEEP = 4   # never dropped for the token budget: the last two exchanges
+
+
 def standing_profile() -> str:
     row = one("SELECT content FROM briefing_cache WHERE key='standing_profile'")
     if row:
@@ -89,15 +95,21 @@ def standing_profile() -> str:
 def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: str, recent: list[dict],
           memories: list[dict], facts: list[dict], lessons: list[dict], open_loops: str | None,
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None, strategy=None,
-          rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False) -> tuple[str, int]:
-    """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29)."""
+          rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False,
+          said=None, more: bool = False) -> tuple[str, int]:
+    """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29).
+    said = norepeat.Ledger (what she already said this conversation), more = he asked "what else?" (D36): every line
+    she already covered is left out and an ALREADY-SAID block tells the LLM to bring only new things."""
+    from . import norepeat
     from . import strategy as strat_mod
     strategy = strategy or strat_mod.make("ACKNOWLEDGE", strat_mod.reply_lang(text, talk_directives))
     soul = _short(_file("SOUL.md", DEFAULT_SOUL), 1400)
     header = f"### STITI BRIEFING v0 · privacy=P{privacy} · {now.strftime('%a %Y-%m-%d %H:%M')} {CFG.tz.key}"
     from .. import profile
     who = profile.call() if profile.get("name") else "They"
-    recent_lines = [f"{who if r['speaker'] == 'user' else 'You'}: {r['text'][:160]}" for r in recent[-6:]]
+    # her own replies in full: with them cut at 160 chars the LLM couldn't see what it had already said (D36)
+    recent_lines = [f"{who}: {r['text'][:240]}" if r['speaker'] == 'user' else f"You: {r['text'][:480]}"
+                    for r in norepeat.collapse_fragments(recent)[-RECENT_N:]]
     mem_lines = [f"[E{m['episode_id']} · {m['occurred_at'].astimezone(CFG.tz):%Y-%m-%d} · {profile.p('subj')} said] "
                  f"\"{m['text'][:220]}\"" for m in memories]
     fact_lines = [f"[F{f['fact_id']} · true since {f['valid'].lower:%Y-%m} · fact] {f['fact_text']}"
@@ -112,13 +124,26 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
         how.append(f"{profile.p('subj').capitalize()} {profile.p('be')} low on energy: offer ONE small next step, "
                    "say that's enough for today. No lists.")
 
-    def assemble(mem: list[str], loops: str | None) -> str:
+    prof = standing_profile()
+    new_items: list[str] = []
+    if more and said is not None:
+        left = norepeat.fresh([l for l in prof.splitlines() if l.strip()], said)
+        prof = "\n".join(left) or "(you already told him everything here)"
+        fact_lines = norepeat.fresh(fact_lines, said)
+        mem_lines = norepeat.fresh(mem_lines, said)
+        doc_lines = norepeat.fresh(doc_lines, said)
+        # a weak model told "only new things" may just say "that's all" — so the brain picks the next page for it
+        new_items = [l.lstrip("-• ").strip() for l in left][:3] or [
+            re.sub(r"^\[[^\]]*\]\s*", "", l) for l in fact_lines][:3]
+    gists = said.gists() if said is not None else []
+
+    def assemble(mem: list[str], loops: str | None, rec: list[str]) -> str:
         parts = [header,
                  f"[WHO YOU ARE]\n{soul}",
-                 f"[WHO YOU'RE TALKING TO — {who}, {profile.p('subj')}/{profile.p('obj')}]\n{standing_profile()}",
+                 f"[WHO YOU'RE TALKING TO — {who}, {profile.p('subj')}/{profile.p('obj')}]\n{prof}",
                  f"[RIGHT NOW]\n{now:%A %I:%M %p} · {emotion_hint} · suggested tone: {tone}"]
-        if recent_lines:
-            parts.append("[RECENT CONVERSATION]\n" + "\n".join(recent_lines))
+        if rec:
+            parts.append("[RECENT CONVERSATION]\n" + "\n".join(rec))
         if loops:
             parts.append(f"[OPEN LOOPS]\n{loops}")
         if mem or fact_lines or doc_lines:
@@ -130,6 +155,15 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
             parts.append("[HIS WINS — real facts, for one honest reframe]\n" + "\n".join(f"- {w}" for w in wins[:3]))
         if how:
             parts.append("[HOW TO TALK NOW]\n" + "\n".join(how))
+        if gists:
+            parts.append(("[ALREADY SAID — he asked for MORE: never say these again]\n" if more else
+                          "[ALREADY SAID this conversation — don't say these again unless he asks you to repeat]\n")
+                         + "\n".join(f"- {g}" for g in gists))
+        if new_items:
+            parts.append("[NOT SAID YET — he asked for more: tell him these now, briefly, as statements]\n"
+                         + "\n".join(f"- {x}" for x in new_items))
+        elif more:
+            parts.append("[NOTHING NEW LEFT] Say plainly that's most of what you know so far, and that he can tell you more.")
         parts.append(psych.rules_block(strategy, can_do=can_do(min(privacy, 1)), rule_saved=rule_saved))
         if markers:
             from .turnmark import RULES
@@ -138,13 +172,16 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
 
     mem = list(mem_lines)
     loops = open_loops
-    brief = assemble(mem, loops)
-    while tokens(brief) > CFG.briefing_token_budget and (loops or mem or doc_lines):
+    rec = list(recent_lines)
+    brief = assemble(mem, loops, rec)
+    while tokens(brief) > CFG.briefing_token_budget and (loops or mem or doc_lines or len(rec) > RECENT_KEEP):
         if loops:
             loops = None
         elif doc_lines:
             doc_lines.pop()
-        else:
+        elif mem:
             mem.pop()  # lowest-ranked memory first
-        brief = assemble(mem, loops)
+        else:
+            rec = rec[2:]  # oldest exchange; the last two always stay
+        brief = assemble(mem, loops, rec)
     return brief, tokens(brief)

@@ -12,7 +12,7 @@ import time
 from datetime import date, datetime
 
 from . import embed, router
-from .brain import compiler, emotion, gate, ingest, lessons, memory, psych, strategy, turnmark
+from .brain import compiler, emotion, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
 from .config import CFG
 from . import db
 from .db import one, q
@@ -31,6 +31,15 @@ def _awaiting_label() -> bool:
 def _tutor_request(text: str):
     from .tutor import voice_request
     return voice_request(text)
+
+
+def _name_words() -> set[str]:
+    """His name / what she calls him: in every profile line, so never 'content' for repeat checks (D36)."""
+    try:
+        from . import profile
+        return {w for v in (profile.get("name"), profile.get("call_me")) if v for w in re.findall(r"\w+", v.lower())}
+    except Exception:
+        return set()
 
 
 def _names_his_person(words: str) -> bool:
@@ -136,6 +145,8 @@ class Engine:
         self.last_turn_id: int | None = None
         self.last_lesson_ids: list[int] = []
         self.last_reply_text: str | None = None
+        self.said = norepeat.Ledger().with_ignore(_name_words())   # what she said this conversation (D36)
+        self.info_at = 0.0                              # when she last gave an informational answer ("what else?" follows it)
         self.last_user_text: str | None = None
         self.last_route: str | None = None
         self.last_interrupted = False                       # set by the voice loop on barge-in
@@ -263,6 +274,13 @@ class Engine:
         q("UPDATE episodes SET text = %s, embedding = %s WHERE id = %s", (text, vec, self.last_reply_ep))
         self.last_reply_text = text
         self.last_interrupted = True
+        self.said = self.said.replace(self.last_reply_ep, heard)   # only what he heard counts as said (D36)
+
+    def forget_fragment(self, user_ep: int | None) -> None:
+        """He wasn't done: this half sentence was answered as part of the whole one, so it's kept out of recall (like
+        _incomplete does). RECENT collapses it too (norepeat.collapse_fragments)."""
+        if user_ep:
+            q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))
 
     def _hold(self, text: str) -> str:
         """"ek sec" / "let me think": store his words, say nothing, keep every other state as it was."""
@@ -373,6 +391,7 @@ class Engine:
         t0 = time.perf_counter()
         self.last_marker = None
         self.streamed = False
+        self.cur_user_ep = None                         # this turn's episode (the voice loop may mark it a fragment)
         self.skip_turn = False
         self.last_used = None           # what the brain handed the LLM this turn (web "memory receipts")
         psych.set_policy(None)          # the voice loop's StreamLint picks up this turn's strategy once it's chosen
@@ -403,6 +422,7 @@ class Engine:
         importance = 7 if REMEMBER_RX.search(text) else 6 if LIFE_RX.search(text) else 3
         user_ep = memory.add_episode(self.session, "user", text, privacy=privacy,
                                      importance=importance, emotion=emo.as_json())
+        self.cur_user_ep = user_ep
         domain = d.get("domain", "chat")
         route, reply, info, recalled_ids, lesson_ids, brief_tokens, brief = "fast_path", None, {}, [], [], None, None
         live_job, live_res, live_from = None, None, 0       # live internet info (connectors/live.py)
@@ -611,21 +631,37 @@ class Engine:
             q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))  # commands aren't memories
 
         # ---- LLM path ----
+        more = False
         if reply is None:
             t = time.perf_counter()
-            mems = memory.recall(text, qvec, max_privacy=min(privacy, 1) if privacy < 2 else 2, k=8)
+            # D36: "what else?" means "more about what I asked before" — recall with THAT question, not these words
+            more = (norepeat.wants_more(text) and self.said.anchor is not None and time.time() - self.info_at < 600)
+            rtext, rvec = self.said.anchor if more else (text, qvec)
+            if not more:
+                self.said = self.said.with_anchor(text, qvec)
+            strat.said = None if (norepeat.wants_repeat(text) or strat.name == "REPAIR") else self.said
+            strat.more = more
+            mems = memory.recall(rtext, rvec, max_privacy=min(privacy, 1) if privacy < 2 else 2, k=16 if more else 8)
             mems = [m for m in mems if m["episode_id"] != user_ep and m["sim"] >= 0.25
                     and m.get("importance", 3) > 1]
-            recent = memory.recent_turns(self.session)[:-1]
-            asked = strategy.asks_about_past(text, domain)
+            recent = memory.recent_turns(self.session, n=compiler.RECENT_N + 1)[:-1]
+            in_recent = {r["text"] for r in recent}
+            mems = [m for m in mems if m["text"] not in in_recent]   # already in RECENT: not a "memory" (D36)
+            asked = strategy.asks_about_past(text, domain) or more
             # G1–G8: only memories a friend would bring up right now reach the LLM (no random "interview?" quizzes)
             mems, strat.avoid_terms, _ = gate.filter_memories(
-                mems, text=text, recent_texts=[r["text"] for r in recent if r["speaker"] == "user"][-2:],
+                mems, text=rtext, recent_texts=[r["text"] for r in recent if r["speaker"] == "user"][-2:],
                 asked=asked, mood=emo.label, now=now, cap=3 if strat.callbacks else 1)
-            seeds = memory.seed_entities(text, [m["episode_id"] for m in mems])
+            seeds = memory.seed_entities(rtext, [m["episode_id"] for m in mems])
             facts = memory.current_facts(seeds, max_privacy=min(privacy, 1))
             les = lessons.match(qvec, mood=emo.label, bucket=lessons.time_bucket(now))
-            docs = ingest.recall(text, qvec, max_privacy=min(privacy, 1) if privacy < 2 else 2)
+            docs = ingest.recall(rtext, rvec, max_privacy=min(privacy, 1) if privacy < 2 else 2)
+            if more:                                     # his old questions aren't things she knows about him
+                mems = [m for m in mems if not norepeat.is_ask(m["text"])]
+            if more and not norepeat.fresh(
+                    [l for l in compiler.standing_profile().splitlines() if l.strip()] + [f["fact_text"] for f in facts]
+                    + [m["text"] for m in mems] + [x["text"] for x in docs], self.said):
+                reply = norepeat.honest(strat.lang, self.said)   # nothing new: no LLM, no re-run
             lat["recall"] = (time.perf_counter() - t) * 1000
             recalled_ids = [m["episode_id"] for m in mems]
             lesson_ids = [l["id"] for l in les]
@@ -660,7 +696,7 @@ class Engine:
                 recent=recent, memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
                 strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
-                markers=markers)
+                markers=markers, said=strat.said, more=more)
             if live_job is not None:
                 try:
                     live_res = live_job.result(timeout=live.BUDGET_S + 1.5)
@@ -751,6 +787,10 @@ class Engine:
         if route == "fast_path" and m and re.match(r"(Got it|Done|Timer set)\b", reply) and not reply.endswith("?"):
             reply += " Anything else?"                  # confirm-and-close: only after a completed action
         reply_ep = memory.add_episode(self.session, "stiti", reply, origin="agent", privacy=privacy)
+        if reply:
+            self.said = self.said.add(reply, reply_ep)
+            if route in ("llm", "degraded") or more:
+                self.info_at = time.time()
         lat["total"] = (time.perf_counter() - t0) * 1000
         turn = one("""INSERT INTO turns(session_id, user_episode_id, reply_episode_id, route, provider, model, privacy,
                                         briefing, briefing_tokens, recalled, latency_ms)
