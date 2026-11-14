@@ -230,8 +230,9 @@ class Night:
 
     # -- helpers
     def _tutor(self, lesson: Lesson, planner=None):
+        from . import answerer
         from .player import Tutor
-        return Tutor(lesson, audio=self.audio, events=self.events, server=self.srv, planner=planner)
+        return Tutor(lesson, audio=self.audio, events=self.events, server=self.srv, planner=answerer(planner))
 
     def _run(self, lesson: Lesson, planner=None) -> dict:
         t = self._tutor(lesson, planner)
