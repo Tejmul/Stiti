@@ -12,6 +12,8 @@ Mic watchdog (2026-11-11 bug: she ran 12 h deaf after the Mac slept / the input 
 calling back, no error): `health()` says what's wrong — no callback for STALL_S, or the RAW mic exactly 0.0 for ZERO_S
 (a real mic always has a noise floor) — and `heal()` reopens the stream on the CURRENT default devices (PortAudio is
 re-initialised so it re-reads the device list), at most once per REOPEN_EVERY_S.
+It also reopens at once when macOS switches the default mic (lid closed/opened, AirPods, iPhone Continuity mic):
+PortAudio would otherwise keep listening on the old device forever (2026-11-11, see coreaudio.py).
 """
 from __future__ import annotations
 
@@ -25,6 +27,7 @@ import sounddevice as sd
 from livekit import rtc
 
 from ..overlay import level as _overlay_level
+from .coreaudio import default_input_id as _default_input_id
 
 RATE = 48000
 BLOCK = 480            # 10 ms — what the WebRTC APM expects
@@ -36,6 +39,8 @@ ZERO_S = 30.0          # raw mic digitally silent this long = dead input
 REOPEN_EVERY_S = 30.0  # first retry gap; doubles while it stays dead (muted mic), capped at REOPEN_MAX_S
 REOPEN_MAX_S = 600.0
 RECOVER_S = 6.0        # after a reopen, real sound must come back this fast — else the process itself is stuck
+DEVICE_CHECK_S = 2.0   # how often to ask CoreAudio which mic is the default (~0.1 ms per ask)
+SWITCHED = "the Mac switched to a different microphone"
 
 
 def resample(audio: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
@@ -85,6 +90,8 @@ class Duplex:
         self._last_reopen = 0.0
         self.reopens = 0
         self._streak = 0                  # reopens in a row without the mic coming back
+        self._dev_id: int | None = None   # CoreAudio default input when the stream was (re)opened ...
+        self._dev_checked = 0.0           # ... and when we last compared it with the current default
 
     # ---------- mic watchdog ----------
     def health(self, now: float | None = None) -> str | None:
@@ -97,6 +104,11 @@ class Duplex:
             return f"no audio from the mic for {now - max(self.last_cb, self._opened_at):.0f} s"
         if self._zero_since is not None and now - self._zero_since > ZERO_S:
             return f"the mic has sent pure silence for {now - self._zero_since:.0f} s"
+        if now - self._dev_checked >= DEVICE_CHECK_S:
+            self._dev_checked = now
+            cur = _default_input_id()
+            if cur is not None and cur != self._dev_id:    # incl. opened with no mic at all → a mic appeared
+                return SWITCHED
         return None
 
     def reopen_failed(self, now: float | None = None) -> bool:
@@ -113,11 +125,13 @@ class Duplex:
             if self._last_sound > self._opened_at:
                 self._streak = 0                   # real sound since the last (re)open → it recovered
             return None
-        if now - self._last_reopen < min(REOPEN_EVERY_S * 2 ** max(self._streak - 1, 0), REOPEN_MAX_S):
+        switched = why == SWITCHED                 # a new default mic is not a dead mic: no backoff, no streak
+        if not switched and now - self._last_reopen < min(REOPEN_EVERY_S * 2 ** max(self._streak - 1, 0),
+                                                          REOPEN_MAX_S):
             return None
         self._last_reopen = now
         self.reopens += 1
-        self._streak += 1
+        self._streak += 0 if switched else 1
         try:
             self.stream.abort()
             self.stream.close()
@@ -133,6 +147,11 @@ class Duplex:
             self._start()
         except Exception as e:
             why += f" (reopen failed: {e}; will retry)"
+        else:
+            try:
+                why += f" (now on: {sd.query_devices(kind='input')['name']})"
+            except Exception:
+                pass
         self._opened_at, self._zero_since = time.monotonic(), None
         return why
 
@@ -248,6 +267,7 @@ class Duplex:
         self.on_mic(mic.reshape(-1, 3).mean(axis=1) if len(mic) % 3 == 0 else resample(mic, RATE, 16000))
 
     def _start(self) -> None:
+        self._dev_id = _default_input_id()     # the mic PortAudio just opened = macOS's default at this moment
         self.stream.start()
         lat = self.stream.latency
         try:
