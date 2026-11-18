@@ -40,7 +40,7 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 | # | Problem | Status |
 |---|---|---|
 | D1 | Cards are see-through grey: muddy and hard to read over any window | ✅ D44 solid dark panels — needs his eyes |
-| D2 | The pill is a row of dots; he wants a Jarvis-style animated circle | ✅ D44 orb (rings, core, tick ring) — needs his eyes; on his 1x display the fine ticks read as texture |
+| D2 | The pill is a row of dots; the blue ring orb read as "Jarvis, not mine" | ✅ D46 his own orb (woven line + three points, indigo/amber), cards in the same colours, wake greeting — he picked it live; greeting + cards need his eyes |
 
 ## E. Memory
 | # | Problem | Status |
