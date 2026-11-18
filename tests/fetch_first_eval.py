@@ -165,6 +165,9 @@ PAGES = {"en.wikipedia.org": ("Model Context Protocol - Wikipedia",
 
 def fake_engine(name: str, query: str) -> list[dict]:
     searched.append((name, query))
+    if WEB[name] == "second try":                    # empty the first time it is asked, fine the second
+        WEB[name] = True
+        return []
     if not WEB[name]:
         return []
     ql = query.lower()
@@ -404,6 +407,11 @@ try:
     check("non-news query → only web results (no news feed items)", len(res) >= 2 and all("example." in r["url"] for r in res)
           and not any("news.example.com" in r["url"] for r in res), str(res))
     check("Yahoo's results are preferred when it has any", all("yahoo" in r["url"] for r in res), str(res))
+    reset()
+    WEB["yahoo"] = "second try"
+    res = live.web_search("gaming laptop under 80000")
+    check("Yahoo empty once → asked a second time before settling for Yandex", all("yahoo" in r["url"] for r in res)
+          and [n for n, _ in searched].count("yahoo") == 2, f"{res} {searched}")
     reset()
     WEB["yahoo"] = False
     res = live.web_search("gaming laptop under 80000")
