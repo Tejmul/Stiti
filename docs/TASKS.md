@@ -37,8 +37,8 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 ## D. On screen
 | # | Problem | Status |
 |---|---|---|
-| D1 | Cards are see-through grey: muddy and hard to read over any window | 🔧 `feat/overlay-orb` |
-| D2 | The pill is a row of dots; he wants a Jarvis-style animated circle | 🔧 `feat/overlay-orb` |
+| D1 | Cards are see-through grey: muddy and hard to read over any window | ✅ D44 solid dark panels — needs his eyes |
+| D2 | The pill is a row of dots; he wants a Jarvis-style animated circle | ✅ D44 orb (rings, core, tick ring) — needs his eyes; on his 1x display the fine ticks read as texture |
 
 ## E. Memory
 | # | Problem | Status |
