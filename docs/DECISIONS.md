@@ -1085,3 +1085,24 @@ is hearing me… while I'm talking, keep transcribing… what Stiti is going to 
 - **Also from that log:** "You shouldn't talk in Hindi" switched her INTO Hindi → `brain/lang.NOT_RX`: a negated
   language means English (unless English is the one ruled out).
 - Tests: turn 80 (9 new), lang_switch 73 (10 new), overlay 121 (5 new). NOT verified on the mic.
+
+## D48: She remembers everything he told her in a conversation; long speech is never thrown away; her name mid-sentence is not a call (2026-11-18)
+**His words:** "I explained every bit in detail… it skipped most of the part and went to the final thing… it only
+remembers the ending parts." His log: a plan told in seven parts → "what did I tell you till now?" → first "I don't have a
+record", then only "high-paying job first, then a startup".
+- **Recap (`strategy.wants_recap`, `memory.told_this_conversation`):** "what did I tell you (till now / so far)",
+  "did you get all that", "repeat what I said", "maine kya bola" → the brain collects ALL his statements of this
+  conversation (90 min, this session; questions / commands / short "ok"s dropped; cut-off half sentences folded into the
+  full one; P2 kept local), numbered and in order, into [WHAT HE TOLD YOU IN THIS CONVERSATION]; the LLM must retell
+  every point and add nothing (130 words allowed; never filtered as "already said"; never speculative). Nothing told
+  yet → an honest line without the LLM. Before, only the 10-line RECENT window reached the LLM. A past-time cue
+  ("last week", "yesterday") keeps the normal memory path.
+- **Long confident speech is not "unclear" (`stt.STTResult.unclear`):** ≥ 7 words at logprob > −0.7 are kept whatever
+  the no-speech score says. His 30-word "After that I'll get a great paying job … build my network" (logprob −0.42,
+  no_speech 0.57) got "Sorry, I didn't catch that" and was never stored.
+- **Wake only when called (`wake.detect`):** a wake phrase must start within his first 2 words; her bare name must be
+  his first word, or follow "so / okay / hey / listen". "…explained every bit to Stiti in detail" (said to someone
+  else) had woken her and she answered it. Session timeout back from 45 to 30 s of real silence for the same reason.
+- Tests: `tests/recap_eval.py` 34 (his seven-part plan with a made-up person). NOT verified on the mic.
+- **Still open:** she answers every part of a story with "Got it." (and can cut him off); a "just listen until I'm done"
+  mode is not built. Misheard words ("parallelly" → "parallel you up") are the hearing task B2/B3.

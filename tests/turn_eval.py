@@ -597,7 +597,7 @@ check("'Mmh, mmh.' / 'hmmm' / 'uh-huh' over her → resume, not stop (EL dropped
 print("she never falls asleep on him mid-speech (D47: he talked 25 s, paused, and she slept before reading it)")
 from stiti.voice import loop as VL                                       # noqa: E402
 T = VL.AWAKE_TIMEOUT_S
-check("the session lasts at least 45 s of real silence", T >= 45)
+check("the session lasts at least 30 s of real silence", T >= 30)
 check("the tick that delivers his words never ends the session, however long he spoke",
       not VL.should_sleep(True, True, T + 60, False, False))
 check("mid-sentence: never", not VL.should_sleep(True, False, T + 60, False, True))

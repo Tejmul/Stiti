@@ -392,6 +392,8 @@ class Engine:
             return "learning"                       # "she was cut off" feeds a brevity lesson (writes LESSONS.md)
         if self.live_last and live.MORE_RX.match(t):
             return "live"
+        if strategy.wants_recap(t):
+            return "recap"                          # needs everything he said so far, incl. this very moment (D48)
         if weather.detect(t) is not None or weather.city_from_text(t) is not None:
             return "action"                         # weather fast path / "my city is …" (D39)
         if _nag_ack_pending(t):
@@ -761,6 +763,15 @@ class Engine:
         if reply is not None and not upd.saved and not flow_turn and (domain in ("todo", "time", "control") or PLAN_RX.search(text)):
             q("UPDATE episodes SET importance = 1 WHERE id = %s", (user_ep,))  # commands aren't memories
 
+        # ---- "what did I tell you till now?" (D48): everything he said this conversation, not the 10-line window ----
+        told: list[str] = []
+        if reply is None and strategy.wants_recap(text) and not self._spec:
+            told = memory.told_this_conversation(self.session, exclude=user_ep, max_privacy=min(privacy, 1))
+            if told:
+                strat = strategy.make("ANSWER", strat.lang, max_words=strategy.RECAP_WORDS, callbacks=False)
+                strat.line = strategy.RECAP_LINE
+            else:
+                reply = strategy.RECAP_NONE.get(strat.lang, strategy.RECAP_NONE["english"])
         # ---- LLM path ----
         more = False
         if reply is None:
@@ -770,7 +781,9 @@ class Engine:
             rtext, rvec = self.said.anchor if more else (text, qvec)
             if not more:
                 self.said = self.said.with_anchor(text, qvec)
-            strat.said = None if (norepeat.wants_repeat(text) or strat.name == "REPAIR") else self.said
+            if told:
+                more = False                             # a recap is his words again: nothing is "already said"
+            strat.said = None if (told or norepeat.wants_repeat(text) or strat.name == "REPAIR") else self.said
             strat.more = more
             mems = memory.recall(rtext, rvec, max_privacy=min(privacy, 1) if privacy < 2 else 2, k=16 if more else 8)
             mems = [m for m in mems if m["episode_id"] != user_ep and m["sim"] >= 0.25
@@ -827,7 +840,7 @@ class Engine:
                 recent=recent, memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
                 strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
-                markers=markers, said=strat.said, more=more,
+                markers=markers and not told, said=strat.said, more=more, told=told,
                 saved=[x if x != "__remember__" else "what he asked you to remember" for x in upd.saved] + learned)
             if live_job is not None:
                 try:

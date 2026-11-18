@@ -45,6 +45,7 @@ HI_LINES = ("Haan Stiti, shaam ko 5 baje yaad dila dena. Aaj ka plan kya hai? "
 CONF_NO_SPEECH, CONF_LOGPROB = 0.4, -0.8
 UNCLEAR_NO_SPEECH = float(os.getenv("STITI_UNCLEAR_NOSPEECH", "0.5"))
 UNCLEAR_LOGPROB = float(os.getenv("STITI_UNCLEAR_LOGPROB", "-1.0"))
+LONG_WORDS, LONG_LOGPROB = 7, -0.7      # ≥ 7 words written with this confidence are never "unclear"
 ESCALATE_LOGPROB = float(os.getenv("STITI_STT_ESCALATE_LOGPROB", "-0.5"))   # research: 16% of turns, 6.3% WER
 MIN_SPEECH_MS = 500              # Wispr: less speech than this is a blip — never escalated, never "Sorry?"
 CONTEXT_TTL_S = 120              # the previous utterance is context only within one conversation
@@ -82,7 +83,15 @@ class STTResult:
 
     @property
     def unclear(self) -> bool:
-        return bool(self.text) and (self.no_speech_prob > UNCLEAR_NO_SPEECH or self.avg_logprob < UNCLEAR_LOGPROB)
+        if not self.text:
+            return False
+        if self.avg_logprob < UNCLEAR_LOGPROB:
+            return True
+        # D48: a long sentence Whisper wrote confidently is speech, whatever its no-speech score says (pauses inside a
+        # long thought push that score up): "After that I'll get a great paying job … build my network" (30 words,
+        # logprob −0.42, no_speech 0.57) got "Sorry, I didn't catch that" and was thrown away.
+        fluent = len(self.text.split()) >= LONG_WORDS and self.avg_logprob > LONG_LOGPROB
+        return self.no_speech_prob > UNCLEAR_NO_SPEECH and not fluent
 
 
 _cache_capped = False

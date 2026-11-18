@@ -41,7 +41,8 @@ from .speaker import ACKS, FILLER_AFTER_S, FILLERS, Speaker
 from .tts import TTS, ClauseChunker, chime_audio, sentences, speakable
 from .vad import FRAME, SR, VAD
 
-AWAKE_TIMEOUT_S = float(os.getenv("STITI_AWAKE_TIMEOUT", "45"))    # of real silence (D47: was 20, counted from her last reply)
+AWAKE_TIMEOUT_S = float(os.getenv("STITI_AWAKE_TIMEOUT", "30"))    # of real silence (D47: was 20, counted from her last reply;
+                                                                   # D48: 45 kept her answering things said to someone else)
 CAPTIONS = os.getenv("STITI_CAPTIONS", "on") != "off"             # live words next to the orb: what she hears, what she says
 INTERIM_EVERY_S, INTERIM_MIN_MS, INTERIM_WINDOW_S = 1.6, 1500, 6.0   # a rough transcript while he is still talking
 WORK_JOIN_S = 8.0                    # wait at most this long for the previous engine call before the next one
