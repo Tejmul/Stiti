@@ -702,7 +702,9 @@ try:
     check("no `noticed` table → she just talks", r == llm_reply["text"] and not I.ready(), r)
     check("…the proactive pass and a document scan are quiet too", I.candidate(True, NOW) is None
           and I.scan_document("x", "DBMS exam on 9 December 2026") == 0 and not asks(NOW))
-    check("…and reminders still work", "reminder" in say(e, "remind me at 7 pm to call mummy").lower())
+    r_rem = say(e, "remind me at 7 pm to call mummy")           # wording varies (D50): assert the time + the saved row
+    check("…and reminders still work", "7" in r_rem and "mummy" in r_rem.lower()
+          and q("SELECT count(*) n FROM intents WHERE payload::text ILIKE '%%mummy%%'")[0]["n"] >= 1, r_rem)
 finally:
     q("ALTER TABLE noticed_gone RENAME TO noticed")
     I._ready = None
