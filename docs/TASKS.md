@@ -30,7 +30,8 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 | B9 | "You shouldn't talk in Hindi" switched her into Hindi | ✅ 🎙️ D47 |
 | B11 | "What did I tell you till now?" gave back only the ending; a long part was thrown away as "unclear"; her name mid-sentence woke her | ✅ 🎙️ D48 |
 | B12 | She answers every part of a long explanation with "Got it" and can cut him off → a "just listen until I'm done" mode | ⬜ |
-| B10 | A single misheard "yaar" (for "you're") flips her reply to Hinglish; the Hinglish prompt pulls English words toward Hindi | ⬜ |
+| B10 | A single misheard "yaar" flipped her reply to Hinglish | ✅ 🎙️ D50 (English is the default; Hinglish needs 2+ Hindi words and a third of the sentence) |
+| B13 | The "don't…" rule mislabels 7 of 529 plain requests as corrections; only 5 of 28 "no, I meant…" follow-ups are noticed | ⬜ |
 
 ## C. Whiteboard teacher
 | # | Problem | Status |
@@ -62,5 +63,5 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 | F3 | Accounts: GitHub, email (read + draft + send with his yes); mail is not configured at all | 🙋 keys / logins |
 | F4 | One learned router instead of per-feature phrase lists | ⬜ |
 | F6 | She notices what matters in what she hears / reads, asks once, books calendar + reminders ahead, offers a prep plan | ✅ 🎙️ D49 live (from his words + documents); a real calendar entry and real mail not verified; mail needs `MAIL_ADDRESS` / `MAIL_APP_PASSWORD` |
-| F7 | Behaviour data: datasets / open-source assets for natural phrasing and human-like talk | 🔧 research `docs/research/behaviour_data.md` |
+| F7 | Behaviour data: public examples for understanding, varied wording, example replies (English first) | ✅ 🎙️ D50 live: 73% → 96.6% on 529 public lines; 141 wordings; EXAMPLES.md |
 | F5 | Pick free APIs from the public-apis list for the remaining gaps | ⬜ |
