@@ -167,6 +167,28 @@ def is_statement(text: str) -> bool:
 
 TOP_PUBLIC = 3
 PUBLIC_ON_STATEMENTS = ("chat",)        # the only label from the file that may vote on a plain statement
+# The words around a to-do or a reminder say what he wants; the words INSIDE it don't ("add call the placement cell",
+# "remind me to email Sam", "mark play football as done"): public "call …" / "email …" / "play …" requests must not
+# pull those into `tool`. When the frame is there, only public rows of that label (and small talk) vote, and the
+# frame's label gets FRAME_BONUS.
+FRAME_BONUS = 0.08
+_FRAMES = (
+    ("todo", re.compile(_LEAD + r"(?:please )?add\b(?!.*\b(?:calendar|playlist|contacts?|cart|queue|schedule|alarm|"
+                        r"reminders?|timer|event|meeting|appointment)\b)|"
+                        r"\b(?:to|on|in|from|off) (?:my|the) (?:to-?do |todo |tasks? |shopping |grocery )?list\b|"
+                        r"\bto-?dos?\b|\bmy tasks?\b|\bmark\b.{1,60}\bdone\b", re.I)),
+    ("time", re.compile(r"\b(?:remind me|wake me(?: up)?|(?:set|make|create|start|cancel|delete|remove|snooze|stop|"
+                        r"turn off|move|change)(?: up)? (?:an?|the|my|that|another)? ?(?:[\w:.-]+ ){0,3}(?:alarm|timer|"
+                        r"reminder)s?)\b", re.I)),
+)
+
+
+def frame(text: str) -> str | None:
+    """`todo` / `time` when his sentence is built like a to-do or an alarm / reminder / timer request, else None."""
+    for label, rx in _FRAMES:
+        if rx.search(text or ""):
+            return label
+    return None
 
 
 def classify(qvec: np.ndarray, kind: str, top: int = 3, text: str | None = None) -> tuple[str, float, dict[str, float]]:
@@ -176,9 +198,15 @@ def classify(qvec: np.ndarray, kind: str, top: int = 3, text: str | None = None)
     pub = _public() if kind == "domain" and text is not None else None
     if pub is not None:
         plabels, psims = pub[0], pub[1] @ qvec + OWNER_BONUS * pub[2]
+        framed = frame(text)
         if is_statement(text):
             keep = np.isin(plabels, PUBLIC_ON_STATEMENTS)
             plabels, psims = plabels[keep], psims[keep]
+        elif framed:
+            keep = np.isin(plabels, (framed, "chat"))
+            plabels, psims = plabels[keep], psims[keep]
+            sims = sims + FRAME_BONUS * (labels == framed)
+            psims = psims + FRAME_BONUS * (plabels == framed)
         labels = np.concatenate([labels, plabels])
         sims = np.concatenate([sims + OWNER_BONUS, psims])
     scores = {}
