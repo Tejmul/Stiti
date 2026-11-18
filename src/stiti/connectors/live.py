@@ -112,16 +112,27 @@ def _json(url: str, timeout: float = PER_SOURCE_S):
     return json.loads(_get(url, timeout))
 
 
+DOWN_S = 120.0              # a source that just failed isn't asked again for 2 minutes
+_down: dict[str, float] = {}
+
+
 def _cached(key: str, ttl: float, fn):
-    """Fresh hit → cached. Miss → fetch. Fetch failed → a stale copy (< 6 h) beats nothing."""
+    """Fresh hit → cached. Miss → fetch. Fetch failed → a stale copy (< 6 h) beats nothing, and the source is left
+    alone for DOWN_S (2026-11-18: the BBC feed refused TLS, and every news ask waited 1.3 s for it again)."""
     hit = _cache.get(key)
     if hit and time.time() - hit[0] < ttl:
         return hit[1]
+    stale = hit[1] if hit and time.time() - hit[0] < 6 * 3600 else None
+    if time.time() - _down.get(key, 0.0) < DOWN_S:
+        if stale is not None:
+            return stale
+        raise RuntimeError("source is down (asked a moment ago)")
     try:
         val = fn()
     except Exception:
-        if hit and time.time() - hit[0] < 6 * 3600:
-            return hit[1]
+        _down[key] = time.time()
+        if stale is not None:
+            return stale
         raise
     if val:
         _cache[key] = (time.time(), val)
@@ -130,6 +141,7 @@ def _cached(key: str, ttl: float, fn):
 
 def clear_cache() -> None:
     _cache.clear()
+    _down.clear()
 
 
 def cached_headline(max_age_s: float = 6 * 3600) -> str | None:
