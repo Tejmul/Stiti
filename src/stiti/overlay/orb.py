@@ -7,8 +7,9 @@ the disc grows to the right into a capsule; the orb stays as its round left end.
 
 Main thread only (ui.py marshals every call). Motion is transform/opacity only. Everything that loops (rotation,
 breathing, the comet, the thinking wave) is a render-server animation: no Python per frame. The 30 Hz tick only
-pushes the level (tick lengths + core size), and only when something visible moved; the render server glides
-between two pushes. Reduce Motion: nothing rotates or travels; the level shows as brightness.
+pushes the level (tick lengths + core size) as plain transform updates with implicit animations off, and only when
+something visible moved (gliding between pushes made Core Animation build 36 animations per frame: ~10 % of a core
+on the M2, measured). Reduce Motion: nothing rotates or travels; the level shows as brightness.
 """
 from __future__ import annotations
 
@@ -359,7 +360,7 @@ class Orb:
         a.setToValue_(cur + (-2 * math.pi if clockwise else 2 * math.pi))        # y is up: negative = clockwise
         a.setDuration_(period)
         a.setRepeatCount_(1e9)
-        frame_rate(a, self.fps)
+        frame_rate(a, self.fps if period < 10 else M.FPS_LOW_POWER)              # a slow turn needs few frames
         layer.addAnimation_forKey_(a, "spin")
 
     def _breathe(self, period: float) -> None:
@@ -436,15 +437,13 @@ class Orb:
         if secs > 0:
             Quartz.CATransaction.setAnimationDuration_(secs)
             Quartz.CATransaction.setAnimationTimingFunction_(state_ease())
-        else:                                        # glide to the next push instead of stepping at 30 Hz
-            Quartz.CATransaction.setAnimationDuration_(1.0 / self.fps)
-            Quartz.CATransaction.setAnimationTimingFunction_(
-                Quartz.CAMediaTimingFunction.functionWithName_(Quartz.kCAMediaTimingFunctionLinear))
+        else:                                        # a plain step: no implicit animation objects per frame
+            Quartz.CATransaction.setDisableActions_(True)
         for tk, s, old in zip(self.ticks, scales, self.scales):
             if s != old or force:
-                tk.setValue_forKeyPath_(s, "transform.scale.y")
+                tk.setAffineTransform_((1.0, 0.0, 0.0, s, 0.0, 0.0))     # a tick only ever stretches along its length
         if cs != self.cs or force:
-            self.hold.setValue_forKeyPath_(cs, "transform.scale")
+            self.hold.setAffineTransform_((cs, 0.0, 0.0, cs, 0.0, 0.0))
             self.bloom.setOpacity_(a)
         Quartz.CATransaction.commit()
         self.scales, self.cs = scales, cs
