@@ -5,13 +5,15 @@ tried it by voice. Evidence for each: `docs/research/jarvis_gap_audit.md`.
 
 Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being fixed · ⬜ open · 🙋 needs Tejmul
 
-## A. She answers wrong (highest priority)
+## A. She answers wrong (highest priority) — 12-task score: 2 of 12 before, 8 of 12 after D43 (the other 4 are honest "I can't yet")
 | # | Problem | Status |
 |---|---|---|
-| A1 | Tasks that need the web are answered from the LLM's own memory or invented ("read this URL", "trending repos", "compare X and Y", "research …") | 🔧 `feat/fetch-first` |
-| A2 | Raw tool-call code is spoken as the reply (Z.ai model in the tool loop) | 🔧 `feat/fetch-first` |
-| A3 | After "haan" to a tool action she speaks the raw tool name + data; the rest of the plan is dropped | 🔧 `feat/fetch-first` |
-| A4 | Web search returns news-feed results for ordinary questions (prices, how-to) | 🔧 `feat/fetch-first` |
+| A1 | Tasks that need the web are answered from the LLM's own memory or invented ("read this URL", "trending repos", "compare X and Y", "research …") | ✅ 🎙️ D43 `feat/fetch-first` |
+| A2 | Raw tool-call code is spoken as the reply (Z.ai model in the tool loop) | ✅ 🎙️ D43 `feat/fetch-first` |
+| A3 | After "haan" to a tool action she speaks the raw tool name + data; the rest of the plan is dropped | ✅ 🎙️ D43 `feat/fetch-first` |
+| A4 | Web search returns news-feed results for ordinary questions (prices, how-to) | ✅ 🎙️ D43 `feat/fetch-first` |
+| A6 | With no LLM reachable she reads raw page text aloud ("From Tomsguide: Specs Price & Release Design…") | ⬜ |
+| A7 | "Research … give me a report" is still thin (one source); Hinglish task phrasing ("… compare karo") not covered | ⬜ |
 | A5 | "Weather in Bengaluru, should I…" answered for the home city | ✅ 🎙️ `fix/weather-city-anywhere` |
 
 ## B. She hears wrong
