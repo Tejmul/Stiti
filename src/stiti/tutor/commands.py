@@ -10,7 +10,7 @@ import re
 _N = lambda s: re.sub(r"[^\w\s?']", " ", s.lower()).strip()  # noqa: E731
 
 RULES: list[tuple[str, re.Pattern]] = [(k, re.compile(p)) for k, p in [
-    ("end", r"^(end|stop|finish|close) (the )?(lesson|class|session)|^(khatam|lesson khatam|class khatam)|"
+    ("end", r"^(end|finish)( it| here| now| this)?$|^(end|stop|finish|close) (the |this )?(lesson|class|session)|^(khatam|lesson khatam|class khatam)|"
             r"^(bas karo|band karo|aaj ke liye bas|that'?s enough( for today)?|chalo bye|bye|bye bye|good ?night)$"),
     ("pause", r"^(ruko|ruk|rukh|ruko ruko|ek (minute|min|second|sec)|wait|wait wait|hold on|pause|stop|"
               r"thoda ruko|ek second ruko|hang on|one (sec|second|minute))( please| na| stiti)?$"),
