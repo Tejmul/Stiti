@@ -59,7 +59,9 @@ AHEAD = {"exam": "a few days before", "deadline": "a couple of days before", "bi
 YES = re.compile(r"^\W*(?:(?:hey|ok|okay|oh|hmm|stiti)\W+)*(?:yes|yeah|yep|yup|ya|haan?|han|ha|ji|sure|ok(?:ay)?|please|"
                  r"kar do|kar de|do it|do that|go ahead|save it|book it|add it|put it|it is|it'?s important|important|"
                  r"zaroori|bilkul|of course|definitely|theek hai|thik hai|sounds good|why not|chalo|absolutely)\b", re.I)
-NO = re.compile(r"^\W*(?:(?:hey|ok|okay|oh|hmm|stiti)\W+)*(?:no|nope|nah|nahi|nahin|not (?:important|needed|now|really|"
+LATER = re.compile(r"\b(?:not now|later|baad mein|baad me|abhi nahi|some other time|ask me (?:later|again)|"
+                   r"let me (?:think|check)|sochta hoon|dekhta hoon|dekhte hain)\b", re.I)
+NO = re.compile(r"^\W*(?:(?:hey|ok|okay|oh|hmm|stiti)\W+)*(?:no|nope|nah|nahi|nahin|not (?:important|needed|really|"
                 r"required)|leave it|rehne do|chhodo|chodo|skip|don'?t|mat|ignore|it'?s fine|no need|zaroorat nahi|"
                 r"never ?mind|drop it|forget it)\b|\bnot (?:that |so |very )?important\b|\bzaroori nahi\b", re.I)
 NOTE = re.compile(r"\b(?:note|remember|yaad rakh\w*|keep (?:it|that) in mind)\b|somewhere else", re.I)
@@ -84,7 +86,9 @@ FIX_DATE = re.compile(r"\b(?:actually|it'?s|its|it is|not|nahi|wrong|galat|i mea
 UNDO = re.compile(r"^\W*(?:undo|cancel (?:that|it|all that|those|them)|remove (?:that|it|those|them)|nahi nahi|galat|"
                   r"that'?s wrong|wrong|no,? (?:that'?s )?(?:wrong|not right)|hata do|mat karo|delete (?:that|it|those))\b",
                   re.I)
-LIST_ASK = re.compile(r"\b(?:anything|something|kuch|koi)\s+(?:important|zaroori)\b|\bwhat (?:did|have) you notice\w*\b|"
+LIST_ASK = re.compile(r"\b(?:anything|something|kuch|koi)\s+(?:important|zaroori)\b(?=\W*$|\s+(?:i should|i need to|for me|"
+                      r"coming|pending|waiting|i missed|i forgot|today|this week|to know|hai|tha|bacha|that i)\b)|"
+                      r"\bwhat (?:did|have) you notice\w*\b|"
                       r"\bwhat'?s important\b|\b(?:did|have) you notice\w* (?:anything|something)\b|"
                       r"\b(?:show|tell|read) (?:me )?(?:the |my )?noticed\b|\bnoticed list\b|\bkya (?:notice|dekha)\b.*\b(?:tumne|tune)\b|"
                       r"\bimportant (?:kuch|kya) hai\b", re.I)
@@ -95,7 +99,7 @@ OFF = re.compile(r"\b(?:stop|don'?t|do not|mat|band karo)\b.{0,25}\b(?:ask\w*|po
                  r"\b(?:important|calendar|mails?|dates?|notice\w*)\b", re.I)
 ON = re.compile(r"\b(?:start|you can|feel free to|phir se)\b.{0,15}\b(?:ask\w*|pooch\w*)\b.{0,40}\b(?:important|calendar)\b",
                 re.I)
-AGAIN = re.compile(r"^\W*(?:what|sorry|pardon|huh|hmm|kya|haan\?|come again|say that again|repeat(?: that)?|phir se(?: bolo)?|"
+AGAIN = re.compile(r"^\W*(?:what|sorry|pardon|huh|kya|haan\?|come again|say that again|repeat(?: that)?|phir se(?: bolo)?|"
                    r"what did you say|didn'?t (?:get|catch) (?:that|it))\W*$", re.I)
 OTHER_CMD = re.compile(r"\b(?:alarms?|timers?|to-?dos?|wake me|add .{1,40} to (?:my|the) list)\b", re.I)
 REFER = re.compile(r"\b(?:save|book|add|put|note|keep|mark|important|zaroori|calend[ae]r|yes|haan)\b", re.I)
@@ -106,10 +110,14 @@ ORDINAL = {"first": 0, "1st": 0, "pehla": 0, "pehle wala": 0, "second": 1, "2nd"
 MAIL_HINT = ("I can't read your mail yet. Put MAIL_ADDRESS and MAIL_APP_PASSWORD, a Google app password, in the .env "
              "file and restart me.")
 UPSET = re.compile(r"\b(?:stress\w*|tens(?:ed|ion)|scared|panic\w*|anxious|worried|overwhelm\w*|can'?t (?:do|handle|take|cope)|"
-                   r"crying|depress\w*|freaking|screwed|fed up|exhausted|hopeless|dar lag\w*|ghabra\w*|pareshan|"
+                   r"crying|depress\w*|freaking|screwed|fed up|exhausted|hopeless|dar lag\w*|ghabra\w*|pareshan|nervous|"
                    r"dimag kharab|pagal ho)\b", re.I)
 COLS = ("id, what, kind, when_at, has_time, source, source_ref, source_label, heard, meta, confidence, privacy, status, "
         "stage, asked_at, asked_via, answered_at, event_id, reminder_ids, prep_intent_id, task_id, fact_id")
+
+
+STATES = re.compile(r"\b(?:is|are|hai|hain|have|has|i'?ve|starts?|begins?|due|scheduled)\b", re.I)
+NAMED_DUE = re.compile(r"\b(?:deadline|due date|last date)\b", re.I)
 
 
 @dataclass
@@ -176,7 +184,7 @@ def _verb(r: dict) -> str:
     plural = bool((r["meta"] or {}).get("plural"))
     if (r["meta"] or {}).get("starts"):
         return "start" if plural else "starts"
-    if r["kind"] in ("deadline", "bill"):
+    if r["kind"] in ("deadline", "bill") and not NAMED_DUE.search(r["what"]):
         return "are due" if plural else "is due"
     if r["kind"] == "result":
         return "come out" if plural else "comes out"
@@ -192,7 +200,7 @@ def title(r: dict) -> str:
     t = r["what"][:1].upper() + r["what"][1:]
     meta = r["meta"] or {}
     return t + ((" start" if meta.get("plural") else " starts") if meta.get("starts")
-                else " due" if r["kind"] in ("deadline", "bill") else "")
+                else " due" if r["kind"] in ("deadline", "bill") and not NAMED_DUE.search(r["what"]) else "")
 
 
 def statement(r: dict, now: datetime) -> str:
@@ -210,8 +218,12 @@ def ask_text(r: dict, now: datetime) -> str:
     elif r["source"] == "document":
         line = f"{hey}your document “{r['source_label'] or 'that file'}” mentions {_about(r)} on {day}."
     elif r["asked_via"] == "turn" or r.get("_turn"):
+        far = _when(r) - now >= timedelta(days=4) or r["kind"] in ("birthday", "result")
         return (f"{statement(r, now)} Want me to put that on the calendar and remind you "
-                f"{AHEAD.get(r['kind'], 'before it')}?")
+                f"{AHEAD.get(r['kind'], 'before it') if far else 'before it'}?")
+    elif r["source"] == "llm":                      # the date was worked out, not said: she doesn't pretend otherwise
+        line = f"{hey}you mentioned {subject(r)}. I make that around {day}."
+        return f"{line[:1].upper()}{line[1:]} Should I put it on the calendar and remind you before?"
     else:
         return f"{hey}you mentioned {subject(r)} on {day}. Want me to put that on the calendar and remind you before?"
     line = line[:1].upper() + line[1:]
@@ -372,9 +384,12 @@ def his_times(text: str, r: dict, now: datetime) -> tuple[list[datetime], int] |
     for h in dates.find_days(rest, now, loose=True):
         days.append(datetime(h.day.year, h.day.month, h.day.day, tzinfo=CFG.tz))
         rest = rest[:h.start] + " " * (h.end - h.start) + rest[h.end:]
+    clock = dates.clock_in(rest)
     if not fixed and not days:
-        return None
-    clock = dates.clock_in(rest) or (9, 0)
+        if clock is None or not REMIND.search(text):
+            return None
+        days.append(day)                            # "remind me at 3": that day, at 3
+    clock = clock or (9, 0)
     return _valid(fixed + [d.replace(hour=clock[0], minute=clock[1]) for d in days], r, now)
 
 
@@ -584,8 +599,8 @@ def _answer_prep(r: dict, text: str, now: datetime) -> Out | None:
 def _answer_important(r: dict, text: str, now: datetime) -> Out | None:
     if REMIND.search(text) or N_BEFORE.search(text) or DAY_BEFORE.search(text) or MORNING_OF.search(text) \
             or EVE_BEFORE.search(text) or (dates.find_days(text, now, loose=True) and not NO.search(text)
-                                           and not FIX_DATE.search(text)):
-        got = his_times(REMIND.sub(" ", text), r, now)
+                                           and not FIX_DATE.search(text) and len(text.split()) <= 8):
+        got = his_times(text, r, now)
         if got is not None:
             return Out(book(r, now, got[0], cal=not NO_CAL.search(text), dropped=got[1], answer=text))
     if FIX_DATE.search(text) and (days := dates.find_days(text, now, loose=True)) and not REMIND.search(text):
@@ -599,6 +614,9 @@ def _answer_important(r: dict, text: str, now: datetime) -> Out | None:
             q("UPDATE noticed SET when_at=%s, source_ref=%s, asked_at=%s, asked_via='turn' WHERE id=%s",
               (new, it.key, now, r["id"]))
             return Out(ask_text(dict(_row(r["id"]), _turn=True), now))
+    if LATER.search(text) and len(text.split()) <= 8:
+        q("UPDATE noticed SET stage=NULL WHERE id=%s", (r["id"],))      # not a no: it waits, and is not asked again
+        return Out("Okay. It's on my list — say “what did you notice” when you want it.")
     if TODO.search(text) and not NO.match(text):
         return Out(to_list(r, now, text))
     if NO_CAL.search(text) and (YES.search(text) or REMIND.search(text)):
@@ -689,7 +707,9 @@ def _instruction(text: str, now: datetime) -> tuple[Item, list[datetime] | None,
     if items:
         it = items[0]
         fake = {"when_at": it.when, "has_time": it.has_time}
-        got = his_times(REMIND.sub(" ", TO_CAL.sub(" ", text[cut:])), fake, now) if m else None
+        got = his_times(TO_CAL.sub(" ", text[cut:]), fake, now) if m else None
+        if got is None and not c and not STATES.search(pre):
+            return None                             # "kal 2 baje meeting yaad dilana" is a plain reminder at 2: its fast path
         return it, (got[0] if got else None), (got[1] if got else 0), bool(m) or not c
     if not m:
         return None
@@ -705,7 +725,7 @@ def _instruction(text: str, now: datetime) -> tuple[Item, list[datetime] | None,
     if not items:
         return None
     it = items[0]
-    offs = " ".join(post[a:b] for a, b in spans)
+    offs = "remind me " + " ".join(post[a:b] for a, b in spans)
     got = his_times(offs, {"when_at": it.when, "has_time": it.has_time}, now)
     return it, (got[0] if got else None), (got[1] if got else 0), True
 
@@ -757,6 +777,9 @@ def from_turn(text: str, *, now: datetime | None = None, privacy: int = 1, calm:
         return None
     if OTHER_CMD.search(text):
         return None                                 # "…so set an alarm for 6": that command runs; this waits in the list
+    if one("""SELECT 1 AS x FROM noticed WHERE status='asked' AND asked_via='turn' AND asked_at > %s AND id <> ALL(%s)
+              LIMIT 1""", (now - ANSWER_WINDOW, [r["id"] for r in rows])):
+        return None                                 # she asked a moment ago and he let it pass: never a quiz
     if not calm or UPSET.search(text) or len(text.split()) > SHORT_WORDS:
         return None                                 # not the moment: it waits for the proactive gate / the list
     r = rows[0]
@@ -780,6 +803,8 @@ def answer(text: str, *, now: datetime | None = None) -> Out | None:
         expire(now)
         return Out(noticed_list(now))
     r = open_question(now)
+    if r is not None and notice.detect(text, now):
+        r = None                                    # he went on to ANOTHER dated thing: that is not an answer to this one
     if r is not None:
         out = _answer_prep(r, text, now) if r["stage"] == "prep" else _answer_important(r, text, now)
         if out is not None:

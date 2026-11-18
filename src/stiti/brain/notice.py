@@ -61,6 +61,7 @@ PAST = re.compile(r"\b(?:was|were|had|went|gave|attended|happened|got over|(?:is
 UNSURE = re.compile(r"\b(?:if|agar|unless|whether|maybe|might|perhaps|probably|shayad|not sure|don'?t know|no|not|never|"
                     r"nahi|nahin|isn'?t|aren'?t|won'?t|don'?t have|doesn'?t|cancel\w*|called off|wish|hope\w*|"
                     r"suppose|imagine|what if|thinking (?:of|about)|pata nahi)\b", re.I)
+REPEATS = re.compile(r"\b(?:every|each|har|daily|roz|rozana|weekly|everyday|weekdays?|weekends?)\b", re.I)
 MINE = re.compile(r"\b(?:my|mine|our|i have|i'?ve got|i have got|i got|i need to|i have to|i must|we have|we'?ve got|"
                   r"mera|meri|mere|mujhe|hamara|hamari|humara|humari|apna|apni|main|maine)\b", re.I)
 OTHERS = re.compile(r"\b(?:[A-Z][a-z]+'s|his|her|their|uska|uski|unka|unki|iska|iski)\s+(?:\w+\s+){0,2}$")
@@ -83,7 +84,7 @@ STOP = {"my", "our", "your", "the", "a", "an", "have", "has", "had", "got", "is"
         "mujhe", "ki", "kyunki", "aur", "hai", "hain", "ek", "there", "there's", "it", "its", "it's", "about", "going",
         "be", "will", "ko", "se", "tak", "also", "then", "when", "attend", "give", "take", "write", "appear", "need",
         "important", "big", "very", "really", "one", "another", "some", "any", "kal", "aaj", "tomorrow", "today"}
-SUFFIX = re.compile(r"^\s+((?:at|with|to|for|of|in)\s+(?:(?:the|my|our)\s+)?[\w&.'-]+(?:\s+[A-Z][\w&.'-]*){0,3})")
+SUFFIX = re.compile(r"^\s+((?:at|with|to|for|of|in)\s+(?:(?:the|my|our)\s+)?[\w&.'-]+(?:\s+[\w&.'-]+){0,3})")
 PROMO = re.compile(r"\b(?:sale|% ?off|discount|deal|coupon|cashback|newsletter|unsubscribe|limited time|offer ends|"
                    r"shop now|buy now|free trial|flash|promo|black friday|save up to|digest|weekly roundup)\b", re.I)
 STARTS = re.compile(r"\b(?:starts?|starting|begins?|beginning|from|onwards|shuru|se)\b", re.I)
@@ -131,20 +132,24 @@ def _phrase(text: str, head: re.Match) -> str:
     """The head word with the words that belong to it: "DBMS assignment submission", "interview at Orbit Labs"."""
     before = text[:head.start()].split()
     mods: list[str] = []
+    of, whose = False, re.match(r"birthday|b'?day|janamdin|anniversar|wedding|shaadi", head[0], re.I)
     for w in reversed(before[-4:]):
         bare = w.strip(",.:;!()\"'").lower()
         if bare in ("ka", "ke", "ki"):
-            continue                                # "DBMS ka exam" → "DBMS exam"
+            of = True                               # "DBMS ka exam" → "DBMS exam" · "Mummy ka birthday" → "Mummy's birthday"
+            continue
         if bare in STOP or not bare or len(mods) >= 3:
             break
-        mods.insert(0, w.strip(",.:;!()\"'"))
+        mods.insert(0, w.strip(",.:;!()\"'") + ("'s" if of and whose and not bare.endswith("'s") else ""))
+        of = False
     word = HEAD_SAY.get(head[0].lower(), head[0])
-    tail = SUFFIX.match(LINK.sub("", text[head.end():]) if False else text[head.end():])
     suffix = ""
-    if tail and not re.match(r"\s+(?:at|in|for)\s+\d", text[head.end():]) and not re.match(
-            r"\s+(?:in|for|at|to|of|with)\s+(?:the\s+)?(?:morning|evening|afternoon|night|a|an|\d+|next|this)\b",
-            text[head.end():], re.I):
-        suffix = " " + tail[1].strip()
+    tail = SUFFIX.match(text[head.end():])          # "interview at Orbit Labs", "deadline for the scholarship form"
+    if tail and not re.match(r"(?:in|for|at|to|of|with)\s+(?:the\s+)?(?:morning|evening|afternoon|night|\d+|next|this)\b",
+                             tail[1], re.I):
+        kept = LINK.sub("", " " + tail[1]).strip()
+        if len(kept.split()) >= 2:
+            suffix = " " + kept
     out = re.sub(r"\s+", " ", " ".join(mods + [word]) + suffix).strip(" ,.:;-")
     return out[:60]
 
@@ -176,8 +181,8 @@ def _one(sent: str, now: datetime, source: str) -> Item | None:
             break
         pos = at + len(c)
     scope = clause if dates.find_days(clause, now, loose=True) else s
-    if PAST.search(scope) or UNSURE.search(scope):
-        return None
+    if PAST.search(scope) or UNSURE.search(scope) or REPEATS.search(scope):
+        return None                                 # (a weekly thing is a routine, not a date to book)
     # the day: the one nearest after the event word, else the nearest before it
     after = [d for d in days if d.start >= anchor]
     day = after[0] if after else days[-1]
@@ -210,8 +215,8 @@ def _one(sent: str, now: datetime, source: str) -> Item | None:
         linked = bool(re.search(r"\b(?:is|are|on|by|from|starts?|begins?|due|scheduled|held|hai|hain|se|ko|tak|till|"
                                 r"until|before)\b", s[min(head.end(), day.start):max(head.end(), day.start)] or scope, re.I))
     what = re.sub(r"^(?:my|our|the|a|an|mera|meri|mere)\s+", "", what.strip(), flags=re.I)
-    if len(what) < 3:
-        return None
+    if len(what) < 3 or (source == "said" and mine and re.fullmatch(r"(?:birthday|b'?day|janamdin)", what, re.I)):
+        return None                                 # his own birthday is a fact about him, not something to remind him of
     family = bool(re.match(rf"{FAMILY}(?:'s)?\b", what, re.I))
     conf = 0.5 if kind in WEAK else 0.6
     if source == "said":
@@ -241,7 +246,16 @@ def detect(text: str, now: datetime | None = None, source: str = "said", label: 
         except Exception as e:                      # a regex slip must never break a turn
             print(f"[notice] {type(e).__name__}: {e}")
             it = None
-        if it is not None:
+        found = [it] if it is not None else []
+        if it is not None and len(dates.find_days(sent, now, loose=True)) > 1:
+            for c in _clauses(sent):                # "my exam is on the 9th and the interview is on the 12th"
+                try:
+                    more = _one(c, now, source)
+                except Exception:
+                    more = None
+                if more is not None and more.when.date() != it.when.date():
+                    found.append(more)
+        for it in found:
             it.label = label
             if it.key not in out or out[it.key].confidence < it.confidence:
                 out[it.key] = it

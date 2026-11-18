@@ -156,6 +156,7 @@ POS = [("my exams start from the 9th", "exams", "exam", at(9, 12), False),
        ("results come out on the 15th", "results", "result", at(15, 12), False),
        ("I have a doctor's appointment on Monday at 11 am", "doctor's appointment", "appointment", at(23, 11, 11), True),
        ("mera paper hai parso", "paper", "exam", at(20, 11), False),
+       ("Mummy ka birthday 14 December ko hai", "Mummy's birthday", "birthday", at(14, 12), False),
        ("I haven't studied anything and my exams start from the 9th", "exams", "exam", at(9, 12), False)]
 for text, what, kind, when, timed in POS:
     got = N.detect(text, NOW)
@@ -163,7 +164,7 @@ for text, what, kind, when, timed in POS:
     check(f"{text!r} → {what} · {kind} · {when:%d %b %H:%M}",
           it is not None and (it.what, it.kind, it.when, it.has_time) == (what, kind, when, timed)
           and it.confidence >= N.ASK_MIN, str(got))
-NEG = ["when is my exam?", "my exam was on the 9th", "kal mera exam tha", "exams are coming",
+NEG = ["when is my exam?", "every Monday I have a meeting at 10 am", "my birthday is on 5th January", "my exam was on the 9th", "kal mera exam tha", "exams are coming",
        "if I have an exam on the 9th I'll cry", "I don't have any exam on the 9th", "the meeting on Friday got cancelled",
        "remind me at 7 pm to call mummy", "set an alarm for 6 am", "add buy milk to my list", "I'll test the code on Friday",
        "what's on the 9th", "I am in 1st year", "my interview went well yesterday", "I gave my exam on the 9th",
@@ -173,6 +174,10 @@ NEG = ["when is my exam?", "my exam was on the 9th", "kal mera exam tha", "exams
 for text in NEG:
     got = [i for i in N.detect(text, NOW) if i.confidence >= N.ASK_MIN]
     check(f"nothing to ask: {text!r}", not got, str(got))
+two = N.detect("my DBMS exam is on the 9th and the interview at Orbit Labs is on the 12th", NOW)
+check("two things in one sentence are both noticed", sorted((i.kind, i.when.day) for i in two) == [("exam", 9), ("interview", 12)], str(two))
+x = N.detect("the deadline for the scholarship form is 30th November", NOW)
+check("the words that belong to it are kept: 'deadline for the scholarship form'", bool(x) and x[0].what == "deadline for the scholarship form", str(x))
 a, b = N.detect("my exams start from the 9th", NOW)[0], N.detect("mera exams 9 December ko hai", NOW)[0]
 check("the same thing said two ways is one thing (dedup key)", a.key == b.key, f"{a.key} {b.key}")
 
@@ -231,6 +236,15 @@ reset()
 e = Engine("text")
 r = say(e, "remind me two days before my exam on the 9th")
 check("'remind me two days before my exam on the 9th' → 7 Dec + calendar", times() == [at(7, 12, 9)] and len(cal) == 1, f"{r} {times()}")
+reset()
+e = Engine("text")
+r = say(e, "kal mera interview hai 11 baje, yaad dila dena")
+check("'kal mera interview hai 11 baje, yaad dila dena' → booked with the defaults", len(cal) == 1 and cal[0]["start"] == at(19, 11, 11)
+      and times() == [at(18, 11, 19), at(19, 11, 10)] and "?" not in r, f"{r} {times()}")
+reset()
+e = Engine("text")
+r = say(e, "I have a meeting with Riya on 25th November at 4 pm, remind me at 3")
+check("'…remind me at 3' → that day at 3 PM", times() == [at(25, 11, 15)] and "an hour before" in r, f"{r} {times()}")
 reset()
 e = Engine("text")
 r = say(e, "I have an interview at Orbit Labs on 20th November at 3 pm, put it on my calendar")
@@ -394,6 +408,37 @@ r = say(e, "haan")
 check("a reminder later today is said as 'today at 7 PM'", times() == [at(18, 11, 19), at(19, 11, 8)] and "today at 7 PM" in r
       and "tomorrow at 8 AM" in r, f"{r} {times()}")
 
+reset()
+e = Engine("text")
+r1 = say(e, "my exams start from the 9th")
+r2 = say(e, "I have an interview at Orbit Labs on 20th November at 3 pm", NOW + timedelta(minutes=1))
+check("never a quiz: he let her question pass → the next thing is not asked about in the turn", r1.count("?") == 1
+      and "calendar" not in r2 and one("SELECT status FROM noticed WHERE kind='interview'")["status"] == "new", r2)
+r = say(e, "what did you notice?", NOW + timedelta(minutes=2))
+check("…both wait in the list", "Two things" in r and "your interview at Orbit Labs on Fri 20 Nov at 3 PM" in r and "your exams on Wed 9 Dec" in r, r)
+reset()
+e = Engine("text")
+say(e, "the deadline for the scholarship form is 30th November")
+r = say(e, "yes")
+check("a deadline called a deadline is not 'due due'", cal and cal[0]["title"] == "Deadline for the scholarship form"
+      and "The deadline for the scholarship form is on the calendar" in r, f"{r} {cal}")
+
+reset()
+e = Engine("text")
+say(e, "my exams start from the 9th")
+r = say(e, "not now")
+check("'not now' is not a no: it waits in the list, nothing booked", row()["status"] == "asked" and row()["stage"] is None
+      and not cal and "?" not in r, r)
+check("…and she doesn't bring it up again herself", I.candidate(True, NOW + timedelta(hours=2)) is None)
+reset()
+e = Engine("text")
+r = say(e, "kal mera interview hai, thoda nervous hoon")
+check("he is nervous → she talks to him, the calendar question waits", "calendar" not in r and row().get("status") == "new", r)
+reset()
+e = Engine("text")
+r = say(e, "I have a test tomorrow")
+check("something tomorrow: 'remind you before it', not 'a few days before'", r.endswith("remind you before it?"), r)
+
 print("undo right after booking")
 reset()
 e = Engine("text")
@@ -409,6 +454,10 @@ e = Engine("text")
 r = say(e, "remind me at 7 pm to call mummy")
 check("a reminder command keeps its fast path", len(reminders()) == 1 and reminders()[0]["payload"].get("label") == "call mummy"
       and not one("SELECT 1 x FROM noticed") and not cal, r)
+r = say(e, "kal 2 baje meeting yaad dilana")
+check("'kal 2 baje meeting yaad dilana' is a plain reminder at 2 PM (no calendar entry)", len(reminders()) == 2 and not cal
+      and not one("SELECT 1 x FROM noticed") and at(19, 11, 14) in times(), f"{r} {times()}")
+A._last["await_label"] = False                         # (she asked "What's it for?" — not part of this test)
 r = say(e, "set an alarm for 6 am")
 check("an alarm command too", bool(one("SELECT 1 x FROM intents WHERE kind='alarm'")) and not one("SELECT 1 x FROM noticed"), r)
 r = say(e, "I have an exam on the 9th so set an alarm for 6 am tomorrow")
@@ -467,6 +516,9 @@ r = say(e, "my exams start from the 9th")
 check("…then she doesn't ask, in the turn or later", "calendar" not in r and I.candidate(True, NOW + timedelta(hours=2)) is None, r)
 r = say(e, "what did you notice?")
 check("…but the list still has it", "your exams on Wed 9 Dec" in r, r)
+llm_calls.clear()
+r = say(e, "tell me anything important about transformers")
+check("'anything important about transformers' is not a question about the list", len(llm_calls) == 1 and "waiting" not in r, r)
 I._set_disabled(False)
 
 # ------------------------------------------------------------------------------------------------ 4. mail
@@ -608,6 +660,10 @@ check("the reply never waited for it and booked nothing", "calendar" not in r an
 x = one("SELECT what, source, status, when_at FROM noticed")
 check("its find only goes on the noticed list", bool(x) and x["source"] == "llm" and x["status"] == "new"
       and x["when_at"].astimezone(CFG.tz) == at(8, 12), str(x))
+c = I.candidate(True, NOW + timedelta(hours=1))
+check("…and she says the date is her working-out, not his words", c is not None and c[0] == (
+      "Kabir, you mentioned your semester exams. I make that around Tuesday the 8th of December. "
+      "Should I put it on the calendar and remind you before?"), str(c))
 reset()
 check("private (P2) words never leave the Mac", not I.maybe_llm("my exams are in the second week of December", NOW, 2))
 check("a made-up thing is refused", I.from_llm('{"what": "dentist visit", "kind": "appointment", "date": "2026-12-08"}',
