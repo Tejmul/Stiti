@@ -299,7 +299,8 @@ def transcribe_ex(audio: np.ndarray, *, cloud_call=None, lid: bool = True) -> ST
     terms = [t.text for t in glossary.terms()]
     stt_cloud.prewarm()
     from . import lid as lid_mod
-    spoken = lid_mod.detect(audio) if lid else None   # D34: Telugu speech must not be translated into English
+    # D34: Telugu speech must not be translated into English — D41: checked only when he asked for Telugu
+    spoken = lid_mod.detect(audio) if lid and lid_mod.telugu_on() else None
     if spoken and spoken[0] == "te":
         return _telugu(audio, t0, fp, cloud_call)
     loc, _ = _local(audio, os.getenv("STITI_WHISPER", WHISPER_MAIN), p)
