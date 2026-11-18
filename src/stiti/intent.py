@@ -155,6 +155,14 @@ _FINITE = (r"(?:is|are|was|were|has|have|had|got|gets|will|would|won't|can't|cou
            r"came|comes|went|goes|said|says|told|called|wants|wanted|needs|needed|made|gave|took|left|lost|won|"
            r"[a-z]{3,}ed)")
 _NAME_RX = re.compile(r"^\W*[A-Z][a-z]+(?:'s [a-z]+)? (?:" + _FINITE + r"|[a-z]{3,}s)\b")      # "Rahul got placed …"
+# "Play songs by Arijit" / "Show reminders" also start with a capital and a word ending in s: a command verb first
+# means a request, never "Name + verb".
+_VERBS = frozenset("""add set play show tell remind make remove delete send put start text read call create give cancel
+check open get repeat take turn resume email stop schedule find display clear skip list erase bring change listen help
+dial reply wake look say write notify shuffle use tune pull keep switch confirm run update cross enter continue begin
+ring alert provide search undo mute pause snooze mark book order define explain describe translate spell calculate
+convert please okay thanks thank sorry good let lets never dont don't move note save log tick finish plan teach
+google ask answer wait hold go close lower raise increase decrease reduce""".split())
 
 
 def is_statement(text: str) -> bool:
@@ -162,7 +170,10 @@ def is_statement(text: str) -> bool:
     t = (text or "").strip()
     if not t or t.endswith("?") or _QUESTION_RX.match(t) or _ASK_RX.search(t) or _I_WANT_RX.match(t):
         return False
-    return bool(_SUBJECT_RX.match(t) or _NAME_RX.match(t))
+    if _SUBJECT_RX.match(t):
+        return True
+    first = re.match(r"\W*([A-Za-z']+)", t)
+    return bool(_NAME_RX.match(t)) and (first is None or first.group(1).lower() not in _VERBS)
 
 
 TOP_PUBLIC = 3

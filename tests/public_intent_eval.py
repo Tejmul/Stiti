@@ -50,8 +50,21 @@ LIFE_UPDATES = [
     "My uncle reminded me of my grandfather today",
 ]
 NOT_A_COMMAND = ("chat", "memory")
+# Public request examples vote only on requests / questions; a plain statement keeps his own examples (intent.py).
+STATEMENTS = ["Rahul got placed at Amazon today", "Mummy is coming home tomorrow", "Dad's train reaches at nine tonight",
+              "My mom called me this morning", "I woke up at five today", "Priya wants a new phone",
+              "The exam got postponed to next Wednesday", "Okay, it has been done", "So, my cousin is visiting next week"]
+REQUESTS = ["Play songs by Arijit", "Show reminders for today", "Cancel alarms for tomorrow", "Add eggs to my list",
+            "Set reminders for the trip", "Check emails from Amazon", "List todos", "Remind me at 4 to call mom",
+            "What's on my calendar today?", "Who is Rahul?", "I want an alarm for 6 am", "I need to add flour to my list",
+            "Please set a timer", "Tell me a joke", "Delete tasks from yesterday", "Read emails from mom", "Stop",
+            "Set an alarm for 6 am", "Can you call mom"]
+FRAMED = {"Also add call the placement cell": "todo", "add email the professor to my list": "todo",
+          "mark play football as done": "todo", "remind me to email Sam at 5": "time",
+          "set an alarm to call the bank at 9 am": "time", "add a meeting with John to my calendar on friday": None,
+          "play some music": None, "call mom": None}
 # Floors. Measured 2026-11-18: built-in examples only 386/529 (73.0%), 24% under 0.7, life updates 38/42;
-# with the public examples 506/529 (95.7%), 4% under 0.7, life updates 42/42.
+# with the public examples 511/529 (96.6%), 4% under 0.7, life updates 42/42.
 FLOOR = {"builtin": {"acc": 0.70, "life": 36}, "public": {"acc": 0.92, "low": 0.10, "life": 40}}
 
 
@@ -117,6 +130,17 @@ def main() -> int:
             print(f"    {g:8}→ {p:8} {c:.2f}  {t}")
     f = FLOOR["public" if n_public else "builtin"]
     fails = []
+    shape = [t for t in STATEMENTS if not intent.is_statement(t)] + [t for t in REQUESTS if intent.is_statement(t)]
+    frames = [t for t, want in FRAMED.items() if intent.frame(t) != want]
+    print(f"  statement / request told apart: {len(STATEMENTS) + len(REQUESTS) - len(shape)}/{len(STATEMENTS) + len(REQUESTS)}"
+          f" · to-do / reminder frames: {len(FRAMED) - len(frames)}/{len(FRAMED)}")
+    if shape or frames:
+        fails.append(f"statement/request or frame rule: {shape + frames}")
+    if n_public:
+        wrong_frame = [(t, decide(t, embed.embed_query(t)).get("domain")) for t, want in FRAMED.items()
+                       if want and decide(t, embed.embed_query(t)).get("domain") != want]
+        if wrong_frame:
+            fails.append(f"a framed to-do / reminder left its domain: {wrong_frame}")
     if n_public and (n := leaked(rows)):
         fails.append(f"{n} yardstick lines are also router examples")
     if acc < f["acc"]:
