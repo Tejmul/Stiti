@@ -866,3 +866,19 @@ Tutor CoPilot, ChalkTalk, OpenMAIC, LearnLM, human-tutoring studies).
 - **NOT verified on his real speakers/mic:** the echo thresholds (1.5 s tail, 60 %, 3 words) are tuned on the
   logged lines, not on his room; real AEC residue and barge-in latency on the M2 still need his ears. Alarms still
   ring during a lesson, but he can't dismiss them by voice then (the loop ignores the mic during lessons).
+
+## D41: English first — she listens for Telugu only when he asks (2026-11-18)
+**Problem (his real turns):** 22 of his 105 spoken turns since 11 Nov were written in Telugu script (0 in Devanagari),
+e.g. "Siti, నిను కార్చేనా దేల్సా?" — and he says he speaks English almost all the time. Cause: D34's Whisper-tiny language
+check (`voice/lid.py`) ran on every awake turn; when it said "Telugu" the whole turn went down the Telugu path (Telugu
+transcript, Telugu reply). On synthetic clips it scored 6/6; on his voice and room it was wrong about 1 turn in 5.
+- **The Telugu check is opt-in.** `lid.telugu_on()`: off by default; "talk in Telugu" opens it for 30 minutes (every
+  Telugu turn extends it); "talk in English" / another language / unlock closes it; a Telugu language lock keeps it
+  open across restarts; profile key `listen_telugu=on` or `STITI_LID_TELUGU=on` makes it permanent. A wrong "Telugu"
+  costs a whole turn; a missed Telugu sentence costs one "talk in Telugu". Saves the 32 ms check on every turn too.
+- Only the voice engine moves the ears (`Engine._sync_ears`); the web/text engine never does.
+- **Found on the way:** "Stiti, talk in Telugu" was judged a to-do (domain conf 0.57) and the language command was
+  skipped. A clear language command now wins over the domain guess (unless the sentence is a reminder/to-do command).
+- Hinglish is unchanged (same English-pinned transcription + Hinglish prompt).
+- Tests: `tests/lang_switch_eval.py` 63 (13 new). NOT verified on his mic; the real WER on his voice is still unmeasured
+  (no recordings exist — the recorder is opt-in and off).
