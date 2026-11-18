@@ -1,7 +1,7 @@
 """Context compiler: the per-turn briefing every LLM gets (report §Context compiler).
 
 Same template for every model -> swapping the LLM never changes who Stiti is.
-Budget ≤1,500 tokens (Groq free = 8K TPM). Drop order when over budget: tools, open loops,
+Budget ≤1,500 tokens (Groq free = 8K TPM). Drop order when over budget: the style examples (D50), open loops,
 oldest memory lines. Directives + lessons sit right before his words (PrefEval ordering).
 """
 from __future__ import annotations
@@ -100,10 +100,12 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None, strategy=None,
           rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False,
           said=None, more: bool = False, saved: list[str] | None = None,
-          told: list[str] | None = None) -> tuple[str, int]:
+          told: list[str] | None = None, examples: list[tuple[str, str]] | None = None) -> tuple[str, int]:
     """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29).
     said = norepeat.Ledger (what she already said this conversation), more = he asked "what else?" (D36): every line
-    she already covered is left out and an ALREADY-SAID block tells the LLM to bring only new things."""
+    she already covered is left out and an ALREADY-SAID block tells the LLM to bring only new things.
+    examples = [(his line, her line)] from EXAMPLES.md for this turn's strategy (brain/examples.py, D50): style only,
+    the first thing dropped when the briefing is over budget."""
     from . import norepeat
     from . import strategy as strat_mod
     strategy = strategy or strat_mod.make("ACKNOWLEDGE", strat_mod.reply_lang(text, talk_directives))
@@ -141,7 +143,9 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
             re.sub(r"^\[[^\]]*\]\s*", "", l) for l in fact_lines][:3]
     gists = said.gists() if said is not None else []
 
-    def assemble(mem: list[str], loops: str | None, rec: list[str]) -> str:
+    from . import examples as ex_mod
+
+    def assemble(mem: list[str], loops: str | None, rec: list[str], ex: list | None = None) -> str:
         parts = [header,
                  f"[WHO YOU ARE]\n{soul}",
                  f"[WHO YOU'RE TALKING TO — {who}, {profile.p('subj')}/{profile.p('obj')}]\n{prof}",
@@ -171,6 +175,8 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
                          + "\n".join(f"- {x}" for x in new_items))
         elif more:
             parts.append("[NOTHING NEW LEFT] Say plainly that's most of what you know so far, and that he can tell you more.")
+        if ex:
+            parts.append(ex_mod.block(ex))
         parts.append(psych.rules_block(strategy, can_do=can_do(min(privacy, 1)), rule_saved=rule_saved, saved=saved))
         if markers:
             from .turnmark import RULES
@@ -180,9 +186,12 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
     mem = list(mem_lines)
     loops = open_loops
     rec = list(recent_lines)
-    brief = assemble(mem, loops, rec)
-    while tokens(brief) > CFG.briefing_token_budget and (loops or mem or doc_lines or len(rec) > RECENT_KEEP):
-        if loops:
+    ex = list(examples) if examples else None
+    brief = assemble(mem, loops, rec, ex)
+    while tokens(brief) > CFG.briefing_token_budget and (ex or loops or mem or doc_lines or len(rec) > RECENT_KEEP):
+        if ex:
+            ex = None          # style examples go first: facts, his words and the rules matter more
+        elif loops:
             loops = None
         elif doc_lines:
             doc_lines.pop()
@@ -190,5 +199,5 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
             mem.pop()  # lowest-ranked memory first
         else:
             rec = rec[2:]  # oldest exchange; the last two always stay
-        brief = assemble(mem, loops, rec)
+        brief = assemble(mem, loops, rec, ex)
     return brief, tokens(brief)

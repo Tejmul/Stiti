@@ -233,6 +233,18 @@ def _clip(piece: str, k: int) -> str:
     return head.rstrip(",;:—– ") + "."
 
 
+def _plain(t: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9']+", t.lower()))
+
+
+def _copied(sentence: str, shown: tuple) -> bool:
+    """Is this (≥ 3 words) one of the example sentences shown this turn, or the start of one?"""
+    p = _plain(sentence)
+    if len(p.split()) < 3:
+        return False
+    return any((e := _plain(x)) == p or e.startswith(p + " ") for x in shown)
+
+
 def _keep(sentence: str, s, last: bool) -> bool:
     """Should this sentence be spoken under strategy s? (shared by enforce and StreamLint)"""
     st = sentence.strip()
@@ -256,6 +268,8 @@ def _keep(sentence: str, s, last: bool) -> bool:
         return False                             # "noted / I'll remember" with nothing saved is a lie (D38)
     if s is not None and not s.advice and ADVICE.search(st):
         return False
+    if s is not None and getattr(s, "shown", None) and _copied(st, s.shown):
+        return False                             # an EXAMPLES.md line said back word for word (D50: style only)
     return True
 
 

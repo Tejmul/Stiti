@@ -56,4 +56,5 @@ run "anticipating him (weather, brief, heads-up, nags)" tests/anticipate_eval.py
 run "fetch first, then speak (D43)" tests/fetch_first_eval.py
 run "remembers all he told her (D48)" tests/recap_eval.py
 run "varied wording, same honesty (D50)" tests/wording_eval.py
+run "example replies in the briefing (D50)" tests/examples_eval.py
 exit $fail

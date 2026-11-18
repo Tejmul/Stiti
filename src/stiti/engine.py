@@ -12,7 +12,7 @@ import time
 from datetime import date, datetime
 
 from . import embed, router, say
-from .brain import compiler, emotion, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
+from .brain import compiler, emotion, examples, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
 from .brain import lang as lang_mod
 from .config import CFG
 from . import db
@@ -185,6 +185,8 @@ class Engine:
         if os.getenv("STITI_LIVE_WARM", "1") != "0":
             live.warm()                                     # news caches filled in the background, once per process
             weather.refresh_async()                         # so the morning brief has weather without waiting (D39)
+            import threading                                # EXAMPLES.md pairs embedded once, off the reply path (D50)
+            threading.Thread(target=examples.warm, daemon=True, name="examples-warm").start()
 
     def _llm(self, brief: str, text: str, qvec, privacy: int, use_tools: bool) -> tuple[str, dict]:
         """LLM call with an optional tool loop (≤3 rounds, risk-gated, taint-aware)."""
@@ -835,12 +837,17 @@ class Engine:
             tools_turn = live_job is None and live_res is None and (domain == "tool" or bool(TOOL_HINT_RX.search(text)))
             markers = (self.channel == "voice" and on_delta is not None and not text.rstrip().endswith("?")
                        and time.time() - self.incomplete_at > 30 and not tools_turn)
+            # two example replies for this strategy, nearest to his sentence (D50) — style only; never where the facts
+            # are the point (a fetch, a tool, a recap, "what else?"), and only for an English reply
+            ex = (examples.pick(strat.name, qvec, text) if live_job is None and live_res is None and not tools_turn
+                  and not told and not more and not strat.reframe and strat.lang == "english" else [])
+            strat.shown = examples.sentences(ex)
             brief, brief_tokens = compiler.build(
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=recent, memories=mems, facts=facts, lessons=les,
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
                 strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
-                markers=markers and not told, said=strat.said, more=more, told=told,
+                markers=markers and not told, said=strat.said, more=more, told=told, examples=ex,
                 saved=[x if x != "__remember__" else "what he asked you to remember" for x in upd.saved] + learned)
             if live_job is not None:
                 try:
