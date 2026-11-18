@@ -172,6 +172,7 @@ PUBLIC_ON_STATEMENTS = ("chat",)        # the only label from the file that may 
 # pull those into `tool`. When the frame is there, only public rows of that label (and small talk) vote, and the
 # frame's label gets FRAME_BONUS.
 FRAME_BONUS = 0.08
+FAST_LABELS, FAST_FLOOR = ("todo", "time", "control"), 0.44    # (dev set: no right command scored under 0.47)
 _FRAMES = (
     ("todo", re.compile(_LEAD + r"(?:please )?add\b(?!.*\b(?:calendar|playlist|contacts?|cart|queue|schedule|alarm|"
                         r"reminders?|timer|event|meeting|appointment)\b)|"
@@ -196,6 +197,7 @@ def classify(qvec: np.ndarray, kind: str, top: int = 3, text: str | None = None)
     labels, vecs = _index()[kind]
     sims = vecs @ qvec
     pub = _public() if kind == "domain" and text is not None else None
+    framed = None
     if pub is not None:
         plabels, psims = pub[0], pub[1] @ qvec + OWNER_BONUS * pub[2]
         framed = frame(text)
@@ -214,6 +216,10 @@ def classify(qvec: np.ndarray, kind: str, top: int = 3, text: str | None = None)
         s = np.sort(sims[labels == lab])[::-1][:(TOP_PUBLIC if pub is not None else top)]
         scores[lab] = float(s.mean())
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
+    if pub is not None and not framed and ranked[0][0] in FAST_LABELS and ranked[0][1] < FAST_FLOOR:
+        # nothing he could have meant as a command looks like this ("what's the difference between a list and a
+        # tuple?" → todo at 0.37, and she read out his to-do list): a fast path needs examples that resemble it
+        ranked = [kv for kv in ranked if kv[0] not in FAST_LABELS] + [kv for kv in ranked if kv[0] in FAST_LABELS]
     best, second = ranked[0], ranked[1]
     conf = float(1 / (1 + np.exp(-(best[1] - second[1]) * 40)))  # margin -> (0.5, 1)
     return best[0], conf, scores
