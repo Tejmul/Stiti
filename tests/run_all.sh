@@ -54,4 +54,5 @@ run "ask me questions (get to know you)" tests/ask_me_eval.py
 run "anticipating him (weather, brief, heads-up, nags)" tests/anticipate_eval.py
 run "fetch first, then speak (D43)" tests/fetch_first_eval.py
 run "remembers all he told her (D48)" tests/recap_eval.py
+run "notices what matters, asks once, books it (D49)" tests/important_things_eval.py
 exit $fail
