@@ -211,6 +211,8 @@ class Engine:
                     args = {}
                 if tool is None:
                     res = json.dumps({"error": "unknown tool"})
+                elif (why := registry.ungrounded(tool, args, text)):
+                    res = json.dumps({"error": why})        # an invented recipient is never offered for his "haan"
                 else:
                     res, needs = registry.run(tool, args, tainted)
                     ran.append(tool.name)

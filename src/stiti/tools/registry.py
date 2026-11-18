@@ -209,10 +209,26 @@ def ask(tool: Tool, args: dict) -> str:
     """The question before a write: what will happen, in his words — then he says haan / no."""
     f = _ASK.get(tool.name)
     try:
-        line = f(args) if f else f"Should I go ahead and {_what(tool)}?"
+        short = {k: (" ".join(v.split())[:140] if isinstance(v, str) else v) for k, v in args.items()}
+        line = f(short) if f else f"Should I go ahead and {_what(tool)}?"
     except Exception:
         line = "Should I go ahead with that?"
     return line + " (haan / no)"
+
+
+def ungrounded(tool: Tool, args: dict, said: str) -> str | None:
+    """A write the LLM filled in with something he never said. Measured 2026-11-18: "Send an email to my professor…"
+    became an iMessage to the invented professor@example.com, offered for his "haan". Returns what to tell the LLM
+    instead of asking him (None = fine): the recipient of a message must be in his own words."""
+    if tool.name != "imessage_send":
+        return None
+    to, heard = str(args.get("to", "")).strip().lower(), (said or "").lower()
+    digits = re.sub(r"\D", "", to)
+    numbers = [re.sub(r"\D", "", x) for x in re.findall(r"\d[\d\s().\-]{5,}\d", heard)]      # numbers he said
+    if to and (to in heard or (len(digits) >= 7 and any(len(x) >= 7 and (x in digits or digits in x) for x in numbers))):
+        return None
+    return ("he gave no phone number or address for that person, so nothing was sent and nothing may be sent: "
+            "say plainly that you can't send it yet, or ask him for the number")
 
 
 def say(tool: Tool, args: dict, result: object) -> str:

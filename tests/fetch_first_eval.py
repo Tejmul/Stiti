@@ -219,6 +219,8 @@ def fake_stream(messages, **kw):
 
 
 def fake_complete(messages, **kw):
+    if kw.get("route", "voice_fast") != "voice_fast":        # the background fact extractor (D38): not part of a turn
+        raise router.NoProvider("no background LLM in this eval")
     out = _next(messages, "complete", kw.get("tools"))
     base = {"provider": "fake", "model": "fake", "ms": 5.0, "tokens_in": 1, "tokens_out": 1}
     return {**base, **out} if isinstance(out, dict) else {**base, "text": out, "tool_calls": []}
@@ -623,6 +625,30 @@ try:
         check("a crash never leaks an exception name", "KeyError" not in rep and "EKEvent" not in rep and rep.startswith("I couldn't do that"), rep)
     finally:
         registry.select, (create.fn, upcoming.fn) = real_select, real_fns
+    sms = next(t for t in registry.NATIVE if t.name == "imessage_send")
+    sent: list[dict] = []
+    real_sms = sms.fn
+    sms.fn = lambda **kw: sent.append(kw) or {"sent_to": kw["to"]}
+    registry.select = lambda qvec, k=5, tools=None: [sms]
+    try:
+        reset()
+        script.extend([{"text": "", "tool_calls": [{"id": "c1", "name": "imessage_send",
+                                                    "arguments": '{"to": "professor@example.com", "text": "I will be late"}'}]},
+                       "I can't send email yet. I can draft it for you to copy."])
+        rep, _, _ = turn(e, "Send an email to my professor saying I will be late tomorrow.", None, domain="tool", stream=False)
+        check("an invented recipient is never offered for his 'haan' (the LLM is told, and answers in words)",
+              e.pending is None and sent == [] and rep.startswith("I can't send email yet")
+              and "no phone number or address" in llm[-1]["messages"][-1]["content"], rep)
+        script.append({"text": "", "tool_calls": [{"id": "c1", "name": "imessage_send",
+                                                   "arguments": '{"to": "+91 98765 43210", "text": "running late\\n\\nsee you"}'}]})
+        rep, _, _ = turn(e, "text 9876543210 that I'm running late, see you", None, domain="tool", stream=False)
+        check("a number he said himself → she asks first, on one line", e.pending is not None and sent == []
+              and rep == "Should I text +91 98765 43210: “running late see you”? (haan / no)", rep)
+        rep, _, _ = turn(e, "haan", None, stream=False)
+        check("…and after 'haan' it is sent and said plainly", sent == [{"to": "+91 98765 43210", "text": "running late\n\nsee you"}]
+              and rep == "Sent to +91 98765 43210.", f"{rep} {sent}")
+    finally:
+        registry.select, sms.fn = real_select, real_sms
     mcp = registry.Tool("github__create_issue", "Create an issue", registry._obj(title={"type": "string"}), lambda **kw: {"id": 7},
                         risk="write", source="mcp")
     a, s_ = registry.ask(mcp, {"title": "Bug"}), registry.say(mcp, {"title": "Bug"}, {"id": 7, "html_url": "https://x"})
