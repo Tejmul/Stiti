@@ -47,7 +47,9 @@ MIN_PAGE_CHARS = 200        # less text than this is a cookie wall / an empty sh
 DIRECT_GRACE_S = 2.2        # how long the direct copy of a page is preferred over Jina Reader's
 JINA_AFTER_S = 1.2          # Jina Reader (a third party) is asked only if the direct fetch hasn't answered by then
 PAGE_SOFT_S = 3.2           # with one page already read, stop waiting for the others here (not at the full budget)
-READ_TOP = {"find": 2, "research": 2, "compare": 1}   # result pages opened straight away (snippets can't answer these)
+READ_TOP = {"find": 2, "research": 3, "compare": 2}   # result pages tried straight away (snippets can't answer these)…
+READ_KEEP = {"find": 1, "research": 2, "compare": 1}  # …and how many of them, best-ranked first, go into the briefing
+                                                      # (a second page about something close misled the answer)
 THIN_CHARS = 350            # other kinds: open the top page only when all snippets together are shorter than this
 PAGE_CHARS = {"read": 3600, "find": 1600, "research": 1600, "compare": 1600, "search": 1500}   # per page, in the briefing
 WORDS = {"read": 70, "search": 60, "find": 70, "compare": 80, "research": 80}                 # spoken word limit
@@ -946,24 +948,35 @@ def _fetch(req: LiveRequest, k: int = 8, read: bool = True, budget: float | None
             ok.append("gnews_q")
         except Exception:
             failed.append("gnews_q")
+    need = len(reads)                                # pages wanted: the ones he named + READ_KEEP of the results
     if read and items:
         n = READ_TOP.get(req.kind, 0) or (1 if sum(len(i.snippet) for i in items[:5]) < THIN_CHARS else 0)
+        need += min(n, READ_KEEP.get(req.kind, 1))
         first = per[0] if req.kind == "compare" and per and per[0] else items     # compare: a page about BOTH items
         for it in [i for i in first if i.via == "web" and not _NO_READ.search(_host(i.url))][:n]:
             reads.setdefault(it.url, _pool.submit(read_page, it.url, max(1.0, left())))
+    def best() -> tuple[list[Page], bool]:
+        """The pages to use, in rank order, and whether that choice is final (no better-ranked read still running)."""
+        got: list[Page] = []
+        for f in reads.values():
+            if not f.done():
+                return got, False
+            if f.exception() is None and f.result():
+                got.append(f.result())
+                if len(got) >= need:
+                    break
+        return got, True
+
     waiting = set(reads.values())
-    while waiting:                                  # with one page in hand, a second slow one isn't waited for past PAGE_SOFT_S
-        el = time.perf_counter() - t0
-        have = any(f.done() and f.exception() is None and f.result() for f in reads.values())
-        if el >= budget or (have and el >= PAGE_SOFT_S):
+    while waiting:                                  # with a page in hand, a slower better-ranked one isn't waited for
+        el = time.perf_counter() - t0               # past PAGE_SOFT_S
+        got, final = best()
+        if final or el >= budget or (got and el >= PAGE_SOFT_S):
             break
-        _, waiting = wait(waiting, timeout=(PAGE_SOFT_S if have else budget) - el, return_when=FIRST_COMPLETED)
-    pages = []
-    for f in reads.values():
-        page = f.result() if f.done() and f.exception() is None else None
-        (ok if page else failed).append("page")
-        if page:
-            pages.append(page)
+        _, waiting = wait(waiting, timeout=(PAGE_SOFT_S if got else budget) - el, return_when=FIRST_COMPLETED)
+    pages = [f.result() for f in reads.values() if f.done() and f.exception() is None and f.result()][:need]
+    ok += ["page"] * len(pages)
+    failed += ["page"] * sum(1 for f in reads.values() if f.done() and (f.exception() is not None or not f.result()))
     return LiveResult(req, items, datetime.now(CFG.tz), (time.perf_counter() - t0) * 1000, ok, failed, pages)
 
 

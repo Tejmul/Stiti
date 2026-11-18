@@ -151,6 +151,8 @@ PAGES = {"en.wikipedia.org": ("Model Context Protocol - Wikipedia",
          "github.com": ("Trending repositories on GitHub today",
                         "Trending. acme / rocketship A build tool that compiles in one pass. zed / quietdb An embedded "
                         "database for edge devices. lumen / paperboat Offline-first notes with sync. " * 3),
+         "gittrend.io": ("GitTrend", "Rising this week: zzz / otherthing A different list of repositories that is not "
+                         "GitHub's own trending page, with other projects on it. " * 4),
          "phonearena.com": ("iPhone 17 vs Pixel 10", "In our camera test the Pixel 10 wins zoom thanks to its telephoto "
                             "lens, while the iPhone 17 wins video. Overall the iPhone 17 scored 152 and the Pixel 10 148. " * 3),
          "gladia.io": ("Best open-source speech-to-text models", "Whisper large-v3 turbo, Parakeet TDT and Canary lead "
@@ -275,6 +277,8 @@ try:
           and "https://github.com/trending" in opened and acks == ["web"], f"{qs} {opened}")
     check("find: the briefing has the page's real content + the result list with sources",
           "acme / rocketship" in brief and "PAGE 1 — Github (github.com)" in brief and "— gittrend.io" in brief, brief[-1200:])
+    check("find: only the best-ranked page goes in (a second, similar page misled the answer)",
+          "https://gittrend.io/" in opened and "PAGE 2" not in brief and "otherthing" not in brief, brief[-600:])
     check("find: no to-do was created and nothing was claimed", e.last_route == "llm"
           and one("SELECT count(*) n FROM tasks")["n"] == 0)
     check("find: a named source is not repeated", rep == "Per GitHub, the first three are rocketship, quietdb and paperboat.", rep)
