@@ -25,6 +25,10 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 | B4 | Raw mic for the recogniser (today it gets echo-cancelled audio); learn words from corrections automatically | ⬜ after B2 |
 | B5 | He wears AirPods: she listened on the headset mic (call-quality audio both ways) and macOS flipped the default mic back and forth → 4 reopens in a session | ✅ 🎙️ D45 `fix/mic-prefer-builtin` (listens on the Mac's own mic; headset keeps the sound) |
 | B6 | Replies dropped because she answered before he finished (15 in one week) | ⬜ |
+| B7 | She fell asleep while he was still talking (timer counted from her last reply; long speech was thrown away) | ✅ 🎙️ D47 |
+| B8 | He could not tell whether she was hearing him | ✅ 🎙️ D47 live captions next to the orb (his words + hers) |
+| B9 | "You shouldn't talk in Hindi" switched her into Hindi | ✅ 🎙️ D47 |
+| B10 | A single misheard "yaar" (for "you're") flips her reply to Hinglish; the Hinglish prompt pulls English words toward Hindi | ⬜ |
 
 ## C. Whiteboard teacher
 | # | Problem | Status |
