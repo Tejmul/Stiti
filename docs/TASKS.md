@@ -61,6 +61,6 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 | F2 | A browser she can drive (search, open, click, fill; stops at payment / OTP / passwords) | ⬜ after F1 |
 | F3 | Accounts: GitHub, email (read + draft + send with his yes); mail is not configured at all | 🙋 keys / logins |
 | F4 | One learned router instead of per-feature phrase lists | ⬜ |
-| F6 | She notices what matters in what she hears / reads, asks once, books calendar + reminders ahead, offers a prep plan | 🔧 `feat/important-things` (mail part needs his mail set up) |
+| F6 | She notices what matters in what she hears / reads, asks once, books calendar + reminders ahead, offers a prep plan | ✅ 🎙️ D49 live (from his words + documents); a real calendar entry and real mail not verified; mail needs `MAIL_ADDRESS` / `MAIL_APP_PASSWORD` |
 | F7 | Behaviour data: datasets / open-source assets for natural phrasing and human-like talk | 🔧 research `docs/research/behaviour_data.md` |
 | F5 | Pick free APIs from the public-apis list for the remaining gaps | ⬜ |
