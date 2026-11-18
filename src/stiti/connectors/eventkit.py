@@ -171,13 +171,19 @@ def speak_events(evts: list[dict], label: str = "today") -> str:
 
 
 # ---------------- calendar (write — only after his "haan") ----------------
-def add_event(title: str, start: datetime, minutes: int = 60, notes: str | None = None) -> str | None:
+def add_event(title: str, start: datetime, minutes: int = 60, notes: str | None = None, *,
+              all_day: bool = False) -> str | None:
+    """all_day=True: a day with no clock time ("exams start on the 9th") — shown as an all-day entry (D49)."""
     if not _request("events"):
         return None
     EK = _ek()
     s = store()
     e = EK.EKEvent.eventWithEventStore_(s)
     e.setTitle_(title)
+    if all_day:
+        start = start.replace(hour=0, minute=0, second=0, microsecond=0)
+        e.setAllDay_(True)
+        minutes = 23 * 60 + 59
     e.setStartDate_(_nsdate(start))
     e.setEndDate_(_nsdate(start + timedelta(minutes=minutes)))
     if notes:
