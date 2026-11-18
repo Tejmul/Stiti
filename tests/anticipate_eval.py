@@ -130,6 +130,18 @@ check("cached() never touches the network", W.cached() is None and len(calls) ==
 net["down"] = False
 net["fc"] = forecast()
 
+print("weather: the city can be anywhere in the sentence")
+for t, place, day in (("What's the weather in Bengaluru, should I carry an umbrella?", "Bengaluru", 0),
+                      ("what is the weather in New Delhi today and tomorrow", "New Delhi", 1),
+                      ("is it hot in Chennai or should I take a jacket", "Chennai", 0),
+                      ("weather in Bengaluru", "Bengaluru", 0), ("will it rain in Mumbai tomorrow", "Mumbai", 1)):
+    a = W.detect(t)
+    check(f"{t!r} → {place}", a is not None and a.place == place and a.day == day, str(a))
+for t in ("what's the weather, should I carry an umbrella?", "weather in my city, and tomorrow?",
+          "will it rain today so should I stay in the hostel"):
+    a = W.detect(t)
+    check(f"{t!r} → his own city", a is not None and a.place is None, str(a))
+
 print("weather: fast path routing (no LLM)")
 for t in ("what's the weather", "mausam kaisa hai", "will it rain today", "bahar kitni garmi hai", "kal baarish hogi?",
           "how hot is it outside", "do I need an umbrella today", "weather in Porto tomorrow",

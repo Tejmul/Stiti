@@ -307,6 +307,7 @@ _PLACE_STOP = {"the", "the evening", "the morning", "the afternoon", "today", "t
                "my city", "this city", "the city", "town", "the weekend", "now", "right now", "kal", "aaj", "general"}
 CITY_IN_RX = re.compile(r"\b(?:in|at|for)\s+(?P<c>[A-Za-z][A-Za-z.'-]+(?:\s+[A-Za-z][A-Za-z.'-]+){0,2}?)"
                         r"(?:\s+(?:today|tomorrow|tonight|now|right now|kal|aaj|this \w+))?\s*[?.!]*$", re.I)
+_CLAUSE = re.compile(r"[,;:?!]|\s+(?:and|but|so|or|because|should|shall|do i|will i|can i|toh|aur)\s+", re.I)
 CITY_HI_RX = re.compile(r"^\W*(?P<c>[A-Za-z][A-Za-z.'-]+(?:\s+[A-Za-z][A-Za-z.'-]+)?)\s+(?:mein|me|ka|ki|mai)\s+"
                         r"(?:aaj |kal )?(?:mausam|weather|baarish|barish|temperature|garmi|thand)\b", re.I)
 SET_CITY_RX = re.compile(
@@ -335,6 +336,10 @@ def detect(text: str) -> Ask | None:
     day = 1 if TOMORROW_RX.search(t) and not re.search(r"\byesterday\b", t, re.I) else 0
     place = None
     m = CITY_HI_RX.search(t) or CITY_IN_RX.search(t)
+    if not m:       # the city isn't always last: "weather in Bengaluru, should I carry an umbrella?" answered for his
+        for clause in _CLAUSE.split(t):          # home city (2026-11-18) — look in each clause too
+            if (m := CITY_IN_RX.search(clause.strip())):
+                break
     if m:
         p = re.sub(r"\s+(today|tomorrow|tonight|now|kal|aaj)$", "", m.group("c").strip(), flags=re.I)
         if p.lower() not in _PLACE_STOP and not _NOT_A_CITY.match(p) and not re.match(
