@@ -434,6 +434,18 @@ reset()
 e = Engine("text")
 r = say(e, "kal mera interview hai, thoda nervous hoon")
 check("he is nervous → she talks to him, the calendar question waits", "calendar" not in r and row().get("status") == "new", r)
+for text in ("I have an interview on Friday, find me common interview questions",
+             "I have an exam on the 9th how should I prepare"):
+    reset()
+    e = Engine("text")
+    r = say(e, text)
+    check(f"he asked for something else in the same breath → that is the turn: {text[-30:]!r}",
+          "calendar" not in r and row().get("status") == "new", r)
+reset()
+e = Engine("text")
+r = say(e, "remember that my interview is on Friday")
+check("'remember that my interview is on Friday' → noted AND one question", r.startswith("Noted — I'll remember that. Your interview is on "
+      "Friday the 20th of November.") and r.count("?") == 1 and bool(one("SELECT 1 x FROM facts WHERE fact_text ILIKE '%interview%'")), r)
 reset()
 e = Engine("text")
 r = say(e, "I have a test tomorrow")

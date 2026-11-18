@@ -661,7 +661,7 @@ class Engine:
                 and (noticed := important.from_turn(text, now=now, privacy=privacy, calm=calm)) is not None:
             # D49: "my exams start from the 9th" → read it back + ONE question; "…give me a reminder on the 1st" →
             # booked and read back. Nothing is written before his yes (or his own instruction).
-            reply, imp_turn, flow_turn = ("Noted. " if upd.saved else "") + noticed, True, True
+            reply, imp_turn, flow_turn = (upd.ack + " " if upd.saved else "") + noticed, True, True
             strat = strategy.make("DO", strat.lang)
         elif upd.saved and len(text.split()) <= 45 and self.onboarding is None and self.chunker is None \
                 and self.woop is None and self.pending is None:   # his life update was written: say so (no LLM)

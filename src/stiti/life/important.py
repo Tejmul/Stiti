@@ -101,7 +101,13 @@ ON = re.compile(r"\b(?:start|you can|feel free to|phir se)\b.{0,15}\b(?:ask\w*|p
                 re.I)
 AGAIN = re.compile(r"^\W*(?:what|sorry|pardon|huh|kya|haan\?|come again|say that again|repeat(?: that)?|phir se(?: bolo)?|"
                    r"what did you say|didn'?t (?:get|catch) (?:that|it))\W*$", re.I)
-OTHER_CMD = re.compile(r"\b(?:alarms?|timers?|to-?dos?|wake me|add .{1,40} to (?:my|the) list)\b", re.I)
+OTHER_CMD = re.compile(r"\b(?:alarms?|timers?|to-?dos?|wake me|add .{1,40} to (?:my|the) list)\b|"
+                       # …or he asks for something else in the same breath: "…find me common interview questions",
+                       # "…how should I prepare" — that request is the turn; the date waits in the list
+                       r"(?:,|\.|\band\b|\bso\b|\baur\b|\btoh\b)\s*(?:please\s+)?(?:find|search|google|look up|tell|show|"
+                       r"teach|explain|help|give|plan|make|suggest|open|play|batao|bata do|dhoondo)\b|"
+                       r"\b(?:how (?:should|do|can|to)|what (?:should|do|can)|can you|could you|will you|should i|"
+                       r"kaise|kya karu\w*|kya karna)\b|\?", re.I)
 REFER = re.compile(r"\b(?:save|book|add|put|note|keep|mark|important|zaroori|calend[ae]r|yes|haan)\b", re.I)
 POINTS = re.compile(r"\b(?:that|this|woh|wo|us|one|wala|wali|both|all|dono|sab|first|second|third|1st|2nd|3rd|pehla|"
                     r"doosra|dusra|teesra)\b", re.I)
