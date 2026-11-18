@@ -882,3 +882,20 @@ transcript, Telugu reply). On synthetic clips it scored 6/6; on his voice and ro
 - Hinglish is unchanged (same English-pinned transcription + Hinglish prompt).
 - Tests: `tests/lang_switch_eval.py` 63 (13 new). NOT verified on his mic; the real WER on his voice is still unmeasured
   (no recordings exist — the recorder is opt-in and off).
+
+## D42: A lesson opens at once — board first, plan while her voice loads; "end" ends it (2026-11-18)
+**Problem (his words):** "It's taking a lot of time to open." Measured on the M2 with the app running: after "teach
+me X" the lesson process loaded the voice stack (VAD + Kokoro 6.7 s, Whisper 6.6 s), THEN planned the lesson (4.8 s,
+18 s when Groq's per-minute limit made the planner wait), and only THEN opened the board — one after another, ~19 s of
+an empty screen and silence.
+- `tutor._teach`: the board server starts and the browser opens first (0.2 s) with "Getting your lesson on X ready…";
+  the outline is planned on a thread WHILE the voice loads; Whisper warms up in the background on its one STT thread
+  (his first words queue behind it). A page that connected early gets the lesson board when the lesson exists.
+  Expected wait to her first word: ~8 s (voice load) instead of ~19 s; not measured with real speakers.
+- Course / revision sessions keep the old order (their planning has its own flow).
+- A bare "end" / "finish" / "end it" now ends the lesson (the help line said "end" but only "end the lesson" worked).
+- Tests: `tutor_teacher_eval` 97 (17 new: order, parallel load, waiting line, failed plan closes voice + board, end words).
+- **Still slow, not fixed here:** (1) the lesson is its own process and loads a second copy of every voice model
+  (+550 MB RSS on an 8 GB Mac, ~7 s) — the real fix is teaching inside the app with the models already loaded;
+  (2) lesson writing depends on free-tier limits: Cerebras is first in the `tutor_plan` chain and has no key, so Groq
+  (8k tokens/min) carries it and the planner sleeps 15 s when the minute is used up.
