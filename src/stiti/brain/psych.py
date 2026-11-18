@@ -148,7 +148,8 @@ def human_fallback(user_text: str, dropped: list[str] | None = None) -> str:
         return "Sorry, my voice is acting up a bit. Tell me if it still sounds off."
     if dropped and any(NOT_HEARD_RX.search(d) for d in dropped):
         return "Sorry, I didn't catch that. Say it once more?"
-    return "Got it."
+    from .. import say
+    return say.line("got_it")
 
 
 def machine_talk(text: str) -> bool:

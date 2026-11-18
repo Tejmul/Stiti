@@ -11,7 +11,7 @@ import re
 import time
 from datetime import date, datetime
 
-from . import embed, router
+from . import embed, router, say
 from .brain import compiler, emotion, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
 from .brain import lang as lang_mod
 from .config import CFG
@@ -676,7 +676,7 @@ class Engine:
                 if ctx and not (isinstance(result, dict) and result.get("error")):
                     reply = f"{reply} {self._rest_of_ask(ctx, tool, result, reply, strat.lang)}".strip()
             else:
-                reply = "Okay, cancelled."
+                reply = say.line("tool_cancelled")
         elif self.chunker is not None:
             reply, finished = self.chunker.answer(text)
             if finished:
@@ -738,7 +738,7 @@ class Engine:
             _, reply = lessons.capture(text, mood=self.last_mood, lang=strat.lang,
                                        source_episode_ids=[i for i in (self.last_reply_ep, user_ep) if i])
         elif learned and len(text.split()) <= 14 and self.onboarding is None:
-            reply = "Noted — " + ", ".join(learned) + "."
+            reply = say.line("learned", facts=", ".join(learned))
         elif domain == "control":
             reply = handlers.control(text)
         elif domain == "todo":
@@ -939,7 +939,7 @@ class Engine:
         self.last_action = ({"type": "task" if m.group(1) else "intent", "id": int(m.group(2))}
                             if m and route == "fast_path" else None)
         reply = psych.EMOJI.sub("", re.sub(r"\s*\((task |lesson )?#?L?\d+\)", "", reply)).strip()
-        if route == "fast_path" and m and re.match(r"(Got it|Done|Timer set)\b", reply) and not reply.endswith("?"):
+        if route == "fast_path" and m and say.confirms(reply):
             reply += " Anything else?"                  # confirm-and-close: only after a completed action
         reply_ep = memory.add_episode(self.session, "stiti", reply, origin="agent", privacy=privacy)
         if reply:

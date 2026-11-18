@@ -33,7 +33,7 @@ def sentences(text: str) -> int:
     return len([s for s in re.split(r"(?<=[.!?])\s+", text.strip()) if s])
 
 
-from stiti import profile, router                                       # noqa: E402
+from stiti import profile, router, say                                  # noqa: E402
 from stiti.config import CFG                                            # noqa: E402
 from stiti.connectors import eventkit, live, weather as W               # noqa: E402
 from stiti.db import one, q                                             # noqa: E402
@@ -327,7 +327,7 @@ check("defer (away) doesn't count", one("SELECT sent FROM reminder_nags WHERE id
 check("plain chat is not an ack", A.ack("ok so tell me what is the weather like today", ref=T0 + timedelta(minutes=1)) is None)
 rep = A.ack("ok got it", via="voice", ref=T0 + timedelta(seconds=40))
 st = one("SELECT state, ack_via, ack_latency_s FROM reminder_nags WHERE id=%s", (n3,))
-check("'ok got it' stops it", rep == "Okay, I won't remind you again." and st["state"] == "acked", str(rep))
+check("'ok got it' stops it", rep in say.variants("nag_stop") and st["state"] == "acked", str(rep))
 check("ack channel + latency logged", st["ack_via"] == "voice" and abs(st["ack_latency_s"] - 40) < 1, str(st))
 check("acked → never repeats", A.nags_due(T0 + timedelta(minutes=30)) == [])
 check("'ok' with nothing open → not an ack", A.ack("ok", ref=T0 + timedelta(minutes=1)) is None)
@@ -335,7 +335,7 @@ r4 = mk("water the plants")
 n4 = A.nag_start(r4, "voice", T0)
 check("too long after (asleep window 90 s) → not an ack",
       A.ack("haan", ref=T0 + timedelta(seconds=120), window_s=A.NAG_ACK_ASLEEP_S) is None)
-check("'ho gaya' → 'Nice, done.'", A.ack("ho gaya", ref=T0 + timedelta(seconds=60)) == "Nice, done.")
+check("'ho gaya' → 'Nice, done.'", A.ack("ho gaya", ref=T0 + timedelta(seconds=60)) in say.variants("nag_done"))
 for t in ("ok", "okay", "done", "got it", "haan", "theek hai", "Okay Stiti, got it", "thanks"):
     check(f"ack word: {t!r}", A.ack_matches(t))
 r5 = mk("stretch")
@@ -343,7 +343,7 @@ A.nag_start(r5, "voice", datetime.now(CFG.tz))
 e2 = Engine("text")
 check("spec_block holds an ack while a reminder is open", e2.spec_block("got it") == "action")
 rep = e2.turn("got it")
-check("typed 'got it' (web / Telegram / terminal) stops it", rep == "Okay, I won't remind you again."
+check("typed 'got it' (web / Telegram / terminal) stops it", rep in say.variants("nag_stop")
       and one("SELECT state, ack_via FROM reminder_nags WHERE intent_id=%s", (r5["id"],)) == {"state": "acked", "ack_via": "text"},
       rep)
 r6 = mk("lock the door")

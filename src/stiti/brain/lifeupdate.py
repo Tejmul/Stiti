@@ -110,15 +110,17 @@ class Update:
     fact_ids: list[int] = field(default_factory=list)
     ended: list[int] = field(default_factory=list)
     needs_llm: bool = False                            # an update/correction the patterns couldn't parse
+    _ack: str | None = field(default=None, repr=False)  # worded once (say.line rotates its variants)
 
     @property
     def ack(self) -> str:
         if not self.saved:
             return ""
-        if len(self.saved) == 1 and self.saved[0] == "__remember__":
-            return "Noted — I'll remember that."
-        notes = [s for s in self.saved if s != "__remember__"]
-        return "Got it — updated: " + "; ".join(notes) + "."
+        if self._ack is None:
+            from .. import say
+            notes = [s for s in self.saved if s != "__remember__"]
+            self._ack = say.line("update_ack", notes="; ".join(notes)) if notes else say.line("remember_ack")
+        return self._ack
 
 
 def _owner() -> str:

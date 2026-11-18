@@ -10,7 +10,7 @@ import os
 import re
 import subprocess
 
-from .. import cards
+from .. import cards, say
 from ..db import one, q
 from .dates import now, parse_when, readback, say_when, second_person
 
@@ -81,7 +81,7 @@ def _todo_add(t: str) -> str | None:
     row = one("INSERT INTO tasks(title, due, source) VALUES (%s,%s,'text') RETURNING id", (title, due))
     cards.note("added", "task", row["id"])
     extra = f", due {say_when(due)}" if due else ""
-    return f"Got it — added “{second_person(title)}”{extra}. (task #{row['id']})"
+    return say.line("todo_added", item=f"“{second_person(title)}”", due=extra) + f" (task #{row['id']})"
 
 
 def todo_list(limit: int = 3) -> str:
@@ -89,28 +89,29 @@ def todo_list(limit: int = 3) -> str:
                 ORDER BY due NULLS LAST, created_at LIMIT %s""", (limit + 1,))
     total = one("SELECT count(*) n FROM tasks WHERE status='open'")["n"]
     if not rows:
-        return "Your list is clear. Nothing pending."
+        return say.line("list_empty")
     items = [f"{second_person(r['title'])}" + (f" ({say_when(r['due'])})" if r["due"] else "") for r in rows[:limit]]
     said = items[0] if len(items) == 1 else ", ".join(items[:-1]) + " and " + items[-1]
     if total == 1:
-        return f"Just one: {said}."                      # spoken like a person, not "1 open. Top 1: …"
+        return say.line("list_one", said=said)           # spoken like a person, not "1 open. Top 1: …"
     if total <= limit:
-        return f"You have {total}: {said}."
-    return f"You have {total}. Top {limit}: {said}. Say “more” for the rest."
+        return say.line("list_some", n=total, said=said)
+    return say.line("list_many", n=total, k=limit, said=said)
 
 
 def _todo_remove(text: str) -> str | None:
     cleaned = re.sub(r"\b(remove|delete|cancel|drop|hata|hatao|do|nikaal|nikal|from|my|the|todo|todos|tasks?|list|"
                      r"kaam|se|mein|me|please)\b", " ", text, flags=re.I).strip(" .")
+    cleaned = re.sub(r"\s+", " ", cleaned)          # (she read the gaps back: “fly to   moon”)
     if not cleaned:
         return None
     row = one("""SELECT id, title, similarity(lower(title), lower(%s)) s FROM tasks
                  WHERE status='open' ORDER BY s DESC LIMIT 1""", (cleaned,))
     if not row or row["s"] < 0.2:
-        return f"I couldn't find “{cleaned}” on your list."
+        return say.line("todo_not_found", item=f"“{cleaned}”")
     q("UPDATE tasks SET status='cancelled' WHERE id=%s", (row["id"],))
     cards.note("removed", "task", row["id"])
-    return f"Done — removed “{row['title']}”. (task #{row['id']})"
+    return say.line("todo_removed", item=f"“{row['title']}”") + f" (task #{row['id']})"
 
 
 # words that carry no task name: "okay, it has been done" / "haan yeh wala ho gaya" → he means "it"
@@ -137,14 +138,14 @@ def _todo_done(text: str) -> str | None:
     row = one("""SELECT id, title, similarity(lower(title), lower(%s)) s FROM tasks
                  WHERE status='open' ORDER BY s DESC LIMIT 1""", (core,))
     if not row or row["s"] < 0.2:
-        return f"I couldn't find “{core}” on your list."
+        return say.line("todo_not_found", item=f"“{core}”")
     return _mark_done(row["id"], row["title"])
 
 
 def _mark_done(tid: int, title: str) -> str:
     q("UPDATE tasks SET status='done' WHERE id=%s", (tid,))
     cards.note("done", "task", tid)
-    return f"Nice — “{second_person(title)}” is done."
+    return say.line("todo_done", item=f"“{second_person(title)}”")
 
 
 def _done_it() -> str:
@@ -152,7 +153,7 @@ def _done_it() -> str:
     rows = q("""SELECT id, title FROM tasks WHERE status='open' AND parent_id IS NULL
                 ORDER BY due NULLS LAST, created_at LIMIT 4""")
     if not rows:
-        return "Your list is already clear."
+        return say.line("list_already_clear")
     rid = cards.recent_task()
     pick = one("SELECT id, title FROM tasks WHERE id=%s AND status='open'", (rid,)) if rid else None
     if pick is None and len(rows) == 1:
@@ -161,7 +162,7 @@ def _done_it() -> str:
         return _mark_done(pick["id"], pick["title"])
     names = [f"“{second_person(r['title'])}”" for r in rows[:3]]
     cards.note("ask", "task", [])
-    return "Which one is done — " + ", ".join(names[:-1]) + " or " + names[-1] + "?"
+    return say.line("todo_which_done", names=", ".join(names[:-1]) + " or " + names[-1])
 
 
 # ---------------- alarms / reminders / timers ----------------

@@ -191,6 +191,11 @@ PHRASE = {
 
 def phrase(key: str, lang: str) -> str:
     d = PHRASE[key]
+    if key == "got_it" and lang not in d:
+        lang = "english"
+    if key == "got_it" and lang == "english":
+        from .. import say
+        return say.line("got_it")       # "Got it." / "Okay." / "Right." … never the same one twice running (D50)
     return d.get(lang) or d["english"]
 
 

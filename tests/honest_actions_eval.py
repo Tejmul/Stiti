@@ -25,7 +25,8 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 
 from stiti.brain import psych, strategy                                 # noqa: E402
-from stiti.db import q                                                   # noqa: E402
+from stiti import say                                                    # noqa: E402
+from stiti.db import one, q                                              # noqa: E402
 from stiti.fastpath import handlers                                      # noqa: E402
 
 print("claims")
@@ -38,9 +39,16 @@ check("streamed claim is never spoken", sl.feed("Added call the placement cell."
 
 print("'Also add …' really adds")
 q("DELETE FROM tasks")
-for t in ("Also add call the placement cell", "And add buy milk to my list", "Okay, add gym"):
+said = []
+for t, title in (("Also add call the placement cell", "call the placement cell"), ("And add buy milk to my list", "buy milk"),
+                 ("Okay, add gym", "gym")):
     r = handlers.todo(t)
-    check(f"{t!r} → added", r is not None and r.startswith("Got it — added"), str(r))
+    said.append(r)
+    # D50: the wording varies; what must hold is that the row is there and she names the item she added
+    check(f"{t!r} → the row exists and she names it", r is not None and f"“{title}”" in r
+          and one("SELECT 1 AS x FROM tasks WHERE title=%s AND status='open'", (title,)) is not None
+          and say.confirms(r.split(" (task #")[0]), str(r))
+check("three adds in a row → three different wordings", len({s.split("“")[0] for s in said}) == 3, str(said))
 titles = [x["title"] for x in q("SELECT title FROM tasks ORDER BY id")]
 check("titles are clean (no 'Also', 'to my list')", titles == ["call the placement cell", "buy milk", "gym"], str(titles))
 check("'I added sugar to tea' is not a to-do", handlers.todo("I added sugar to tea") is None
@@ -49,13 +57,16 @@ check("'I added sugar to tea' is not a to-do", handlers.todo("I added sugar to t
 print("lists sound like a person")
 q("DELETE FROM tasks")
 handlers.todo("add revise DBMS notes")
-check("one → 'Just one: …'", handlers.todo_list() == "Just one: revise DBMS notes.", handlers.todo_list())
+r = handlers.todo_list()
+check("one → one of her 'just one' lines, with the item", r in say.variants("list_one", said="revise DBMS notes"), r)
 handlers.todo("add gym")
 handlers.todo("add call home")
-check("three → 'You have 3: a, b and c.'", handlers.todo_list() == "You have 3: revise DBMS notes, gym and call home.",
-      handlers.todo_list())
+r = handlers.todo_list()
+check("three → the count and 'a, b and c'", r in say.variants("list_some", n=3, said="revise DBMS notes, gym and call home"), r)
 handlers.todo("add buy milk")
-check("more than three → top three + 'say more'", handlers.todo_list().startswith("You have 4. Top 3:"), handlers.todo_list())
+r = handlers.todo_list()
+check("more than three → the count, the top three + 'say more'", r in say.variants(
+    "list_many", n=4, k=3, said="revise DBMS notes, gym and call home") and "buy milk" not in r and "“more”" in r, r)
 check("never '1 open. Top 1'", "open. Top" not in handlers.todo_list())
 
 print("through the engine")

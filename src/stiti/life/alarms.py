@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 
 from dateutil.rrule import rrulestr
 
-from .. import cards
+from .. import cards, say
 from ..config import CFG
 from ..db import one, q
 from ..fastpath.dates import WAKE, now, parse_when, readback, say_when, second_person
@@ -152,7 +152,7 @@ def create(text: str, ref: datetime | None = None) -> str | None:
     when = parse_when(text, ref)
     if when is None:
         if re.search(r"\b\d{1,2}\b", text) and re.search(r"\b(alarm|remind|yaad|timer|uth|wake)\b", text, re.I):
-            return "Morning or evening? Say it like “6 am” or “shaam 6 baje”."
+            return say.line("ask_ampm")
         return None
     kind = _kind(text)
     rule = recurrence(text, when) if kind != "timer" else None
@@ -162,10 +162,10 @@ def create(text: str, ref: datetime | None = None) -> str | None:
         # "remind me today to …" at 11:50 PM parsed as 9 AM today → it fired at once as "you missed it" (2026-11-11)
         if re.search(r"\d", text):
             return f"{when.strftime('%I:%M %p').lstrip('0').replace(':00', '')} has already passed. Say “tomorrow at …” and I'll set it."
-        return "What time should I remind you? Say it like “at 7 pm”."
+        return say.line("ask_when")
     label = _label(text) if kind == "reminder" else None
-    say = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, NO_LABEL_SAY)
-    payload = {"say": say, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120],
+    words = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, NO_LABEL_SAY)
+    payload = {"say": words, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120],
                "important": bool(IMPORTANT_RX.search(text))}     # "zaroor" / "must": nags longer if not acked (D39)
     row = one("""INSERT INTO intents(kind, fire_at, rrule, payload, user_set) VALUES (%s,%s,%s,%s,true) RETURNING id""",
               ("alarm" if kind in ("alarm", "timer") else "reminder", when, rule, json.dumps(payload)))
@@ -179,7 +179,8 @@ def create(text: str, ref: datetime | None = None) -> str | None:
             pass
     if kind == "timer":
         mins = round((when - (ref or now())).total_seconds() / 60)
-        return f"Timer set for {mins} minute{'s' if mins != 1 else ''} (rings at {when:%I:%M %p}). (#{row['id']})".replace(" 0", " ")
+        return say.line("timer_set", mins=f"{mins} minute{'s' if mins != 1 else ''}",
+                        at=when.strftime("%I:%M %p").lstrip("0")) + f" (#{row['id']})"
     # spoken confirmation: repeat the key slot, nothing more ("Got it — reminder today at 4 PM: start your resume.")
     if rule:
         at = when.strftime("%I:%M %p").lstrip("0").replace(":00", "")
@@ -187,10 +188,10 @@ def create(text: str, ref: datetime | None = None) -> str | None:
     else:
         slot = say_when(when) if (ref is None or ref.date() == now().date()) else readback(when)
     if kind == "alarm":
-        return f"Done — alarm {slot}. (#{row['id']})"
+        return say.line("alarm_set", slot=slot) + f" (#{row['id']})"
     if not label:                                  # never a nameless reminder: ask what it's for (next line = label)
-        return f"Got it — reminder {slot}. What's it for? (#{row['id']})"
-    return f"Got it — reminder {slot}: {second_person(label)}. (#{row['id']})"
+        return say.line("reminder_ask_label", slot=slot) + f" (#{row['id']})"
+    return say.line("reminder_set", slot=slot, label=second_person(label)) + f" (#{row['id']})"
 
 
 # ---------------------------------------------------------------- right after setting one
@@ -227,7 +228,7 @@ def fix_ampm(text: str) -> str | None:
     from .. import cards
     if hasattr(cards, "note"):                     # the on-screen card shows the move (D30)
         cards.note("moved", "intent", r["id"])
-    return f"Fixed — {r['payload'].get('kind') or 'reminder'} {say_when(new)}. (#{r['id']})"
+    return say.line("fixed", kind=r["payload"].get("kind") or "reminder", when=say_when(new)) + f" (#{r['id']})"
 
 
 def awaiting_label() -> bool:
@@ -239,7 +240,7 @@ def set_label(text: str) -> str:
     _last["await_label"] = False
     label = re.sub(r"^(it'?s |its |that'?s )?(for |about |to )?", "", text.strip(" .!?"), flags=re.I).strip()
     if not label or re.match(r"^(nothing|no|nahi|skip|never ?mind|kuch nahi)$", label, re.I):
-        return "Okay, I'll just ping you then."
+        return say.line("label_skip")
     r = one("SELECT id, fire_at, payload FROM intents WHERE id=%s", (_last["id"],))
     if not r:
         return "Okay."
@@ -249,7 +250,7 @@ def set_label(text: str) -> str:
     said = second_person(label)
     if said[:1].isupper() and not said[1:2].isupper():
         said = said[0].lower() + said[1:]          # "Got it — check your to-do list", not "— Check …"
-    return f"Got it — {said}, {say_when(r['fire_at'].astimezone(CFG.tz))}. (#{r['id']})"
+    return say.line("label_set", said=said, when=say_when(r["fire_at"].astimezone(CFG.tz))) + f" (#{r['id']})"
 
 
 def _upcoming(kinds=("alarm", "reminder")) -> list[dict]:
@@ -269,10 +270,10 @@ def _describe(r: dict) -> str:
 def list_all(limit: int = 6) -> str:
     rows = _upcoming()
     if not rows:
-        return "No alarms or reminders set."
+        return say.line("none_set")
     head = "; ".join(_describe(r) for r in rows[:limit])
     more = f" …and {len(rows) - limit} more." if len(rows) > limit else "."
-    return f"You have {len(rows)}: {head}{more}"
+    return say.line("listed", n=len(rows), head=head, more=more)
 
 
 def _pick(text: str, rows: list[dict]) -> list[dict]:
@@ -302,7 +303,7 @@ def _pick(text: str, rows: list[dict]) -> list[dict]:
 def cancel(text: str) -> str:
     targets = _pick(text, _upcoming())
     if not targets:
-        return "Nothing to cancel."
+        return say.line("nothing_to_cancel")
     for r in targets:
         q("UPDATE intents SET state='cancelled' WHERE id=%s", (r["id"],))
         if r.get("ek_identifier"):
@@ -313,8 +314,8 @@ def cancel(text: str) -> str:
                 pass
     cards.note("cancelled", "intent", [r["id"] for r in targets])
     if len(targets) > 1:
-        return f"Cancelled all {len(targets)}."
-    return f"Cancelled the {_describe(targets[0])}."
+        return say.line("cancelled_all", n=len(targets))
+    return say.line("cancelled_one", what=_describe(targets[0]))
 
 
 def move(text: str) -> str:
@@ -323,7 +324,7 @@ def move(text: str) -> str:
     target = _pick(parts[0], rows)
     new = parse_when(text.split(parts[1], 1)[1] if len(parts) > 1 else text) if target else None
     if not target or new is None:
-        return "Which one, and to what time? Say: move my 7 am alarm to 7:30."
+        return say.line("ask_move")
     r = target[0]
     rule = r["rrule"]
     tail = text.split(parts[1], 1)[1] if len(parts) > 1 else text
@@ -342,7 +343,7 @@ def move(text: str) -> str:
     q("UPDATE intents SET fire_at=%s, rrule=%s WHERE id=%s", (new, rule, r["id"]))
     r["fire_at"], r["rrule"] = new, rule
     cards.note("moved", "intent", r["id"])
-    return f"Moved: {_describe(r)}."
+    return say.line("moved", what=_describe(r))
 
 
 def snooze(intent_id: int, minutes: int = SNOOZE_MIN) -> str:
@@ -480,12 +481,12 @@ def nag_start(row: dict, channel: str | None, at: datetime | None = None) -> int
     """Called right after a reminder's first delivery."""
     at = at or now()
     p = row.get("payload") or {}
-    say = p.get("label") or p.get("say") or "your reminder"
+    words = p.get("label") or p.get("say") or "your reminder"
     imp = is_important(p)
     q("UPDATE reminder_nags SET state='gave_up', next_at=NULL WHERE intent_id=%s AND state='open'", (row["id"],))
     nid = one("""INSERT INTO reminder_nags(intent_id, say, important, first_at, last_at, next_at, channels)
                  VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-              (row["id"], say, imp, at, at, at + nag_gap(1, imp), [channel or "none"]))["id"]
+              (row["id"], words, imp, at, at, at + nag_gap(1, imp), [channel or "none"]))["id"]
     return nid
 
 
@@ -564,8 +565,8 @@ def _close(rows: list[dict], via: str, ref: datetime, text: str) -> str:
              WHERE id=%s""", (ref, via, lat, r["id"]))
         print(f"[nag] #{r['id']} acked via {via} after {lat:.0f} s", flush=True)
     if re.search(r"\b(done|ho gaya|ho gayi|kar liya|kar diya|kar li)\b", text, re.I):
-        return "Nice, done."
-    return "Okay, I won't remind you again."
+        return say.line("nag_done")
+    return say.line("nag_stop")
 
 
 class Ringer:

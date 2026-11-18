@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import os
 import queue
-import random
 import re
 import threading
 import time
@@ -34,7 +33,7 @@ import numpy as np
 from . import endpoint, prosody, stt, turn, wake
 from .duplex import Duplex
 from .realtime import Realtime
-from .. import overlay, router
+from .. import overlay, router, say
 from ..learn import recorder
 from ..brain.psych import StreamLint
 from .speaker import ACKS, FILLER_AFTER_S, FILLERS, Speaker
@@ -47,7 +46,7 @@ CAPTIONS = os.getenv("STITI_CAPTIONS", "on") != "off"             # live words n
 INTERIM_EVERY_S, INTERIM_MIN_MS, INTERIM_WINDOW_S = 1.6, 1500, 6.0   # a rough transcript while he is still talking
 WORK_JOIN_S = 8.0                    # wait at most this long for the previous engine call before the next one
 REPROMPT = "Mm-hm?"                  # a fragment that timed out (Unmute: prompt him to continue, never guess)
-CLARIFY = ["Sorry, say that again?", "Sorry, I didn't catch that.", "Hmm, say that once more?"]
+CLARIFY = say.LINES["clarify"]       # "Sorry, say that again?" and four more; say.line("clarify") rotates them
 
 
 class _Cancelled(Exception):
@@ -174,10 +173,18 @@ class VoiceLoop:
         except Exception as e:
             print(f"[voice warm-up] {e}")
         try:
-            self.fillers = [self.tts.synth_on_worker(t, "calm") for t in FILLERS]
-            self.acks = {k: self.tts.synth_on_worker(t, "calm") for k, t in ACKS.items()}
+            # the first wording of each first (ready in ~1 s, as before), then the other variants (D50)
+            self.fillers = [self.tts.synth_on_worker(t, "calm") for t in FILLERS[:3]]
+            acks = {k: [self.tts.synth_on_worker(v[0], "calm")] for k, v in ACKS.items()}
+            self.acks = acks
+            for k, v in ACKS.items():
+                for t in v[1:]:
+                    acks[k].append(self.tts.synth_on_worker(t, "calm"))     # ack_text[k][i] ↔ acks[k][i]
+            for t in FILLERS[3:]:
+                self.fillers.append(self.tts.synth_on_worker(t, "calm"))
         except Exception:
-            self.fillers, self.acks = [], {}
+            if not self.acks:
+                self.fillers, self.acks = [], {}
 
     def _play(self, audio: np.ndarray, sr: int):
         self.duplex.play(audio, sr)
@@ -505,7 +512,7 @@ class VoiceLoop:
                         self._clarified = True
                         print(f"You: {text}   (unclear: no_speech {res.no_speech_prob:.2f}, "
                               f"logprob {res.avg_logprob:.2f})")
-                        self.say(random.choice(CLARIFY))
+                        self.say(say.line("clarify"))
                         continue
                 self._clarified = False
                 if c.replaces is not None:
