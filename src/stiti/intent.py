@@ -3,10 +3,17 @@
 Stiti's hot-path "System 1" until Laya fits the M2 (pilot: Laya zero-shot 13-15/30 on domain,
 200-500 ms, 2.7-2.9 GB RSS with torch — see docs/DECISIONS.md D10).
 Learns without training: owner-confirmed examples append to ~/.stiti/exemplars.jsonl.
+
+D50: a few thousand PUBLIC English examples (MASSIVE / CLINC150 / PRESTO train splits, built by
+scripts/build_exemplars.py into ~/.stiti/data/public_exemplars.npz with their vectors) vote next to the built-in
+and owner-confirmed ones for the domain. His own examples win: they get OWNER_BONUS on their similarity. No file →
+exactly the old behaviour. STITI_PUBLIC_EX=off switches the public set off.
 """
 from __future__ import annotations
 
 import json
+import os
+import re
 from functools import lru_cache
 
 import numpy as np
@@ -96,12 +103,87 @@ def _index():
     return out
 
 
-def classify(qvec: np.ndarray, kind: str, top: int = 3) -> tuple[str, float, dict[str, float]]:
+OWNER_BONUS = 0.03          # his own / built-in examples beat an equally close public one
+PUBLIC_FILE = "public_exemplars.npz"
+
+
+@lru_cache(maxsize=1)
+def _public():
+    """(labels, vectors, owner flags) of the public example set, or None (no file, switched off, or built with
+    another embedder)."""
+    p = CFG.home / "data" / PUBLIC_FILE
+    if os.getenv("STITI_PUBLIC_EX", "on") == "off" or not p.exists():
+        return None
+    try:
+        with np.load(p, allow_pickle=False) as z:           # arrays only: nothing in the file is ever executed
+            if str(z["model"]) != embed.EMBED_MODEL:
+                print(f"[intent] {p.name} was built with {z['model']}; rebuild it (scripts/build_exemplars.py)")
+                return None
+            labels, vecs = z["labels"], z["vecs"].astype(np.float32)
+            owner = z["owner"].astype(bool) if "owner" in z.files else np.zeros(len(labels), bool)
+        if vecs.ndim != 2 or vecs.shape != (len(labels), embed.DIM) or len(owner) != len(labels):
+            return None
+        return labels, vecs, owner          # owner = our own counterweight lines shipped in the same file
+    except Exception as e:
+        print(f"[intent] public examples not loaded: {type(e).__name__}: {e}")
+        return None
+
+
+def public_count() -> int:
+    pub = _public()
+    return 0 if pub is None else int((~pub[2]).sum())
+
+
+# ---- who may vote (D50) ----
+# The public sets are REQUESTS people make to an assistant. They say nothing about a plain statement of his life
+# ("Mummy is coming home tomorrow", "My mom called me this morning") — and a pile of calendar / call / reminder
+# requests sitting next to such a line would drag it into `tool` / `time`. So public command examples vote only when
+# his sentence is itself shaped like a request or a question; a statement is judged by his own and the built-in
+# examples, exactly as before, plus the public small-talk lines.
+_LEAD = r"^\W*(?:(?:ok(?:ay)?|so|and|well|oh|hey|hi|yeah|yes|no|actually|also|btw|by the way|guess what|you know|stiti)[,!. ]+)*"
+_QUESTION_RX = re.compile(_LEAD + r"(?:what|whats|what's|when|where|who|whom|whose|which|how|why|is|are|am|was|were|do|"
+                          r"does|did|can|could|will|would|should|shall|have|has|had|any|may)\b", re.I)
+_ASK_RX = re.compile(r"\b(?:please|can you|could you|would you|will you|remind me|wake me|let me know|tell me|show me|"
+                     r"help me|make sure|don'?t forget)\b", re.I)
+_I_WANT_RX = re.compile(_LEAD + r"i(?:'d| would| really| just| also)*(?: do not| don'?t)? (?:want|need|like|love|wanna|"
+                        r"wish)\b", re.I)
+_SUBJECT_RX = re.compile(_LEAD + r"(?:i|i'm|im|i've|ive|i'd|i'll|we|we're|we've|we'll|my|our|he|he's|she|she's|they|they're|"
+                         r"it|it's|its|there|there's|the|this|that|his|her|their|today|tomorrow|yesterday|tonight|"
+                         r"mom|mum|mummy|mumma|mother|dad|daddy|papa|father|grandpa|grandma|nani|nana|dadi|dada|"
+                         r"bhai|bhaiya|didi|akka|anna|amma|nanna)\b", re.I)
+_FINITE = (r"(?:is|are|was|were|has|have|had|got|gets|will|would|won't|can't|couldn't|didn't|doesn't|isn't|wasn't|"
+           r"came|comes|went|goes|said|says|told|called|wants|wanted|needs|needed|made|gave|took|left|lost|won|"
+           r"[a-z]{3,}ed)")
+_NAME_RX = re.compile(r"^\W*[A-Z][a-z]+(?:'s [a-z]+)? (?:" + _FINITE + r"|[a-z]{3,}s)\b")      # "Rahul got placed …"
+
+
+def is_statement(text: str) -> bool:
+    """A plain statement ("My sister is flying in on Thursday", "I woke up at five") — not a question, not an ask."""
+    t = (text or "").strip()
+    if not t or t.endswith("?") or _QUESTION_RX.match(t) or _ASK_RX.search(t) or _I_WANT_RX.match(t):
+        return False
+    return bool(_SUBJECT_RX.match(t) or _NAME_RX.match(t))
+
+
+TOP_PUBLIC = 3
+PUBLIC_ON_STATEMENTS = ("chat",)        # the only label from the file that may vote on a plain statement
+
+
+def classify(qvec: np.ndarray, kind: str, top: int = 3, text: str | None = None) -> tuple[str, float, dict[str, float]]:
+    """text = his words (only read to tell a statement from a request — see above)."""
     labels, vecs = _index()[kind]
     sims = vecs @ qvec
+    pub = _public() if kind == "domain" and text is not None else None
+    if pub is not None:
+        plabels, psims = pub[0], pub[1] @ qvec + OWNER_BONUS * pub[2]
+        if is_statement(text):
+            keep = np.isin(plabels, PUBLIC_ON_STATEMENTS)
+            plabels, psims = plabels[keep], psims[keep]
+        labels = np.concatenate([labels, plabels])
+        sims = np.concatenate([sims + OWNER_BONUS, psims])
     scores = {}
     for lab in dict.fromkeys(labels):
-        s = np.sort(sims[labels == lab])[::-1][:top]
+        s = np.sort(sims[labels == lab])[::-1][:(TOP_PUBLIC if pub is not None else top)]
         scores[lab] = float(s.mean())
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
     best, second = ranked[0], ranked[1]
