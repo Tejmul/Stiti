@@ -607,12 +607,12 @@ class Orb:
         return M.in_orb(p.x - f.origin.x - M.HALO, p.y - f.origin.y - M.HALO, f.size.width - 2 * M.HALO)
 
     # ---------------------------------------------------------------- capsule: "Checking calendar" / "✓ Start resume · 4 PM"
-    def expand(self, sym_name: str, text: str, tint=None) -> None:
+    def expand(self, sym_name: str, text: str, tint=None, max_w: float | None = None) -> None:
         """The disc grows to the right into a capsule; the orb stays as its round left end."""
         set_text(self.text, text, F_LABEL(), ns(M.WHITE, text_alpha(M.TEXT_A, self.acc)))
         self.text.sizeToFit()
         tw, th = self.text.frame().size.width, self.text.frame().size.height
-        w = M.capsule_width(tw, symbol=self.sym is not None)
+        w = M.capsule_width(tw, symbol=self.sym is not None, max_w=max_w)
         x = M.ORB + M.CAP_GAP
         if self.sym is not None:
             set_symbol(self.sym, sym_name, ns(tint or M.ACCENT), animate=not self.acc.reduce_motion and self.visible)

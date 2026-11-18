@@ -1066,3 +1066,22 @@ live. He also ruled out religious / ritual motifs and names: plain modern design
 - **Greeting:** on wake with no command the capsule shows "Hey <what she calls him>, what's on your mind?" for 3.6 s
   (`overlay.note`, `model.greeting`); a ✓ confirmation or "Checking …" label takes the capsule over.
 - Tests: `overlay_eval` 116, `card_motion_eval` 46. Seen by him live (the orb); the greeting and themed cards not yet.
+
+## D47: She never drops out while he is talking; live captions next to the orb (2026-11-18)
+**His words:** "if I am speaking continuously, suddenly it disconnects without reason, and I didn't even know that it
+is hearing me… while I'm talking, keep transcribing… what Stiti is going to talk should also come."
+**Found in his log:** "So, currently I'll talk about my goals…" → three replies dropped (he was still talking) → 💤.
+- **Cause:** the 20 s session timer counted from her last handled turn, and the sleep check also ran on the very tick
+  that delivered his words — after a long stretch of talking she fell asleep before reading what he had just said, and
+  that utterance was then thrown away as "heard while asleep".
+- **Fix (`voice/loop.py`):** `should_sleep()` — only an idle tick can end the session; his talking (a segment arriving,
+  or mid-sentence) counts as activity; the timeout is 45 s of real silence (`STITI_AWAKE_TIMEOUT`).
+- **Live captions (`overlay.caption`, `STITI_CAPTIONS=off` to disable):** the capsule next to the orb shows what she
+  hears (mic icon, the newest words kept) and what she says (each spoken piece when it starts to sound). While he is
+  still talking (≥ 1.5 s in, not in a pause) a rough transcript of the last 6 s is made every 1.6 s on the STT thread
+  when it is free. Only the current words, gone 4 s after the last update: no history on screen (his rule), and the
+  overlay stays excluded from screen sharing. Cost: one extra Whisper pass per 1.6 s of long speech; a final transcript
+  can wait behind one (≈ 0.3 s worst case) — not measured on the mic.
+- **Also from that log:** "You shouldn't talk in Hindi" switched her INTO Hindi → `brain/lang.NOT_RX`: a negated
+  language means English (unless English is the one ruled out).
+- Tests: turn 80 (9 new), lang_switch 73 (10 new), overlay 121 (5 new). NOT verified on the mic.

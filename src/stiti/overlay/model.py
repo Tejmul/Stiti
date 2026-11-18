@@ -277,11 +277,11 @@ def in_orb(x: float, y: float, w: float = ORB) -> bool:
 CAP_GAP, CAP_SYM, CAP_PAD = 6.0, 24.0, 24.0                  # orb | gap | icon | label | right padding
 
 
-def capsule_width(label_w: float, *, symbol: bool = True) -> float:
-    """The disc alone is ORB wide; with a label it grows to the right to fit it, up to ORB_MAX_W."""
+def capsule_width(label_w: float, *, symbol: bool = True, max_w: float | None = None) -> float:
+    """The disc alone is ORB wide; with a label it grows to the right to fit it, up to ORB_MAX_W (or max_w)."""
     if label_w <= 0:
         return ORB
-    return max(ORB, min(ORB_MAX_W, math.ceil(ORB + CAP_GAP + (CAP_SYM if symbol else 0) + label_w + CAP_PAD)))
+    return max(ORB, min(max_w or ORB_MAX_W, math.ceil(ORB + CAP_GAP + (CAP_SYM if symbol else 0) + label_w + CAP_PAD)))
 
 
 def confirm_text(card: dict, max_chars: int = 38) -> str:
@@ -604,3 +604,25 @@ def knot_overs(pts: list[tuple[float, float]] | None = None, half: int = 9) -> l
                 visits += [i, j]
     order = sorted(visits)
     return [(v - half, v + half) for k, v in enumerate(order) if k % 2 == 0]
+
+
+# ---------------------------------------------------------------- live captions (D47)
+# "I didn't even know that it is hearing me": the capsule next to the orb shows what she hears while he talks and
+# what she says while she talks. Only the current words, for a few seconds — never a history.
+CAPTION_MAX_W = 560.0             # the capsule may grow this wide for a caption
+CAPTION_CHARS = 62                # about what fits in it at 14 pt
+CAPTION_S = 4.0                   # a caption leaves this long after its last update
+
+
+def caption_text(who: str, text: str, n: int = CAPTION_CHARS) -> str:
+    """One line. His words keep their END (the newest words matter while he talks); hers keep their start."""
+    t = " ".join((text or "").split())
+    if len(t) <= n:
+        return t
+    if who == "you":
+        tail = t[-(n - 1):]
+        cut = tail.find(" ")
+        return "…" + (tail[cut + 1:] if 0 <= cut < 16 else tail)
+    head = t[:n - 1]
+    cut = head.rfind(" ")
+    return (head[:cut] if cut > n - 18 else head) + "…"

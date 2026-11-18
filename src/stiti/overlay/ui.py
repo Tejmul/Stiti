@@ -55,6 +55,7 @@ class Overlay:
         self.acc = Access.read()
         M.apply_theme()                        # the cards take the orb's colours (before any layer is built)
         self.note_gen = 0
+        self.caption_at = 0.0                  # when the live caption was last updated (0 = none showing)
         self.state = M.OrbState()
         self.meters = {k: M.LevelMeter(**v) for k, v in M.METER.items()}
         self.src: str | None = None
@@ -115,7 +116,7 @@ class Overlay:
             lbl = M.doing_label(tr.detail)
             if lbl:
                 self.orb.expand(lbl[0], lbl[1])
-            elif self.orb.expanded:
+            elif self.orb.expanded and not self._caption_live():   # a live caption stays through state changes
                 self.orb.collapse()
         if tr.look.source != self.src:
             self.src = tr.look.source
@@ -150,6 +151,28 @@ class Overlay:
             self.orb.set_dim(self.orb.contains_pointer())
 
     # ---------------------------------------------------------------- cards
+    def _caption_live(self) -> bool:
+        return bool(self.caption_at) and time.monotonic() - self.caption_at < M.CAPTION_S
+
+    def caption(self, who: str, text: str, live: bool = False) -> None:
+        """Live words in the capsule: what she hears ("you") or says ("stiti"). The current words only, gone
+        CAPTION_S after the last update. A ✓ confirmation or a "Checking …" label keeps the capsule."""
+        if (not self.enabled or not text or self.state.state == "hidden" or self.confirm is not None
+                or M.doing_label(self.state.detail)):
+            return
+        self.note_gen += 1                     # a caption replaces the greeting note
+        self.caption_at = stamp = time.monotonic()
+        self.orb.expand("mic.fill" if who == "you" else "waveform", M.caption_text(who, text), max_w=M.CAPTION_MAX_W)
+        from PyObjCTools import AppHelper
+        AppHelper.callLater(M.CAPTION_S, self._end_caption, stamp)
+
+    def _end_caption(self, stamp: float) -> None:
+        if stamp != self.caption_at:
+            return
+        self.caption_at = 0.0
+        if self.confirm is None and not M.doing_label(self.state.detail):
+            self.orb.collapse()
+
     def note(self, text: str, secs: float = 3.6) -> None:
         """A short line next to the orb ("Hey Tejmul, what's on your mind?"). A ✓ confirmation or a "Checking …"
         label takes the capsule over; a state change (he starts talking) clears it."""

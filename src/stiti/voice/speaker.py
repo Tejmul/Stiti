@@ -8,6 +8,7 @@ sentence) and what he actually HEARD (`heard`), so memory keeps only that.
 """
 from __future__ import annotations
 
+import os
 import queue
 import random
 import threading
@@ -25,6 +26,17 @@ ACKS = {
 FILLERS = ["Hmm.", "Hmm, let me think.", "Let me see."]
 FILLER_AFTER_S = 1.5
 _END = object()
+
+
+_CAPTIONS = os.getenv("STITI_CAPTIONS", "on") != "off"
+
+
+def _caption(piece: str) -> None:
+    try:
+        from .. import overlay
+        overlay.caption("stiti", piece)
+    except Exception:
+        pass
 
 
 class Speaker:
@@ -135,6 +147,10 @@ class Speaker:
         now = time.time()
         if not self.loop.duplex.playing:
             end_t = now
+        if piece and _CAPTIONS:                          # her words next to the orb, when this piece starts to sound
+            t = threading.Timer(max(0.0, end_t - now), _caption, (piece,))
+            t.daemon = True
+            t.start()
         end_t = max(end_t, now) + len(a) / sr
         if self.on_first_audio is not None:
             cb, self.on_first_audio = self.on_first_audio, None

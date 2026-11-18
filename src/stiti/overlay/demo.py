@@ -123,6 +123,10 @@ class Demo:
         phases = [("greeting", h * 0.5 or 1.8, lambda: (overlay.set_state("listening"),
                                                         overlay.note(M.greeting("Sam"), 1.6))),
                   ("idle", h * 0.5 or 1.2, lambda: overlay.set_state("idle")),
+                  ("caption-you", h * 0.5 or 1.6, lambda: (overlay.set_state("listening"), overlay.caption(
+                      "you", "so currently I will talk about my goals and what I want to do this year", True))),
+                  ("caption-her", h * 0.5 or 1.6, lambda: (overlay.set_state("speaking"), overlay.caption(
+                      "stiti", "Got it. Tell me the first goal and I'll note it."))),
                   ("listening", h or 3.0, self._listen),
                   ("thinking", h * 0.6 or 1.5, self._think),
                   ("doing", h * 0.6 or 1.5, lambda: overlay.set_state("thinking", "calendar")),

@@ -594,5 +594,22 @@ check("'I was wondering' / 'baat ye hai ki' + pause → unfinished (EL waited an
 check("'Mmh, mmh.' / 'hmmm' / 'uh-huh' over her → resume, not stop (EL dropped its answer)",
       E.barge_verdict("Mmh, mmh.") == "resume" and E.barge_verdict("uh-huh") == "resume" and E.barge_verdict("wait, stop") == "stop")
 
+print("she never falls asleep on him mid-speech (D47: he talked 25 s, paused, and she slept before reading it)")
+from stiti.voice import loop as VL                                       # noqa: E402
+T = VL.AWAKE_TIMEOUT_S
+check("the session lasts at least 45 s of real silence", T >= 45)
+check("the tick that delivers his words never ends the session, however long he spoke",
+      not VL.should_sleep(True, True, T + 60, False, False))
+check("mid-sentence: never", not VL.should_sleep(True, False, T + 60, False, True))
+check("while she speaks: never", not VL.should_sleep(True, False, T + 60, True, False))
+check("idle, silent past the timeout: yes", VL.should_sleep(True, False, T + 1, False, False))
+check("idle but within the timeout: no", not VL.should_sleep(True, False, T - 1, False, False))
+check("already asleep: nothing to do", not VL.should_sleep(False, False, T + 60, False, False))
+src_loop = open(os.path.join(os.path.dirname(__file__), "..", "src", "stiti", "voice", "loop.py")).read()
+check("his talking keeps the session open (speech counts as activity)",
+      "if self.awake and (self.tt.busy or c is not None):" in src_loop)
+check("what she hears and says goes next to the orb", src_loop.count('overlay.caption("you"') >= 2
+      and "overlay.caption(\"stiti\"" in open(os.path.join(os.path.dirname(__file__), "..", "src", "stiti", "voice", "speaker.py")).read())
+
 print(f"turn-taking: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
