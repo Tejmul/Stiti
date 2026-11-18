@@ -47,7 +47,8 @@ MIN_PAGE_CHARS = 200        # less text than this is a cookie wall / an empty sh
 DIRECT_GRACE_S = 2.2        # how long the direct copy of a page is preferred over Jina Reader's
 JINA_AFTER_S = 1.2          # Jina Reader (a third party) is asked only if the direct fetch hasn't answered by then
 PAGE_SOFT_S = 3.2           # with one page already read, stop waiting for the others here (not at the full budget)
-READ_TOP = {"find": 2, "research": 3, "compare": 2}   # result pages tried straight away (snippets can't answer these)…
+READ_TOP = {"find": 3, "research": 3, "compare": 2}   # result pages tried straight away, one per site (snippets can't
+                                                      # answer these)…
 READ_KEEP = {"find": 1, "research": 2, "compare": 1}  # …and how many of them, best-ranked first, go into the briefing
                                                       # (a second page about something close misled the answer)
 THIN_CHARS = 350            # other kinds: open the top page only when all snippets together are shorter than this
@@ -470,6 +471,18 @@ def page_text(data: bytes | str) -> tuple[str, str]:
     return title, text
 
 
+_WALL = re.compile(r"just a moment|verification required|verify (you are|you're) (a )?human|are you a robot|captcha|"
+                   r"attention required|access denied|403 forbidden|request blocked|unusual traffic|checking your browser|"
+                   r"enable javascript|javascript is (disabled|required)|cloudflare", re.I)
+
+
+def _real(page: Page | None) -> Page | None:
+    """A bot check or an empty shell is not the page (2026-11-18: Indeed's "Just a moment…" went into the briefing)."""
+    if page is None or len(page.text) < MIN_PAGE_CHARS:
+        return None
+    return None if len(page.text) < 1500 and _WALL.search(page.title + " " + page.text[:600]) else page
+
+
 def _direct(url: str) -> Page | None:
     r = _http().get(url, timeout=PER_SOURCE_S + 0.5, headers={"Accept": "text/html,text/plain;q=0.9,*/*;q=0.5"})
     r.raise_for_status()
@@ -482,7 +495,7 @@ def _direct(url: str) -> Page | None:
         title, text = "", r.text[:MAX_BYTES]
     else:
         return None                                                 # PDF etc.: Jina Reader converts those
-    return Page(url, title, text, "direct") if len(text) >= MIN_PAGE_CHARS else None
+    return _real(Page(url, title, text, "direct"))
 
 
 def _jina(url: str) -> Page | None:
@@ -494,7 +507,7 @@ def _jina(url: str) -> Page | None:
     h1 = re.search(r"^# \S.*$", body, re.M)
     if h1 and h1.start() < len(body) * 0.6:
         body = body[h1.start():]                                    # the menu above the page's own heading
-    return Page(url, clean(m.group(1), 160) if m else "", body, "jina") if len(body) >= MIN_PAGE_CHARS else None
+    return _real(Page(url, clean(m.group(1), 160) if m else "", body, "jina"))
 
 
 def read_page(url: str, budget: float = READ_BUDGET_S) -> Page | None:
@@ -953,8 +966,12 @@ def _fetch(req: LiveRequest, k: int = 8, read: bool = True, budget: float | None
         n = READ_TOP.get(req.kind, 0) or (1 if sum(len(i.snippet) for i in items[:5]) < THIN_CHARS else 0)
         need += min(n, READ_KEEP.get(req.kind, 1))
         first = per[0] if req.kind == "compare" and per and per[0] else items     # compare: a page about BOTH items
-        for it in [i for i in first if i.via == "web" and not _NO_READ.search(_host(i.url))][:n]:
-            reads.setdefault(it.url, _pool.submit(read_page, it.url, max(1.0, left())))
+        hosts: set[str] = set()
+        for it in first:                             # one page per site: a wall on one site doesn't use up every try
+            h = _host(it.url)
+            if it.via == "web" and h not in hosts and not _NO_READ.search(h) and len(hosts) < n:
+                hosts.add(h)
+                reads.setdefault(it.url, _pool.submit(read_page, it.url, max(1.0, left())))
     def best() -> tuple[list[Page], bool]:
         """The pages to use, in rank order, and whether that choice is final (no better-ranked read still running)."""
         got: list[Page] = []

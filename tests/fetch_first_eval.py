@@ -129,6 +129,10 @@ check("page_text: title + paragraphs + list items, in order", title.startswith("
       and text.index("open standard") < text.index("JSON-RPC") < text.index("one-off connectors"), text)
 check("page_text: menus, scripts, forms, footers dropped",
       not any(w in text for w in ("Donate", "IGNORE", "Privacy policy")), text)
+check("a bot check is not a page", live._real(Page("https://x.example.com", "Just a moment...", "Additional Verification "
+      "Required. Your Ray ID for this request is a5c5. Waiting for the site to respond. Troubleshooting Cloudflare "
+      "Errors. Need more help? Contact us. " * 2)) is None and live._real(Page("https://x.example.com", "T", "short")) is None
+      and live._real(Page("https://x.example.com", "Cloudflare outage explained", "A long article. " * 200)) is not None)
 check("site(): what she says aloud", [live.site(u) for u in (URL, "https://www.bbc.co.uk/news", "https://github.com/trending",
                                                              "gsmarena.com")] == ["Wikipedia", "Bbc", "Github", "Gsmarena"])
 from lxml import html as LH                                              # noqa: E402
