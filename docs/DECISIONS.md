@@ -899,3 +899,19 @@ an empty screen and silence.
   (+550 MB RSS on an 8 GB Mac, ~7 s) — the real fix is teaching inside the app with the models already loaded;
   (2) lesson writing depends on free-tier limits: Cerebras is first in the `tutor_plan` chain and has no key, so Groq
   (8k tokens/min) carries it and the planner sleeps 15 s when the minute is used up.
+
+## D45: With a Bluetooth headset she listens on the Mac's own microphone (2026-11-18)
+**Found in his log:** he wears AirPods and they were macOS's default input, so the always-open mic stream ran on the
+headset. Effects: (1) macOS kept flipping the default input between the AirPods and the MacBook mic and the D-mic-follow
+watchdog reopened the stream each time (4 reopens in one session); (2) an open headset mic holds the headset in call
+mode — her voice (and his music) play in call quality and the mic audio is codec-compressed. Wispr Flow ships
+"SuggestWiredMic / AudioQualityIssue" notices for the same reason (`re_wispr_flow.md` §4).
+- `voice/coreaudio.transport()` reads the device's transport type ('blue'/'blea' = Bluetooth, 'bltn' = built-in).
+- `voice/duplex.py`, mode **auto** (default): if the default input is Bluetooth, the stream opens with
+  `device=(Mac's own mic, default output)` — sound stays on the headset. While she is on the Mac's mic, the default
+  flipping headset ↔ Mac mic changes nothing (no reopen). A wired/USB mic becoming the default is still followed.
+  If the Mac's mic goes dead while pinned (lid closed), the next reopen uses macOS's default for 10 minutes.
+- `STITI_MIC=default` or profile key `mic=default` → follow macOS exactly (the headset's mic), as before.
+- Trade-off he should know: with AirPods in and the Mac far away, the Mac's mic hears him from a distance.
+- Tests: `mic_watchdog_eval` 53 (11 new). Real devices checked: default input = Bluetooth, built-in mic found.
+  NOT measured: whether recognition on his voice is better this way (no recordings yet — task B2).
