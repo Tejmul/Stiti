@@ -1,0 +1,557 @@
+{"text": "set an alarm for nine am", "gold": "time", "src": "massive:alarm_set"}
+{"text": "ensure i have to get up at six in morning", "gold": "time", "src": "massive:alarm_set"}
+{"text": "i need an alarm set for five hundred and thirty am tomorrow", "gold": "time", "src": "massive:alarm_set"}
+{"text": "make an alarm for the meeting with bob at seven today", "gold": "time", "src": "massive:alarm_set"}
+{"text": "wake me up at five am", "gold": "time", "src": "massive:alarm_set"}
+{"text": "i want an alarm for three today", "gold": "time", "src": "massive:alarm_set"}
+{"text": "set wake up thursday seven am", "gold": "time", "src": "massive:alarm_set"}
+{"text": "set alarm for reminder", "gold": "time", "src": "massive:alarm_set"}
+{"text": "turn my morning alarm on", "gold": "time", "src": "massive:alarm_set"}
+{"text": "i need you to get me up at six am", "gold": "time", "src": "massive:alarm_set"}
+{"text": "tell me when it is five pm", "gold": "time", "src": "massive:alarm_set"}
+{"text": "set an alert for two pm", "gold": "time", "src": "massive:alarm_set"}
+{"text": "turn on an alarm for three thirty pm today", "gold": "time", "src": "massive:alarm_set"}
+{"text": "set alarm at six thirty am", "gold": "time", "src": "massive:alarm_set"}
+{"text": "set an alarm for tomorrow at six in the morning", "gold": "time", "src": "massive:alarm_set"}
+{"text": "set alarm at nine am on next sunday", "gold": "time", "src": "massive:alarm_set"}
+{"text": "are there any alarms going off today", "gold": "time", "src": "massive:alarm_query"}
+{"text": "confirm my alarm settings", "gold": "time", "src": "massive:alarm_query"}
+{"text": "tell me about alarms", "gold": "time", "src": "massive:alarm_query"}
+{"text": "what times are my alarms set for", "gold": "time", "src": "massive:alarm_query"}
+{"text": "my set alarms", "gold": "time", "src": "massive:alarm_query"}
+{"text": "what is the wake up time for my alarm i have set for the flight this weekend", "gold": "time", "src": "massive:alarm_query"}
+{"text": "is my reminder alarm set for dance class", "gold": "time", "src": "massive:alarm_query"}
+{"text": "when does my alarm go off", "gold": "time", "src": "massive:alarm_query"}
+{"text": "i want to see all set alarms", "gold": "time", "src": "massive:alarm_query"}
+{"text": "check if default alarm is set", "gold": "time", "src": "massive:alarm_query"}
+{"text": "remove the first alarm", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "cancel all soccer practice alarms", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "get rid of my current alarms", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "i don't want any alarms", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "please remove the alarm that is set for weekdays at nine", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "disable alarm for three pm", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "turn off the alarm", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "delete the alarm i just set", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "remove set alarm", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "please remove my alarm", "gold": "time", "src": "massive:alarm_remove"}
+{"text": "add a reminder for april twenty as my bro's birthday", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "please alert me a day before jeff's birthday", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me to call mom every tuesday at ten am", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me to pick up linda at five in the evening on seventh", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "set a reminder for two days prior of the event", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "create reminder for laundry at eight pm", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "add conference call at four pm to my reminders for today", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me to move so there is no weight gain", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me to take out the garbage at six pm", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me when i am at the library to get a new library card", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me that i have a birthday party on the thirtieth", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me two days before my wife birthday", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "add a reminder to my calendar every year on this date", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "set a reminder to notify me one hour before lunch meeting", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "it's my mother's birthday today send me a notification every year on this date", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me to check the stew at six o'clock", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me to take my medicine at nine am", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "remind me about this", "gold": "time", "src": "massive:calendar_set+remind"}
+{"text": "set first week of june as holiday in my calendar", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "put my dinner at red lobster on the calendar for today at nine", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "i want to make a note on my calendar for the event tomorrow at the library", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "set a meeting between myself and john at two pm tomorrow", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "please add dinner with mary to my calendar on saturday", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "add tal meeting on twenty first at seven", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "do add this on my calendar", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "please add supervision to my calendar", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "hey send a meeting invite to mr. ross for this friday's meeting and block my calendar for friday afternoon", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "schedule a meeting event in my calendar", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "can you put in lee's birthday on the twenty second of june", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "please set a meeting to discuss terrorism with fred on the next available meeting day", "gold": "tool", "src": "massive:calendar_set"}
+{"text": "how many people are attending my next meeting", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "show me my events", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what is on the agenda for the four pm meeting with joe", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "meetings from twenty to twenty five june", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what is my schedule for the day", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what are my plans for the month of may", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what days do i have booked", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what is going on today from two four pm", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what are my next three events", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "what time is my doctor appointment on march thirty first", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "when is my brunch with jennifer", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "show me my meetings this friday", "gold": "tool", "src": "massive:calendar_query"}
+{"text": "cancel all my appointments after three pm today and inform me the details", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "remove birthday from calendar", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "cancel everything on my calendar", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "in my calendar delete all of my golf events for the current month", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "delete my meeting for two o'clock pm today", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "remove succeeding event", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "erase all the events in the calendar", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "erase my appointment for march seven", "gold": "tool", "src": "massive:calendar_remove"}
+{"text": "add red wine to my shopping list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "create a new list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "please add oranges to my grocery list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "i want to make this week's shopping list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "add spent five dollars in my expenses list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "please update my grocery list with one gallon of two percent milk", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "can you create a list for me", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "add to list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "add the post office to my list of errands for saturday", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "add a wrist watch to the shopping list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "make a grocery list please", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "help me start my kitchen list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "put hamburger on my grocery list", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "please add list of things to buy for party", "gold": "todo", "src": "massive:lists_createoradd"}
+{"text": "read back my grocery list to me", "gold": "todo", "src": "massive:lists_query"}
+{"text": "what is on my playlist", "gold": "todo", "src": "massive:lists_query"}
+{"text": "anything else left on the list", "gold": "todo", "src": "massive:lists_query"}
+{"text": "what items are on my shopping list", "gold": "todo", "src": "massive:lists_query"}
+{"text": "how many lists do i have", "gold": "todo", "src": "massive:lists_query"}
+{"text": "inform me on the items on the list", "gold": "todo", "src": "massive:lists_query"}
+{"text": "tell me that list i wrote two days ago", "gold": "todo", "src": "massive:lists_query"}
+{"text": "what did i put down already on the walmart list", "gold": "todo", "src": "massive:lists_query"}
+{"text": "show me the contents of the list", "gold": "todo", "src": "massive:lists_query"}
+{"text": "give me all my lists", "gold": "todo", "src": "massive:lists_query"}
+{"text": "what is on my to do list today", "gold": "todo", "src": "massive:lists_query"}
+{"text": "read me my list for shopping", "gold": "todo", "src": "massive:lists_query"}
+{"text": "remove list item", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "clear out the shopping list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "remove my task list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "i want to remove apples from list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "please clean my shopping list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "delete my list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "get rid of a list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "delete item from list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "delete all lists", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "please remove my list of favorite albums", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "clear my activities list for today", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "scratch that one from the list", "gold": "todo", "src": "massive:lists_remove"}
+{"text": "current weather", "gold": "tool", "src": "massive:weather_query"}
+{"text": "give me a weather report for las vegas", "gold": "tool", "src": "massive:weather_query"}
+{"text": "have i need to take a sun glass", "gold": "tool", "src": "massive:weather_query"}
+{"text": "what's the temperature outside", "gold": "tool", "src": "massive:weather_query"}
+{"text": "i want to know today's weather", "gold": "tool", "src": "massive:weather_query"}
+{"text": "am i going to be able to mow the grass this evening", "gold": "tool", "src": "massive:weather_query"}
+{"text": "will i need to carry around a brolly today", "gold": "tool", "src": "massive:weather_query"}
+{"text": "summarize week's weather details", "gold": "tool", "src": "massive:weather_query"}
+{"text": "what's the weather for my location this week", "gold": "tool", "src": "massive:weather_query"}
+{"text": "will i need my snow boots this afternoon", "gold": "tool", "src": "massive:weather_query"}
+{"text": "what is the weather going to be like on march twentieth two thousand and seventeen", "gold": "tool", "src": "massive:weather_query"}
+{"text": "can i wear my sandals today", "gold": "tool", "src": "massive:weather_query"}
+{"text": "give me the weather forecast for this week", "gold": "tool", "src": "massive:weather_query"}
+{"text": "should i wear a jacket", "gold": "tool", "src": "massive:weather_query"}
+{"text": "what's the latest news on c. n. n.", "gold": "tool", "src": "massive:news_query"}
+{"text": "go to the washington post website", "gold": "tool", "src": "massive:news_query"}
+{"text": "show me the latest news from the guardian", "gold": "tool", "src": "massive:news_query"}
+{"text": "give me the latest political headlines across the world", "gold": "tool", "src": "massive:news_query"}
+{"text": "what's going on in the world these days", "gold": "tool", "src": "massive:news_query"}
+{"text": "front page news articles please", "gold": "tool", "src": "massive:news_query"}
+{"text": "what are today's sports news", "gold": "tool", "src": "massive:news_query"}
+{"text": "get me the popular news from b. b. c.", "gold": "tool", "src": "massive:news_query"}
+{"text": "so clean news in past six hours is what", "gold": "tool", "src": "massive:news_query"}
+{"text": "could you please give me up to date news headlines from my newest provider", "gold": "tool", "src": "massive:news_query"}
+{"text": "is there any news", "gold": "tool", "src": "massive:news_query"}
+{"text": "news articles on a particular subject", "gold": "tool", "src": "massive:news_query"}
+{"text": "hey do i have any new emails", "gold": "tool", "src": "massive:email_query"}
+{"text": "any new email from john", "gold": "tool", "src": "massive:email_query"}
+{"text": "show me the most recent emails", "gold": "tool", "src": "massive:email_query"}
+{"text": "display list of recent emails", "gold": "tool", "src": "massive:email_query"}
+{"text": "did i get an email from paul", "gold": "tool", "src": "massive:email_query"}
+{"text": "display recent email from john", "gold": "tool", "src": "massive:email_query"}
+{"text": "do i have emails from this sender", "gold": "tool", "src": "massive:email_query"}
+{"text": "please read my new mails", "gold": "tool", "src": "massive:email_query"}
+{"text": "refresh my inbox and inform me about new emails", "gold": "tool", "src": "massive:email_query"}
+{"text": "initiate polling for new email", "gold": "tool", "src": "massive:email_query"}
+{"text": "send an email to margaret", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "create an email for my company worker with my recently saved documents", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "send a reply to mike with the answer four hundred and thirty from his email he sent this morning", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "send john smith and email", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "write a reply to my mother's email", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "send email to new contact", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "compose a new email to ray", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "send a reply to the last email", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "email mom and ask how the weather is there", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "alexa reply to the mail with the following content hello you", "gold": "tool", "src": "massive:email_sendemail"}
+{"text": "i feel like dancing play me some rock north roll", "gold": "tool", "src": "massive:play_music"}
+{"text": "please play some jazz music", "gold": "tool", "src": "massive:play_music"}
+{"text": "play only my list", "gold": "tool", "src": "massive:play_music"}
+{"text": "play for me music by the beatles", "gold": "tool", "src": "massive:play_music"}
+{"text": "play previous song", "gold": "tool", "src": "massive:play_music"}
+{"text": "please play a song by bruno mars", "gold": "tool", "src": "massive:play_music"}
+{"text": "play me last year's hits", "gold": "tool", "src": "massive:play_music"}
+{"text": "play my playlist starting from the bottom", "gold": "tool", "src": "massive:play_music"}
+{"text": "search for more songs from the band", "gold": "tool", "src": "massive:play_music"}
+{"text": "play me a song by van halen", "gold": "tool", "src": "massive:play_music"}
+{"text": "please play only sad song in music player", "gold": "tool", "src": "massive:play_music"}
+{"text": "i'd like to listen to hear a music of dance and country", "gold": "tool", "src": "massive:play_music"}
+{"text": "someone play the radio", "gold": "tool", "src": "massive:play_radio"}
+{"text": "just play nine hundred and thirty seven f. m.", "gold": "tool", "src": "massive:play_radio"}
+{"text": "play me this mornings show from one hundred and one point nine", "gold": "tool", "src": "massive:play_radio"}
+{"text": "play station gx in the radio", "gold": "tool", "src": "massive:play_radio"}
+{"text": "tune in to eight hundred and ninety seven f. m.", "gold": "tool", "src": "massive:play_radio"}
+{"text": "could you please play the f. m. station which plays pop songs", "gold": "tool", "src": "massive:play_radio"}
+{"text": "show me the best podcast of rock songs having good rating", "gold": "tool", "src": "massive:play_podcasts"}
+{"text": "start podcasts on n. f. l.", "gold": "tool", "src": "massive:play_podcasts"}
+{"text": "play next reason podcast", "gold": "tool", "src": "massive:play_podcasts"}
+{"text": "resume series podcast", "gold": "tool", "src": "massive:play_podcasts"}
+{"text": "i want to listen to the latest mike and mike podcast", "gold": "tool", "src": "massive:play_podcasts"}
+{"text": "playback tom clancy splinter cell", "gold": "tool", "src": "massive:play_audiobook"}
+{"text": "read some more of the daisy goodwin book for me", "gold": "tool", "src": "massive:play_audiobook"}
+{"text": "resume harry potter book four", "gold": "tool", "src": "massive:play_audiobook"}
+{"text": "start chapter five of physics for future presidents", "gold": "tool", "src": "massive:play_audiobook"}
+{"text": "today i had a meeting with george", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "can you tell me about animal kingdom in amazon forest", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "if you had to kill someone to save three people would you do it and if so why", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "i went to the store", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "what's shakin bacon", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "can you track my emotions based on the way i speak", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "what is your name", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "sticking to diet", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "i just cleaned my car", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "can you please advise", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "what happens to me if you become sentient", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "what do you want to do today", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "i was chased by a dog", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "can we go to sun", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "start a gossip", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "what's on your mind", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "are you happy", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "what causes osteoperosis", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "my day was great", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "become a helicopter", "gold": "chat", "src": "massive:general_quirky"}
+{"text": "knock knock", "gold": "chat", "src": "massive:general_joke"}
+{"text": "what is the funniest joke ever", "gold": "chat", "src": "massive:general_joke"}
+{"text": "do you know any jokes", "gold": "chat", "src": "massive:general_joke"}
+{"text": "do you have a funny joke for me", "gold": "chat", "src": "massive:general_joke"}
+{"text": "what's the funniest joke you know", "gold": "chat", "src": "massive:general_joke"}
+{"text": "info on lisa ann please", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "when's mark lanegan's next album out", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what is the largest active volcano on earth", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "how tall is brad pitt", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "where are pyramids located", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "look up the number of people living in miami florida", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what is the birth year of barack obama", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what is the hobby of ajay devgn", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "where was steve jobs born", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "ok google where does sophia vergara live", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what is the highest building in the world", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what's the answer to the universe", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "when is the birth date of taylor lautner", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what is the capital of california", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "tell me the largest ocean in the world", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what kinds of sunglasses are considered aviators", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "where is yosemite park", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "why are whales big", "gold": "chat", "src": "massive:qa_factoid"}
+{"text": "what is the definition of the word perpetual", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "describe a rotor", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "give me the definition for the word pontificate", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "what does oscillate mean", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "what is a hypothesis", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "check definition of capricious", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "give me the description of a smartphone circuit", "gold": "chat", "src": "massive:qa_definition"}
+{"text": "one plus two equal", "gold": "chat", "src": "massive:qa_maths"}
+{"text": "what's the sum of the two numbers four and six", "gold": "chat", "src": "massive:qa_maths"}
+{"text": "how much is one plus one", "gold": "chat", "src": "massive:qa_maths"}
+{"text": "what is the square root of nine", "gold": "chat", "src": "massive:qa_maths"}
+{"text": "show me the answer for this problem two hundred and forty six plus six hundred and fifty four", "gold": "chat", "src": "massive:qa_maths"}
+{"text": "what's two plus two", "gold": "chat", "src": "massive:qa_maths"}
+{"text": "what's the recipe for fish soup", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "how long do i cook maccoroni", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "how long does it take to make vegetable lasagna", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "how long should i boil the egg", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "instructions to make a meal", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "how is rice prepared", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "give me a cooking tutorial", "gold": "chat", "src": "massive:cooking_recipe"}
+{"text": "what day of the week does the fifteenth of march fall on", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "what's the date", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "when is the next friday the thirteenth", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "today is which date", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "what is the time in canada now", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "tell me current time in los angels", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "present time in new york", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "what time is it in central time zone", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "what month is today", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "the second of next mont lands on what day", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "what day is new year's eve this year", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "show me the current time in germany", "gold": "chat", "src": "massive:datetime_query"}
+{"text": "i need an alarm", "gold": "time", "src": "clinc150:alarm"}
+{"text": "set an alarm for 5am", "gold": "time", "src": "clinc150:alarm"}
+{"text": "could you set the alarm", "gold": "time", "src": "clinc150:alarm"}
+{"text": "help me wake up with an alarm at 5:30am", "gold": "time", "src": "clinc150:alarm"}
+{"text": "i'd love to set an alarm", "gold": "time", "src": "clinc150:alarm"}
+{"text": "i want an alarm for 6 am", "gold": "time", "src": "clinc150:alarm"}
+{"text": "can you set an alarm", "gold": "time", "src": "clinc150:alarm"}
+{"text": "i need to up by noon", "gold": "time", "src": "clinc150:alarm"}
+{"text": "please play my list of reminders", "gold": "time", "src": "clinc150:reminder"}
+{"text": "please go though the bullet points on my reminder list", "gold": "time", "src": "clinc150:reminder"}
+{"text": "what were the things that i wanted to remember", "gold": "time", "src": "clinc150:reminder"}
+{"text": "what items did i want to remember", "gold": "time", "src": "clinc150:reminder"}
+{"text": "can you tell me the to do's on my reminder list", "gold": "time", "src": "clinc150:reminder"}
+{"text": "what did i ask you to remind me of", "gold": "time", "src": "clinc150:reminder"}
+{"text": "remind me of the items on my list of things to remember", "gold": "time", "src": "clinc150:reminder"}
+{"text": "please set a reminder for me to put the clothes in the dryer", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "set a reminder for when the turkey is finished cooking", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "remind me to put gas in my car", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "i need a reminder to wash dishes", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "set up a new reminder to alert me when it's time to put the trash out", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "set a reminder to buy bread", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "make a reminder to pay the mortgage", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "i need to set a reminder to call lisa for her birthday", "gold": "time", "src": "clinc150:reminder_update"}
+{"text": "i need to start a timer", "gold": "time", "src": "clinc150:timer"}
+{"text": "set a timer for 5 minutes from now", "gold": "time", "src": "clinc150:timer"}
+{"text": "make a 10 minute timer", "gold": "time", "src": "clinc150:timer"}
+{"text": "will you create a timer for me", "gold": "time", "src": "clinc150:timer"}
+{"text": "let me know when it's been 5 minutes", "gold": "time", "src": "clinc150:timer"}
+{"text": "set a 5 minute timer", "gold": "time", "src": "clinc150:timer"}
+{"text": "can you set the timer to 20 minutes", "gold": "time", "src": "clinc150:timer"}
+{"text": "can i get a timer set", "gold": "time", "src": "clinc150:timer"}
+{"text": "is it possible to set a timer", "gold": "time", "src": "clinc150:timer"}
+{"text": "read my todo list", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "is it possible to read my to-do list again", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "tell me my to-do list", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "check on my to-do list items", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "is my todo list possible today", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "what's on my todo list", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "is make a hair appointment on my todo list right now", "gold": "todo", "src": "clinc150:todo_list"}
+{"text": "get rid of my to do list", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "i need you to clear my todo list", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "insert mowing on the chore list", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "please add laundry to the chores", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "remove grocery shopping from todo list", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "please note vacuuming on my to do list", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "please put lawn mowing on my list of to dos", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "remove laundry from my to do list", "gold": "todo", "src": "clinc150:todo_list_update"}
+{"text": "does the shopping list have apples on it", "gold": "todo", "src": "clinc150:shopping_list"}
+{"text": "tell me what's is on my shopping list", "gold": "todo", "src": "clinc150:shopping_list"}
+{"text": "tell me the items in my shopping list", "gold": "todo", "src": "clinc150:shopping_list"}
+{"text": "have i already got eggs down on the shopping list", "gold": "todo", "src": "clinc150:shopping_list"}
+{"text": "are carrots added to the grocery list", "gold": "todo", "src": "clinc150:shopping_list"}
+{"text": "milk should be added to my shopping list", "gold": "todo", "src": "clinc150:shopping_list_update"}
+{"text": "put milk on my shopping list", "gold": "todo", "src": "clinc150:shopping_list_update"}
+{"text": "tack on a gallon of milk to the grocery list", "gold": "todo", "src": "clinc150:shopping_list_update"}
+{"text": "make sure to put eggs on the grocery list", "gold": "todo", "src": "clinc150:shopping_list_update"}
+{"text": "add eggs to my shopping list if it's not already there", "gold": "todo", "src": "clinc150:shopping_list_update"}
+{"text": "i'd like to get soda while i'm out; add it to my shopping list", "gold": "todo", "src": "clinc150:shopping_list_update"}
+{"text": "you have yo go to school on calendar", "gold": "tool", "src": "clinc150:calendar"}
+{"text": "did i set a day on my calendar for voting in the next election", "gold": "tool", "src": "clinc150:calendar"}
+{"text": "is my meeting with frank on my calendar", "gold": "tool", "src": "clinc150:calendar"}
+{"text": "is anything on my calendar for june 22nd", "gold": "tool", "src": "clinc150:calendar"}
+{"text": "i can't remember if i added the fun run to my calendar yet; did i", "gold": "tool", "src": "clinc150:calendar"}
+{"text": "what do i have going on on my calendar for march 18th", "gold": "tool", "src": "clinc150:calendar"}
+{"text": "take work from my calendar for may 7th", "gold": "tool", "src": "clinc150:calendar_update"}
+{"text": "delete all calendar entries on march 3", "gold": "tool", "src": "clinc150:calendar_update"}
+{"text": "clear my calendar for april 20th", "gold": "tool", "src": "clinc150:calendar_update"}
+{"text": "erase meeting with jeff from my calendar", "gold": "tool", "src": "clinc150:calendar_update"}
+{"text": "i need to add something to my calendar for next tuesday", "gold": "tool", "src": "clinc150:calendar_update"}
+{"text": "cancel doctors appointment from my calendar", "gold": "tool", "src": "clinc150:calendar_update"}
+{"text": "when is my meeting with invoicing scheduled", "gold": "tool", "src": "clinc150:meeting_schedule"}
+{"text": "what time is my meeting with design team scheduled for", "gold": "tool", "src": "clinc150:meeting_schedule"}
+{"text": "do i have any meetings scheduled today", "gold": "tool", "src": "clinc150:meeting_schedule"}
+{"text": "do i have any meetings between 1 and 8 pm", "gold": "tool", "src": "clinc150:meeting_schedule"}
+{"text": "can you tell me the weather forecast", "gold": "tool", "src": "clinc150:weather"}
+{"text": "tell me the weather for today", "gold": "tool", "src": "clinc150:weather"}
+{"text": "how is that weather", "gold": "tool", "src": "clinc150:weather"}
+{"text": "could you tell me what the weather is in austin", "gold": "tool", "src": "clinc150:weather"}
+{"text": "what's the weather like today", "gold": "tool", "src": "clinc150:weather"}
+{"text": "what are the weather conditions like in seattle", "gold": "tool", "src": "clinc150:weather"}
+{"text": "put on some metallica music", "gold": "tool", "src": "clinc150:play_music"}
+{"text": "play the song called baby shark", "gold": "tool", "src": "clinc150:play_music"}
+{"text": "put on my 90s playlist", "gold": "tool", "src": "clinc150:play_music"}
+{"text": "play oldschool rap", "gold": "tool", "src": "clinc150:play_music"}
+{"text": "can you play the song that goes like, \"starships were meant to fly", "gold": "tool", "src": "clinc150:play_music"}
+{"text": "text dan and tell him to go home", "gold": "tool", "src": "clinc150:text"}
+{"text": "text jean and tell him to call work", "gold": "tool", "src": "clinc150:text"}
+{"text": "tell fred that i don't have his guitar", "gold": "tool", "src": "clinc150:text"}
+{"text": "text laura i'll be late for dinner", "gold": "tool", "src": "clinc150:text"}
+{"text": "text mark and tell him to leave now", "gold": "tool", "src": "clinc150:text"}
+{"text": "it is good to see you", "gold": "chat", "src": "clinc150:greeting"}
+{"text": "will you tell me how the ai is doing", "gold": "chat", "src": "clinc150:greeting"}
+{"text": "hey there, how are you today", "gold": "chat", "src": "clinc150:greeting"}
+{"text": "hey, what's up", "gold": "chat", "src": "clinc150:greeting"}
+{"text": "can you tell me something funny about science", "gold": "chat", "src": "clinc150:tell_joke"}
+{"text": "tell me a joke about elephants", "gold": "chat", "src": "clinc150:tell_joke"}
+{"text": "give me a joke about the topic of television", "gold": "chat", "src": "clinc150:tell_joke"}
+{"text": "today's fun fact", "gold": "chat", "src": "clinc150:fun_fact"}
+{"text": "tell me fun facts on science topics", "gold": "chat", "src": "clinc150:fun_fact"}
+{"text": "what is some trivia question about coffee", "gold": "chat", "src": "clinc150:fun_fact"}
+{"text": "may i have your name", "gold": "chat", "src": "clinc150:what_is_your_name"}
+{"text": "what's your name anyway", "gold": "chat", "src": "clinc150:what_is_your_name"}
+{"text": "what did they name you", "gold": "chat", "src": "clinc150:what_is_your_name"}
+{"text": "is this a bot", "gold": "chat", "src": "clinc150:are_you_a_bot"}
+{"text": "are you real or a computer", "gold": "chat", "src": "clinc150:are_you_a_bot"}
+{"text": "could you tell me if you're a real person", "gold": "chat", "src": "clinc150:are_you_a_bot"}
+{"text": "do you think being alive has any meaning", "gold": "chat", "src": "clinc150:meaning_of_life"}
+{"text": "what do you know about lifes meaning", "gold": "chat", "src": "clinc150:meaning_of_life"}
+{"text": "define the meaning of life for me", "gold": "chat", "src": "clinc150:meaning_of_life"}
+{"text": "thanks for that response", "gold": "chat", "src": "clinc150:thank_you"}
+{"text": "many thank", "gold": "chat", "src": "clinc150:thank_you"}
+{"text": "thank you for that reply", "gold": "chat", "src": "clinc150:thank_you"}
+{"text": "what does mature mean", "gold": "chat", "src": "clinc150:definition"}
+{"text": "can you tell me what obsolescence means", "gold": "chat", "src": "clinc150:definition"}
+{"text": "what's the definition of luminescent", "gold": "chat", "src": "clinc150:definition"}
+{"text": "what is the meaning of the word girn", "gold": "chat", "src": "clinc150:definition"}
+{"text": "what is 100 multiplied by 55", "gold": "chat", "src": "clinc150:calculator"}
+{"text": "what is 1243 times 45", "gold": "chat", "src": "clinc150:calculator"}
+{"text": "tell me what 1875 plus 3459 equals", "gold": "chat", "src": "clinc150:calculator"}
+{"text": "what is the solution to sixty times thirty", "gold": "chat", "src": "clinc150:calculator"}
+{"text": "which day is it now", "gold": "chat", "src": "clinc150:date"}
+{"text": "date please", "gold": "chat", "src": "clinc150:date"}
+{"text": "give me today's date", "gold": "chat", "src": "clinc150:date"}
+{"text": "what's tomorrow's date", "gold": "chat", "src": "clinc150:date"}
+{"text": "can you tell me the current time in jamaica", "gold": "chat", "src": "clinc150:time"}
+{"text": "what time is it in the central timezone", "gold": "chat", "src": "clinc150:time"}
+{"text": "can you tell me what time it is in dallas", "gold": "chat", "src": "clinc150:time"}
+{"text": "what time is it right now at home", "gold": "chat", "src": "clinc150:time"}
+{"text": "how would i say nice to meet you if i were russian", "gold": "chat", "src": "clinc150:translate"}
+{"text": "how would i say where is the bathroom if i were korean", "gold": "chat", "src": "clinc150:translate"}
+{"text": "what would the word for grass be in finland", "gold": "chat", "src": "clinc150:translate"}
+{"text": "what do i need to do to cook a chicken", "gold": "chat", "src": "clinc150:recipe"}
+{"text": "how do you prepare omelet", "gold": "chat", "src": "clinc150:recipe"}
+{"text": "i want a recipe for roasted veggies", "gold": "chat", "src": "clinc150:recipe"}
+{"text": "this process needs to stop", "gold": "control", "src": "clinc150:cancel"}
+{"text": "can you turn off the process", "gold": "control", "src": "clinc150:cancel"}
+{"text": "please stop the current process", "gold": "control", "src": "clinc150:cancel"}
+{"text": "stop processing", "gold": "control", "src": "clinc150:cancel"}
+{"text": "you can cancel the task", "gold": "control", "src": "clinc150:cancel"}
+{"text": "you can stop talking ai", "gold": "control", "src": "clinc150:cancel"}
+{"text": "stop speaking", "gold": "control", "src": "clinc150:cancel"}
+{"text": "could you repeat that", "gold": "control", "src": "clinc150:repeat"}
+{"text": "may you say that again", "gold": "control", "src": "clinc150:repeat"}
+{"text": "please say it one more time", "gold": "control", "src": "clinc150:repeat"}
+{"text": "would you repeat what you said earlier", "gold": "control", "src": "clinc150:repeat"}
+{"text": "would you mind repeating that", "gold": "control", "src": "clinc150:repeat"}
+{"text": "what were you just saying", "gold": "control", "src": "clinc150:repeat"}
+{"text": "repeat please", "gold": "control", "src": "clinc150:repeat"}
+{"text": "please tell me the name that you have for me", "gold": "memory", "src": "clinc150:user_name"}
+{"text": "do you have a name for me", "gold": "memory", "src": "clinc150:user_name"}
+{"text": "i would like to know the name you have for me", "gold": "memory", "src": "clinc150:user_name"}
+{"text": "what do i go by", "gold": "memory", "src": "clinc150:user_name"}
+{"text": "how is ford's stock doing", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what do i put on my feet", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "at the olympics, what country won the gold medal in basketball", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what are yahoo's top stories right now", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what should i take for a cold", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what is the breath to compression ratio for cpr", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "find me articles on appropriate wedding attire", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "get me articles on earthquake preparedness", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what is the life expectancy of a polar bear", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "who plays han solo", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "display the song lyrics for me", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "find my wallet", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "please go to wikipedia and search for articles related to nsa", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what's the best make-up to cover a black eye", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "email my boss, tell him i wont be in today", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what are cars like mine selling for online", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what's the power consumption of my fridge", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "tell me which wifi network you are connected to right now", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how many keys does a xylophone have", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "organize my photos by date please", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "request a refund on the car wax i bought yesterday", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "does my carrier have coverage in europe", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "aquire the soundtracks from the movie if i stay and add them to my ipod", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "i have a super runny nose and want to find a doctor", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how safe is it to consume the substance h2o", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "will the anti-vaxxers die off if no one gives them vaccines", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "where is the best place to mine for gold", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "name the leader from tibet that stands firm for world peace", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how can i repair a broken watch", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what's the current demand for wood from rain forests", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "can you tell me how to clean a fish tank", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "generate a list of the past 10 judge executives", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how could i get into the guiness book of world records", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how do i get perfect alignment with the curb", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how long do i have to wait to get my refund", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what is the cheapest new car for this year", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "when do the kids get out of school today", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "what size pipes are used for sinks", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "tell me how long until the nascar race begins", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how many polar bears are still alive in the arctic", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "please book another boat for this weekends trip", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "how much money would my house sell for", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "can you tell me how to solve simple algebraic equations with one variable", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "when should you use a dry cleaner", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "tell me about the amusement park", "gold": "chat", "src": "clinc150:oos", "also": ["tool", "memory"]}
+{"text": "nevermind.", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "Nevermind, I don't want it", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "Stop do not add butter", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "i change my mind cancel it", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "No; don't take it after all.", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "oh, changed my mind. Cancel", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "Actually, no, I don't want to see any of my lists, so you can cancel my request.", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "actually, cancel it", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "cancel that now", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "no, don't actually", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "Oh, ignore that.", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "actually, cancel that search", "gold": "control", "src": "presto:Cancel+cancel-action"}
+{"text": "Add tea at the top spot of the list called To Do wait no Shopping", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Please add Ralph- no Ronny- add Ronny to the wedding invite list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "I want to add cabbage and tea to the shopping no grocery list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "I would like to add AirPods, no Galaxy Buds to my tech list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Add glitter glue no glue sticks to School Supply list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Help me add grapes to the second, no first list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Please add apples to the school supplies list, I mean paper, not apples", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "I need to add ham no turkey to the Aldi list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "add sugar no rice to the list", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Would you please add floor cleaner sorry I meant furniture cleaner to the shopping list?", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Put call Phelicia no call Jane on my to do list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "Add copy no notebook paper to my list.", "gold": "todo", "src": "presto:Add_item_to_list+within-turn-correction"}
+{"text": "What's in today's, no, yesterday's message from Rob?", "gold": "tool", "src": "presto:Get_message_content+within-turn-correction"}
+{"text": "Video call with John on Skype, actually on Meet.", "gold": "tool", "src": "presto:Initiate_call+within-turn-correction"}
+{"text": "Send ETA via Instagram, no, Snapchat.", "gold": "tool", "src": "presto:Send_digital_object+within-turn-correction"}
+{"text": "Call mom's work number, no home number.", "gold": "tool", "src": "presto:Initiate_call+within-turn-correction"}
+{"text": "Read the WhatsApp message from Jack, uh, I mean John.", "gold": "tool", "src": "presto:Get_message_content+within-turn-correction"}
+{"text": "Bring up the text about the sales conference actually no it's an email.", "gold": "tool", "src": "presto:Get_message_content+within-turn-correction"}
+{"text": "Send my mom a text, I mean an email.", "gold": "tool", "src": "presto:Send_digital_object+within-turn-correction"}
+{"text": "Post, no, Tweet 'I'm on vacation'.", "gold": "tool", "src": "presto:Post_message+within-turn-correction"}
+{"text": "Post on Facebook, I mean post on Twitter.", "gold": "tool", "src": "presto:Post_message+within-turn-correction"}
+{"text": "create facebook no twitter post", "gold": "tool", "src": "presto:Post_message+within-turn-correction"}
+{"text": "Please get the written, no, video message.", "gold": "tool", "src": "presto:Get_message_content+within-turn-correction"}
+{"text": "Show me my unread Whatsapp oops I meant Outlook messages please.", "gold": "tool", "src": "presto:Get_message_content+within-turn-correction"}
+{"text": "Create a wishlist on my Android tablet.", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Make a new list for pasta shopping.", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Set London Fog beverage on Winter Bucket list", "gold": "todo", "src": "presto:Add_item_to_list"}
+{"text": "add cereal and bread to new grocery list", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Start a list called my favorite things", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Just add something to my list.", "gold": "todo", "src": "presto:Add_item_to_list"}
+{"text": "put eggs on my grocery list", "gold": "todo", "src": "presto:Add_item_to_list"}
+{"text": "shoes, add to list\\", "gold": "todo", "src": "presto:Add_item_to_list"}
+{"text": "Add canned foods to a new list no9w", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Kindly add egg to a new grocery list", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Add buy oil and tires", "gold": "todo", "src": "presto:Add_item_to_list"}
+{"text": "Create a new moving list.", "gold": "todo", "src": "presto:Create_list"}
+{"text": "Put peanut butter butter on my grocery list for tomorrow.", "gold": "todo", "src": "presto:Add_item_to_list+disfluency"}
+{"text": "Uh add that to my shopping list.", "gold": "todo", "src": "presto:Add_item_to_list+disfluency"}
+{"text": "can can you add apples to the list", "gold": "todo", "src": "presto:Add_item_to_list+disfluency"}
+{"text": "Put winter gloves onto the the list put it on the list I made last week.", "gold": "todo", "src": "presto:Add_item_to_list+disfluency"}
+{"text": "Add cherries oh yeah add cherries too on the list", "gold": "todo", "src": "presto:Add_item_to_list+disfluency"}
+{"text": "I want to could you umm add Dick's to umm the errands list.", "gold": "todo", "src": "presto:Add_item_to_list+disfluency"}
+{"text": "Get unread messages from yesterday on Yahoo mail mail.", "gold": "tool", "src": "presto:Get_message_content+disfluency"}
+{"text": "Will you write a new Facebook post on Facebook?", "gold": "tool", "src": "presto:Post_message+disfluency"}
+{"text": "Read me the last, the last 4 messages from Brian.", "gold": "tool", "src": "presto:Get_message_content+disfluency"}
+{"text": "Show me what um David emailed me yesterday.", "gold": "tool", "src": "presto:Get_message_content+disfluency"}
+{"text": "Make a tweet to um yeah Twitter.", "gold": "tool", "src": "presto:Post_message+disfluency"}
+{"text": "I would like to post this to um to um Facebook, The baby is here!", "gold": "tool", "src": "presto:Post_message+disfluency"}
+{"text": "Find one in Denpasar.", "prev": "Where can I find free parking in Ubud in Bali?", "revision": true, "src": "presto:correct-argument"}
+{"text": "No, call Luna.", "prev": "Make a call to 555 111 8888", "revision": true, "src": "presto:correct-argument"}
+{"text": "call mateo instead", "prev": "call david", "revision": true, "src": "presto:correct-argument"}
+{"text": "can you take a selfie instead?", "prev": "can you take a black and white photo?", "revision": true, "src": "presto:correct-argument"}
+{"text": "Yes, Call Ava.", "prev": "Call Eva Brown.", "revision": true, "src": "presto:correct-argument"}
+{"text": "I changed my mind. Call Harper JOHNSON", "prev": "can you call Evelyn THOMAS?", "revision": true, "src": "presto:correct-argument"}
+{"text": "Dont add to walmart list, add to shopping list instead", "prev": "Add iron to walmart list", "revision": true, "src": "presto:correct-argument"}
+{"text": "Hey would you look for parking at 5pm instead?", "prev": "Can I look for free parking at 7pm tonight?", "revision": true, "src": "presto:correct-argument"}
+{"text": "Oh, actually, Samuel", "prev": "Make a phone call", "revision": true, "src": "presto:correct-argument"}
+{"text": "Is there a parking garage near Denny's on Mt Holly?", "prev": "Where's the nearest parking lot to me in Rock Hill?", "revision": true, "src": "presto:correct-argument"}
+{"text": "Call 555-444-9999", "prev": "Start a call to Levi", "revision": true, "src": "presto:correct-argument"}
+{"text": "no, call william hill", "prev": "call Oak Hill Ohio public swimming pool", "revision": true, "src": "presto:correct-argument"}
+{"text": "Try calling 555-111-5555", "prev": "Call up Ava", "revision": true, "src": "presto:correct-argument"}
+{"text": "actually add cereal instead of eggs", "prev": "add eggs to my grocery list", "revision": true, "src": "presto:correct-argument"}
+{"text": "No, remove car wash.", "prev": "car wash and gas", "revision": true, "src": "presto:correct-action"}
+{"text": "I mean, add dogs to my volunteer list", "prev": "show me my volunteer list", "revision": true, "src": "presto:correct-action"}
+{"text": "Actually I want to edit a note.", "prev": "Show me the note titled chores.", "revision": true, "src": "presto:correct-action"}
+{"text": "Well, delete the note.", "prev": "Make a note that says \"Come today by evening\"", "revision": true, "src": "presto:correct-action"}
+{"text": "no, actually, please edit note 7", "prev": "make memo", "revision": true, "src": "presto:correct-action"}
+{"text": "Oh, actually remove the list", "prev": "Add visit the railway station to my Pick list", "revision": true, "src": "presto:correct-action"}
+{"text": "okay delete the list", "prev": "get my fitness list", "revision": true, "src": "presto:correct-action"}
+{"text": "Yes, I meant to delete Scorpions", "prev": "show my movies list", "revision": true, "src": "presto:correct-action"}
+{"text": "delete it for me please", "prev": "can you make a new note", "revision": true, "src": "presto:correct-action"}
+{"text": "well, edit my note that says call the pet vet", "prev": "take me to my chores note", "revision": true, "src": "presto:correct-action"}
+{"text": "well i need to edit the dermatologist note", "prev": "will you make a note to see a dermatologist", "revision": true, "src": "presto:correct-action"}
+{"text": "wait, edit my 5th note", "prev": "what is my 4th note about?", "revision": true, "src": "presto:correct-action"}
+{"text": "actually, delete that note", "prev": "please create a note", "revision": true, "src": "presto:correct-action"}
+{"text": "wait, remove playoff tree from sports list", "prev": "sports list", "revision": true, "src": "presto:correct-action"}
