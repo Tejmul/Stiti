@@ -151,7 +151,7 @@ def decide(text: str, qvec=None, context: str = "") -> Decisions:
         from . import intent
         t = time.perf_counter()
         v = qvec.to_numpy().astype("float32") if hasattr(qvec, "to_numpy") else qvec
-        d.answers["domain"], d.conf["domain"], _ = intent.classify(v, "domain")
+        d.answers["domain"], d.conf["domain"], _ = intent.classify(v, "domain", text=text)
         d.answers["text_emotion"], d.conf["text_emotion"], _ = intent.classify(v, "mood")
         d.source, d.latency_ms = "exemplar-knn", (time.perf_counter() - t) * 1000
     # privacy: floor wins if stricter

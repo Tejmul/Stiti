@@ -19,7 +19,7 @@ db = os.environ.get("STITI_DB", "")
 if not db.rstrip("/").split("/")[-1].startswith("stiti_test"):
     sys.exit(f"refusing to run against {db!r}: use a stiti_test* database")
 
-from stiti import cards                                                # noqa: E402
+from stiti import cards, say                                           # noqa: E402
 from stiti.db import one, q                                            # noqa: E402
 from stiti.fastpath import handlers                                    # noqa: E402
 from stiti.overlay import model as M                                   # noqa: E402
@@ -139,7 +139,7 @@ cards.remember_task(None)
 r = handlers.todo("it's done")
 ev = cards.take()
 check("two open, none recent: asks which one (names both), changes nothing",
-      r.startswith("Which one") and "gym" in r.lower() and "dsa" in r.lower()
+      r.startswith("Which") and r.endswith("?") and "gym" in r.lower() and "dsa" in r.lower()
       and one("SELECT count(*) n FROM tasks WHERE status='open'")["n"] == 2, r)
 c = cards.for_turn("it's done", "todo", r, None, event=ev)
 check("… and shows the list he's choosing from", c and c["kind"] == "todos" and len(c["items"]) == 2, str(c))
@@ -163,8 +163,8 @@ check("bare 'done' with nothing in play → not a to-do", handlers.todo("Okay do
 cards.remember_task(one("SELECT id FROM tasks WHERE title ILIKE 'gym'")["id"])
 check("bare 'done' right after a to-do was added → that one", "gym" in (handlers.todo("Done.") or "").lower())
 cards.take()
-check("nothing open: 'it's done' says the list is clear", handlers.todo("it's done") == "Your list is already clear.")
-check("curly apostrophe too (‘it’s done’)", handlers.todo("it’s done") == "Your list is already clear.")
+check("nothing open: 'it's done' says the list is clear", handlers.todo("it's done") in say.variants("list_already_clear"))
+check("curly apostrophe too (‘it’s done’)", handlers.todo("it’s done") in say.variants("list_already_clear"))
 
 reset()
 for t in ("gym", "laundry", "dsa practice", "call home", "buy notebook", "read paper", "reply to mail"):

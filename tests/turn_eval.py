@@ -428,7 +428,7 @@ from stiti.voice import speaker as S                                  # noqa: E4
 
 check("acks/fillers are English with no time promises",
       all(not any(w in t.lower() for w in ("ek sec", "dekhti", "karti", "one sec", "second"))
-          for t in list(S.ACKS.values()) + S.FILLERS) and S.FILLER_AFTER_S == 1.5)
+          for t in [x for v in S.ACKS.values() for x in v] + S.FILLERS) and S.FILLER_AFTER_S == 1.5)
 
 
 class FakeTTS:

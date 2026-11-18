@@ -43,6 +43,7 @@ run "never claims what it didn't do" tests/honest_actions_eval.py
 run "whole sentences (no missing words)" tests/whole_sentence_eval.py
 run "language switching (D34)" tests/lang_switch_eval.py
 run "intent: life updates are chat" tests/intent_eval.py
+run "intent: public yardstick (D50)" tests/public_intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
 run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
@@ -55,4 +56,6 @@ run "anticipating him (weather, brief, heads-up, nags)" tests/anticipate_eval.py
 run "fetch first, then speak (D43)" tests/fetch_first_eval.py
 run "remembers all he told her (D48)" tests/recap_eval.py
 run "notices what matters, asks once, books it (D49)" tests/important_things_eval.py
+run "varied wording, same honesty (D50)" tests/wording_eval.py
+run "example replies in the briefing (D50)" tests/examples_eval.py
 exit $fail

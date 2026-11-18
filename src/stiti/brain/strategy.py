@@ -154,6 +154,7 @@ class Strategy:
     avoid_terms: list[str] = field(default_factory=list)   # recalled entities he didn't mention: never ask about them
     said: object = None             # norepeat.Ledger: what she already said this conversation (None = repeating is OK)
     more: bool = False              # he asked "what else?": only new things, or the honest "that's most of what I know"
+    shown: tuple = ()               # example sentences shown in this turn's briefing (D50): never said back word for word
 
     def ask_rule(self) -> str:
         return ("at most one short offer to act (e.g. \"Want me to set it?\"), only if truly needed"
