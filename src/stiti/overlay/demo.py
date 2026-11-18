@@ -29,6 +29,7 @@ import AppKit
 from PyObjCTools import AppHelper
 
 from .. import overlay
+from . import model as M
 from . import model
 from .surface import pointer_screen, screen_anchor
 
@@ -119,7 +120,9 @@ class Demo:
         except Exception:
             pass
         h = args.hold
-        phases = [("idle", h * 0.5 or 1.2, lambda: overlay.set_state("idle")),
+        phases = [("greeting", h * 0.5 or 1.8, lambda: (overlay.set_state("listening"),
+                                                        overlay.note(M.greeting("Sam"), 1.6))),
+                  ("idle", h * 0.5 or 1.2, lambda: overlay.set_state("idle")),
                   ("listening", h or 3.0, self._listen),
                   ("thinking", h * 0.6 or 1.5, self._think),
                   ("doing", h * 0.6 or 1.5, lambda: overlay.set_state("thinking", "calendar")),

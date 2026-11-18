@@ -80,7 +80,7 @@ def surface_alpha(base: float, acc: Access) -> float:
 
 def hairline(acc: Access, alpha: float = M.HAIR_A):
     """The 1 pt SKY border of the orb and the cards (near-solid under Increase Contrast)."""
-    return cg(M.SKY, 0.95 if acc.increase_contrast else alpha)
+    return cg(M.HAIR, 0.95 if acc.increase_contrast else alpha)
 
 
 def text_alpha(base: float, acc: Access) -> float:

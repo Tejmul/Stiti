@@ -11,7 +11,8 @@ from dataclasses import dataclass, field, replace
 
 # ---------------------------------------------------------------- palette (always dark: it sits over any window)
 DISC = (0x0A, 0x0F, 0x24)         # the orb's disc, navy #0a0f24
-CARD = (0x0B, 0x10, 0x26)         # card panel, navy #0b1026
+CARD_NAVY = (0x0B, 0x10, 0x26)    # card panel with the reactor orb, navy #0b1026
+CARD = (0x12, 0x10, 0x32)         # card panel now (indigo #121032, the knot orb's; apply_theme() sets it)
 BLUE = (0x46, 0x56, 0xD6)         # #4656d6
 MID = (0x62, 0x84, 0xE3)          # between blue and sky
 SKY = (0x7F, 0xB2, 0xF0)          # #7fb2f0
@@ -550,7 +551,28 @@ def orb_style() -> str:
             v = profile.get("orb")
         except Exception:
             v = None
-    return "knot" if (v or "").lower() == "knot" else "reactor"
+    return "reactor" if (v or "").lower() == "reactor" else "knot"     # D46: the knot is Stiti's own orb
+
+
+# The cards follow the orb. Knot (default): amber on indigo, rice-white hairlines. Reactor: the D44 blues.
+CARD_KNOT = (0x12, 0x10, 0x32)    # card panel with the knot orb, indigo #121032
+ACCENT, ACCENT_DEEP, HAIR = AMBER, AMBER, RICE
+
+
+def apply_theme(style: str | None = None) -> str:
+    """Set the colours the cards / hairlines / capsule icon use for this orb style. Called once before the UI is built."""
+    global ACCENT, ACCENT_DEEP, HAIR, CARD
+    style = style or orb_style()
+    if style == "reactor":
+        ACCENT, ACCENT_DEEP, HAIR, CARD = SKY, BLUE, SKY, CARD_NAVY
+    else:
+        ACCENT, ACCENT_DEEP, HAIR, CARD = AMBER, AMBER, RICE, CARD_KNOT
+    return style
+
+
+def greeting(name: str | None) -> str:
+    """The line the orb shows when he wakes her."""
+    return f"Hey {name}, what's on your mind?" if name and name.lower() != "you" else "Hey, what's on your mind?"
 
 
 def knot_points(n: int = KNOT_N) -> list[tuple[float, float]]:

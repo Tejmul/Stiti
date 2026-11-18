@@ -212,7 +212,7 @@ class Card:
         host.on_hover = self.on_hover
         _track(host)
         self._beam(host.layer(), w)
-        eb = label(lay.eyebrow, F_EYEBROW(), ns(M.SKY), kern=EYEBROW_KERN)
+        eb = label(lay.eyebrow, F_EYEBROW(), ns(M.ACCENT), kern=EYEBROW_KERN)
         eb.setFrame_(((M.PAD, M.PAD - 2), (w - 2 * M.PAD, M.EYEBROW_H)))
         host.addSubview_(eb)
         tl = label(lay.title, F_TITLE(), self.white(M.TEXT_A))
@@ -241,13 +241,13 @@ class Card:
         glow.setType_("radial")
         glow.setStartPoint_((0.5, 0.5))
         glow.setEndPoint_((1.0, 1.0))
-        glow.setColors_([cg(M.SKY, 0.16), cg(M.SKY, 0.0)])
+        glow.setColors_([cg(M.ACCENT, 0.16), cg(M.ACCENT, 0.0)])
         base.addSublayer_(glow)
         beam = crisp(Quartz.CAGradientLayer.layer())
         beam.setFrame_(((w / 2 - 72, 0), (144, 1.5)))
         beam.setStartPoint_((0.0, 0.5))
         beam.setEndPoint_((1.0, 0.5))
-        beam.setColors_([cg(M.SKY, 0.0), cg(M.WHITE, M.BEAM_A), cg(M.SKY, 0.0)])
+        beam.setColors_([cg(M.ACCENT, 0.0), cg(M.WHITE, M.BEAM_A), cg(M.ACCENT, 0.0)])
         base.addSublayer_(beam)
 
     def _row(self, host, lay: M.CardLayout, i: int, r: M.Row, w: float) -> dict:
@@ -270,12 +270,12 @@ class Card:
         if lay.kind == "todos":
             row["box"] = self._checkbox(rv.layer(), r.h)
         elif lay.kind == "reminders":
-            row["icon"] = symbol("bell", 13, ns(M.SKY, 0.85))
+            row["icon"] = symbol("bell", 13, ns(M.ACCENT, 0.85))
             if row["icon"] is not None:
                 row["icon"].setFrame_(((M.ROW_PAD - 1, (r.h - 18) / 2), (18, 18)))
                 rv.addSubview_(row["icon"])
         else:                                        # headlines are numbered
-            num = label(f"{i + 1:02d}", F_SOURCE(), ns(M.SKY, 0.6), kern=0.4)
+            num = label(f"{i + 1:02d}", F_SOURCE(), ns(M.ACCENT, 0.6), kern=0.4)
             num.setFrame_(((M.ROW_PAD, 9), (M.LEAD_W, 14)))
             rv.addSubview_(num)
         x = TEXT_X
@@ -285,7 +285,7 @@ class Card:
             tx.setFrame_(((x, 6), (room, r.lines * M.NEWS_LINE_H)))
             rv.addSubview_(tx)
             if r.meta:
-                meta = label(r.meta.upper(), F_SOURCE(), ns(M.SKY, text_alpha(0.7, self.acc)), kern=SOURCE_KERN)
+                meta = label(r.meta.upper(), F_SOURCE(), ns(M.ACCENT, text_alpha(0.7, self.acc)), kern=SOURCE_KERN)
                 meta.setFrame_(((x, 6 + r.lines * M.NEWS_LINE_H + 3), (room, 14)))
                 rv.addSubview_(meta)
                 row["meta"] = meta
@@ -315,8 +315,8 @@ class Card:
         ring, mark = crisp(Quartz.CAShapeLayer.layer()), crisp(Quartz.CAShapeLayer.layer())
         ring.setPath_(Quartz.CGPathCreateWithEllipseInRect(((0.75, 0.75), (BOX - 1.5, BOX - 1.5)), None))
         ring.setLineWidth_(1.5)
-        ring.setStrokeColor_(cg(M.SKY))
-        ring.setFillColor_(cg(M.SKY, 0.0))
+        ring.setStrokeColor_(cg(M.ACCENT))
+        ring.setFillColor_(cg(M.ACCENT, 0.0))
         mark.setFillColor_(None)
         mark.setLineWidth_(1.8)
         mark.setLineCap_(Quartz.kCALineCapRound)
@@ -334,18 +334,18 @@ class Card:
         Quartz.CATransaction.setDisableActions_(not animate)
         Quartz.CATransaction.setAnimationDuration_(0.18)
         if state == "done":
-            b["ring"].setStrokeColor_(cg(M.SKY))
-            b["ring"].setFillColor_(cg(M.SKY, 1.0))
+            b["ring"].setStrokeColor_(cg(M.ACCENT))
+            b["ring"].setFillColor_(cg(M.ACCENT, 1.0))
             b["mark"].setPath_(_lines([CHECK]))
             b["mark"].setStrokeColor_(cg(M.CARD))
         elif state == "removed":
             b["ring"].setStrokeColor_(cg(M.WHITE, 0.32))
-            b["ring"].setFillColor_(cg(M.SKY, 0.0))
+            b["ring"].setFillColor_(cg(M.ACCENT, 0.0))
             b["mark"].setPath_(_lines(CROSS))
             b["mark"].setStrokeColor_(cg(M.WHITE, 0.55))
         else:
-            b["ring"].setStrokeColor_(cg(M.SKY))
-            b["ring"].setFillColor_(cg(M.SKY, 0.0))
+            b["ring"].setStrokeColor_(cg(M.ACCENT))
+            b["ring"].setFillColor_(cg(M.ACCENT, 0.0))
         Quartz.CATransaction.commit()
         Quartz.CATransaction.begin()                 # the mark is drawn (or wiped) as a stroke
         Quartz.CATransaction.setDisableActions_(not animate)
@@ -375,7 +375,7 @@ class Card:
         if row["box"] is not None:
             self._tick_box(row["box"], ("removed" if op == "removed" else "done") if done else "open", animate)
         if row["icon"] is not None:          # SF Symbol replace + bounce
-            name, colour, a = ("bell.slash", M.WHITE, 0.45) if done else ("bell", M.SKY, 0.85)
+            name, colour, a = ("bell.slash", M.WHITE, 0.45) if done else ("bell", M.ACCENT, 0.85)
             set_symbol(row["icon"], name, ns(colour, a), animate)
         self._strike(row, done, animate, bright=op == "done")
         if row["meta"] is not None:
@@ -395,7 +395,7 @@ class Card:
         f = tx.frame()
         w = max(8.0, min(tx.attributedStringValue().size().width, f.size.width))
         line = Quartz.CALayer.layer()
-        line.setBackgroundColor_(cg(M.SKY, 0.95) if bright else cg(M.WHITE, 0.5))
+        line.setBackgroundColor_(cg(M.ACCENT, 0.95) if bright else cg(M.WHITE, 0.5))
         line.setCornerRadius_(0.75)
         line.setAnchorPoint_((0.0, 0.5))
         line.setBounds_(((0, 0), (w + 4, 1.5)))
@@ -462,7 +462,7 @@ class Card:
             row = self.rows[i]
             if row["glow"] is None:          # blue wash behind the new row
                 glow = Quartz.CALayer.layer()
-                glow.setBackgroundColor_(cg(M.BLUE, 0.34))
+                glow.setBackgroundColor_(cg(M.ACCENT_DEEP, 0.34))
                 glow.setCornerRadius_(8)
                 glow.setFrame_(row["view"].layer().bounds())
                 glow.setOpacity_(0.0)
@@ -473,7 +473,7 @@ class Card:
             row["glow"].setOpacity_(1.0)
             Quartz.CATransaction.commit()
             if row["icon"] is not None:
-                set_symbol(row["icon"], "bell.fill", ns(M.SKY), not self.acc.reduce_motion)
+                set_symbol(row["icon"], "bell.fill", ns(M.ACCENT), not self.acc.reduce_motion)
             if row["box"] is not None and not self.acc.reduce_motion:
                 self._bounce(row["box"]["box"])
 
@@ -486,7 +486,7 @@ class Card:
                 row["glow"].setOpacity_(0.0)
                 Quartz.CATransaction.commit()
             if row["icon"] is not None:
-                set_symbol(row["icon"], "bell", ns(M.SKY, 0.85), False)
+                set_symbol(row["icon"], "bell", ns(M.ACCENT, 0.85), False)
 
     def _do_strike(self, idx: list[int]) -> None:
         for i in idx:
@@ -519,7 +519,7 @@ class Card:
             self.rows[i]["view"].setAccessibilityElement_(False)
         g = self.gen
         AppHelper.callLater(secs + 0.05, self._hide_gone, g)
-        set_text(self.head["eyebrow"], new.eyebrow, F_EYEBROW(), ns(M.SKY), kern=EYEBROW_KERN)
+        set_text(self.head["eyebrow"], new.eyebrow, F_EYEBROW(), ns(M.ACCENT), kern=EYEBROW_KERN)
         if new.title != self.head["title"].stringValue():
             set_text(self.head["title"], new.title, F_TITLE(), self.white(M.TEXT_A))
         if self.visible and self.anchor is not None:      # the card shortens from the bottom; its top stays put

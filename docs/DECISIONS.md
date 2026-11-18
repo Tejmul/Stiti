@@ -1052,3 +1052,17 @@ mode — her voice (and his music) play in call quality and the mic audio is cod
 - Trade-off he should know: with AirPods in and the Mac far away, the Mac's mic hears him from a distance.
 - Tests: `mic_watchdog_eval` 53 (11 new). Real devices checked: default input = Bluetooth, built-in mic found.
   NOT measured: whether recognition on his voice is better this way (no recordings yet — task B2).
+## D46: Stiti's own orb — one woven line, three travelling points; cards and greeting to match (2026-11-18)
+**Why:** he saw the D44 reactor and said "a perfect Jarvis, but this is not Jarvis" — Stiti needs her own look. Three
+design boards later (kept in the session scratchpad, not in the repo) he picked the woven-line design after seeing it
+live. He also ruled out religious / ritual motifs and names: plain modern design only.
+- **Orb (default, `STITI_ORB` / profile key `orb`; `reactor` brings D44 back):** indigo disc #14123a, a closed
+  rice-white line (a trefoil) woven over and under itself, three points (one coral, two amber) riding it, a dotted
+  amber ring, amber glow. Idle: slow laps. Listening / speaking: the knot swells a little and the points grow with the
+  level. Thinking: the line keeps drawing itself and the points race. Same panel, capsule, hit-testing, Reduce Motion
+  and render-server rules as D44 (`overlay/orb.py` `_build_knot`, `_knot_look`, `_knot_level`; geometry in `model.py`).
+- **Cards follow the orb** (`model.apply_theme`): indigo #121032 panel, amber eyebrow / checkboxes / beam, rice-white
+  hairline. The reactor theme keeps the D44 blues.
+- **Greeting:** on wake with no command the capsule shows "Hey <what she calls him>, what's on your mind?" for 3.6 s
+  (`overlay.note`, `model.greeting`); a ✓ confirmation or "Checking …" label takes the capsule over.
+- Tests: `overlay_eval` 116, `card_motion_eval` 46. Seen by him live (the orb); the greeting and themed cards not yet.

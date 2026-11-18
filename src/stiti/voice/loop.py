@@ -448,6 +448,7 @@ class VoiceLoop:
                         print(f"You: {rest}")
                         self._handle(rest, c.audio, c)
                     else:
+                        overlay.note(_greeting_line())   # next to the orb: "Hey <name>, what's on your mind?"
                         self.say(self.engine.greet())
                     continue
                 if c.timed_out and c.state == "wait":   # "hold on" / "ek sec": he's thinking — say nothing
@@ -525,6 +526,15 @@ def _safe(fn, text: str):
     except Exception as e:
         print(f"[voice] hook failed: {e}", flush=True)
         return None
+
+
+def _greeting_line() -> str:
+    try:
+        from .. import profile
+        from ..overlay import model as OM
+        return OM.greeting(profile.call())
+    except Exception:
+        return "Hey, what's on your mind?"
 
 
 def _tutor_active() -> bool:

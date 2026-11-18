@@ -226,13 +226,16 @@ def contrast(c1, c2):
 print("colours")
 check("card and disc are opaque (alpha ≥ 0.94): what is behind never muddies them",
       M.CARD_A >= 0.94 and M.DISC_A >= 0.94 and M.CARD_A <= 1 and M.DISC_A <= 1)
-check("always dark, in Stiti's blues", lum(M.CARD) < 0.02 and lum(M.DISC) < 0.02
-      and M.CARD == (0x0B, 0x10, 0x26) and M.DISC == (0x0A, 0x0F, 0x24) and M.BLUE == (0x46, 0x56, 0xD6)
-      and M.SKY == (0x7F, 0xB2, 0xF0))
+check("always dark; the default theme is the knot orb's: indigo card, amber accent, rice-white hairline",
+      lum(M.CARD) < 0.02 and lum(M.DISC) < 0.02 and lum(M.INDIGO) < 0.02 and M.apply_theme("knot") == "knot"
+      and M.CARD == (0x12, 0x10, 0x32) and M.ACCENT == M.AMBER == (0xF4, 0xB4, 0x00) and M.HAIR == M.RICE)
+check("the reactor theme keeps the D44 blues", M.apply_theme("reactor") == "reactor" and M.CARD == (0x0B, 0x10, 0x26)
+      and M.ACCENT == M.SKY == (0x7F, 0xB2, 0xF0) and M.ACCENT_DEEP == M.BLUE and M.HAIR == M.SKY)
+M.apply_theme("knot")
 worst = over(M.CARD, M.CARD_A, M.WHITE)        # the card over a pure white window
 check("text contrast on the card, even over a white window: rows ≥ 7:1, meta + eyebrow ≥ 4.5:1",
       contrast(over(M.WHITE, M.ROW_A, worst), worst) >= 7 and contrast(over(M.WHITE, M.TEXT_A, worst), worst) >= 7
-      and contrast(over(M.WHITE, M.META_A, worst), worst) >= 4.5 and contrast(M.SKY, worst) >= 4.5,
+      and contrast(over(M.WHITE, M.META_A, worst), worst) >= 4.5 and contrast(M.ACCENT, worst) >= 4.5,
       f"{contrast(over(M.WHITE, M.META_A, worst), worst):.2f}")
 check("text alphas 96 / 90 / 50 %, hairline 28–35 %", (M.TEXT_A, M.ROW_A, M.META_A) == (0.96, 0.90, 0.50)
       and 0.28 <= M.HAIR_A <= 0.35)
@@ -485,11 +488,13 @@ ko = M.knot_overs(kp)
 check("it crosses itself three times, evenly spaced, one stretch passes over at each",
       len(ko) == 3 and len({(b - a) for a, b in ko}) == 1 and {(ko[k + 1][0] - ko[k][0]) for k in range(2)} == {M.KNOT_N // 3}, str(ko))
 check("the knot and its ring fit inside the disc", M.R_KNOT < M.R_KNOT_RING < M.ORB / 2)
-os.environ["STITI_ORB"] = "knot"
-check("STITI_ORB=knot selects it", M.orb_style() == "knot")
+os.environ.pop("STITI_ORB", None)
+check("the knot is the default orb", M.orb_style() == "knot")
 os.environ["STITI_ORB"] = "reactor"
-check("anything else is the reactor", M.orb_style() == "reactor")
+check("STITI_ORB=reactor brings the D44 reactor back", M.orb_style() == "reactor")
 os.environ.pop("STITI_ORB")
+check("the wake greeting uses what she calls him", M.greeting("Sam") == "Hey Sam, what's on your mind?"
+      and M.greeting(None) == M.greeting("you") == "Hey, what's on your mind?")
 
 print(f"overlay: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

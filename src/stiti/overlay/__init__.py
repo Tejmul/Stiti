@@ -74,6 +74,12 @@ def show_card(card: dict | None, speaking: bool = True) -> None:
         _call("show_card", card, speaking)
 
 
+def note(text: str, secs: float = 3.6) -> None:
+    """A short line next to the orb for a few seconds (the wake greeting)."""
+    if text:
+        _call("note", text, secs)
+
+
 def hide_card() -> None:
     _call("hide_card")
 

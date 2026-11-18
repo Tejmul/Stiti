@@ -53,6 +53,8 @@ class Overlay:
         self.tick_todo = tick_todo or _db_tick
         self.on_click = on_click               # orb click while she thinks / speaks = stop her
         self.acc = Access.read()
+        M.apply_theme()                        # the cards take the orb's colours (before any layer is built)
+        self.note_gen = 0
         self.state = M.OrbState()
         self.meters = {k: M.LevelMeter(**v) for k, v in M.METER.items()}
         self.src: str | None = None
@@ -148,6 +150,25 @@ class Overlay:
             self.orb.set_dim(self.orb.contains_pointer())
 
     # ---------------------------------------------------------------- cards
+    def note(self, text: str, secs: float = 3.6) -> None:
+        """A short line next to the orb ("Hey Tejmul, what's on your mind?"). A ✓ confirmation or a "Checking …"
+        label takes the capsule over; a state change (he starts talking) clears it."""
+        if not self.enabled or not text or self.state.state == "hidden" or self.confirm is not None:
+            return
+        self.note_gen += 1
+        self.orb.expand("waveform", text)
+        from PyObjCTools import AppHelper
+        AppHelper.callLater(secs, self._end_note, self.note_gen)
+
+    def _end_note(self, gen: int) -> None:
+        if gen != self.note_gen or self.confirm is not None:
+            return
+        lbl = M.doing_label(self.state.detail)
+        if lbl:
+            self.orb.expand(lbl[0], lbl[1])
+        else:
+            self.orb.collapse()
+
     def show_card(self, card: dict, speaking: bool = True) -> None:
         if not self.enabled or not isinstance(card, dict):
             return

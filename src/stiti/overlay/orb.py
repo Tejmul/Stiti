@@ -123,7 +123,7 @@ class Orb:
         canvas.setWantsLayer_(True)
         canvas.setAutoresizingMask_(flex)
         root.addSubview_(canvas)
-        self.style = M.orb_style()
+        self.style = M.apply_theme()
         self._build_disc(canvas.layer())
         self._build_reactor(canvas.layer())
         if self.style == "knot":
@@ -134,7 +134,7 @@ class Orb:
         clip.layer().setMasksToBounds_(True)
         clip.setAutoresizingMask_(AppKit.NSViewWidthSizable)
         root.addSubview_(clip)
-        self.sym = symbol("checkmark.circle.fill", 15, ns(M.SKY))
+        self.sym = symbol("checkmark.circle.fill", 15, ns(M.ACCENT))
         self.text = label("", F_LABEL(), ns(M.WHITE, text_alpha(M.TEXT_A, acc)))
         for v in (self.sym, self.text):
             if v is not None:
@@ -607,7 +607,7 @@ class Orb:
         return M.in_orb(p.x - f.origin.x - M.HALO, p.y - f.origin.y - M.HALO, f.size.width - 2 * M.HALO)
 
     # ---------------------------------------------------------------- capsule: "Checking calendar" / "✓ Start resume · 4 PM"
-    def expand(self, sym_name: str, text: str, tint=M.SKY) -> None:
+    def expand(self, sym_name: str, text: str, tint=None) -> None:
         """The disc grows to the right into a capsule; the orb stays as its round left end."""
         set_text(self.text, text, F_LABEL(), ns(M.WHITE, text_alpha(M.TEXT_A, self.acc)))
         self.text.sizeToFit()
@@ -615,7 +615,7 @@ class Orb:
         w = M.capsule_width(tw, symbol=self.sym is not None)
         x = M.ORB + M.CAP_GAP
         if self.sym is not None:
-            set_symbol(self.sym, sym_name, ns(tint), animate=not self.acc.reduce_motion and self.visible)
+            set_symbol(self.sym, sym_name, ns(tint or M.ACCENT), animate=not self.acc.reduce_motion and self.visible)
             self.sym.setFrame_(((x, (M.ORB - 20) / 2), (20, 20)))
             x += M.CAP_SYM
         self.text.setFrame_(((x, (M.ORB - th) / 2), (max(10.0, w - x - M.CAP_PAD + 2), th)))
