@@ -108,7 +108,8 @@ def _memclaim(text: str, s) -> bool:
 
 
 # Tool-call syntax a model wrote as TEXT instead of making the call (2026-11-18: "<toolcallwebsearch <argkeyquery…" was
-# spoken — GLM's <tool_call>web_search<arg_key>query</arg_key>… after the tool loop took its tools away). Never speech.
+# spoken — GLM's <tool_call>web_search<arg_key>query</arg_key>…, most likely after the tool loop took its tools away).
+# Never speech.
 TOOL_MARKUP_RX = re.compile(
     r"<\|?/?(?:tool_?call|function_?call|tool_?response|tool_?result|arg_?key|arg_?value|python_tag|invoke\b|parameter\b)"
     r"|<function=|\[TOOL_CALLS\]|\bto=functions\.|\bfunctions\.\w+\s*\("
@@ -323,7 +324,7 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
             break
         else:
             break
-    final = " ".join(res).strip()
+    final = re.sub(r"\.\s+\.(?=\s|$)", ".", " ".join(res).strip())     # a flattened list: "…(Vahan). . Next" → "…(Vahan). Next"
     if final.count("!") > 1:                     # understatement: one exclamation mark at most
         first = final.index("!") + 1
         final = final[:first] + final[first:].replace("!", ".")

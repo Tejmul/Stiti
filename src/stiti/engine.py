@@ -226,7 +226,7 @@ class Engine:
                     results.append((tool.name, res))
                 msgs.append({"role": "tool", "tool_call_id": c["id"], "content": res})
             if tainted and tools:               # after untrusted content: answer, don't act — and say so to the model
-                tools = []                      # (left with tool history but no tools, GLM wrote <tool_call> as text)
+                tools = []                      # (tool history with no tools is the likely reason GLM wrote <tool_call> as text)
                 msgs.append({"role": "system", "content": NO_MORE_TOOLS})
         return info.get("text") or psych.HONEST_NO_LOOKUP, info
 

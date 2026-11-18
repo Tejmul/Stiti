@@ -977,6 +977,7 @@ def _fetch(req: LiveRequest, k: int = 8, read: bool = True, budget: float | None
             if it.via == "web" and h not in hosts and not _NO_READ.search(h) and len(hosts) < n:
                 hosts.add(h)
                 reads.setdefault(it.url, _pool.submit(read_page, it.url, max(1.0, left())))
+
     def best() -> tuple[list[Page], bool]:
         """The pages to use, in rank order, and whether that choice is final (no better-ranked read still running)."""
         got: list[Page] = []
@@ -992,10 +993,10 @@ def _fetch(req: LiveRequest, k: int = 8, read: bool = True, budget: float | None
     waiting = set(reads.values())
     while waiting:                                  # with a page in hand, a slower better-ranked one isn't waited for
         el = time.perf_counter() - t0               # past PAGE_SOFT_S
-        got, final = best()
-        if final or el >= budget or (got and el >= PAGE_SOFT_S):
+        have = any(f.done() and f.exception() is None and f.result() for f in reads.values())
+        if best()[1] or el >= budget or (have and el >= PAGE_SOFT_S):
             break
-        _, waiting = wait(waiting, timeout=(PAGE_SOFT_S if got else budget) - el, return_when=FIRST_COMPLETED)
+        _, waiting = wait(waiting, timeout=(PAGE_SOFT_S if have else budget) - el, return_when=FIRST_COMPLETED)
     pages = [f.result() for f in reads.values() if f.done() and f.exception() is None and f.result()][:need]
     ok += ["page"] * len(pages)
     failed += ["page"] * sum(1 for f in reads.values() if f.done() and (f.exception() is not None or not f.result()))
