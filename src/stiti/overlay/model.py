@@ -523,3 +523,62 @@ class DismissTimer:
 
     def remaining(self, now: float) -> float | None:
         return None if self.deadline is None else max(0.0, self.deadline - now)
+
+
+# ---------------------------------------------------------------- the "knot" orb (preview, 2026-11-18)
+# He found the blue reactor "a perfect Jarvis, but this is not Jarvis" and asked to see the woven-line design from the
+# design board in the real overlay. One closed line woven over and under itself, three points travelling along it.
+INDIGO = (0x14, 0x12, 0x3A)       # the knot orb's disc
+RICE = (0xFB, 0xF6, 0xEC)         # its line
+AMBER = (0xF4, 0xB4, 0x00)        # glow, dashed ring, two of the points
+CORAL = (0xD7, 0x26, 0x3D)        # the third point
+R_KNOT = 21.5                     # the knot's outer radius inside the 64 pt disc
+R_KNOT_RING = 28.0                # the dashed ring around it
+KNOT_N = 360                      # points on the line
+KNOT_LAP = 1.6                    # one lap of a point = the state's spin period × this
+KNOT_SWELL = 0.07                 # the knot grows this much at full level
+BEAD_R, BEAD_SWELL = 1.9, 0.9     # a point's radius, and how much it grows at full level
+
+
+def orb_style() -> str:
+    """"reactor" (D44) or "knot". STITI_ORB wins; else the owner_profile key "orb"."""
+    import os
+    v = os.getenv("STITI_ORB")
+    if not v:
+        try:
+            from .. import profile
+            v = profile.get("orb")
+        except Exception:
+            v = None
+    return "knot" if (v or "").lower() == "knot" else "reactor"
+
+
+def knot_points(n: int = KNOT_N) -> list[tuple[float, float]]:
+    """A trefoil, as n points on a closed line inside the unit circle (y up)."""
+    out = []
+    for i in range(n):
+        u = 2 * math.pi * i / n
+        out.append(((math.sin(u) + 2 * math.sin(2 * u)) / 3.0, (math.cos(u) - 2 * math.cos(2 * u)) / 3.0))
+    return out
+
+
+def knot_overs(pts: list[tuple[float, float]] | None = None, half: int = 9) -> list[tuple[int, int]]:
+    """Index ranges (start, end) of the three stretches that pass OVER at the crossings: the line crosses itself three
+    times, each crossing is visited twice, and along the line the visits alternate over / under."""
+    pts = pts or knot_points()
+    n = len(pts)
+
+    def cross(i: int, j: int) -> bool:               # do segments i→i+1 and j→j+1 intersect?
+        (ax, ay), (bx, by), (cx, cy), (dx, dy) = pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]
+        d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax)
+        d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx)
+        d4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx)
+        return d1 * d2 < 0 and d3 * d4 < 0
+    visits: list[int] = []
+    for i in range(n):
+        for j in range(i + 2, n):
+            if (i - j) % n > 1 and cross(i, j):
+                visits += [i, j]
+    order = sorted(visits)
+    return [(v - half, v + half) for k, v in enumerate(order) if k % 2 == 0]

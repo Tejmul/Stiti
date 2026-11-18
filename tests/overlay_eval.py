@@ -478,5 +478,18 @@ else:
     _db_tick(tid, True)
     check("never revives a cancelled task", one("SELECT status FROM tasks WHERE id=%s", (tid,))["status"] == "cancelled")
 
+print("knot orb (preview style)")
+kp = M.knot_points()
+check("the knot is one closed line inside the unit circle", len(kp) == M.KNOT_N and max(math.hypot(x, y) for x, y in kp) <= 1.0 + 1e-9)
+ko = M.knot_overs(kp)
+check("it crosses itself three times, evenly spaced, one stretch passes over at each",
+      len(ko) == 3 and len({(b - a) for a, b in ko}) == 1 and {(ko[k + 1][0] - ko[k][0]) for k in range(2)} == {M.KNOT_N // 3}, str(ko))
+check("the knot and its ring fit inside the disc", M.R_KNOT < M.R_KNOT_RING < M.ORB / 2)
+os.environ["STITI_ORB"] = "knot"
+check("STITI_ORB=knot selects it", M.orb_style() == "knot")
+os.environ["STITI_ORB"] = "reactor"
+check("anything else is the reactor", M.orb_style() == "reactor")
+os.environ.pop("STITI_ORB")
+
 print(f"overlay: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

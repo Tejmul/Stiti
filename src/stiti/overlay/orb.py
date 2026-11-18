@@ -123,8 +123,11 @@ class Orb:
         canvas.setWantsLayer_(True)
         canvas.setAutoresizingMask_(flex)
         root.addSubview_(canvas)
+        self.style = M.orb_style()
         self._build_disc(canvas.layer())
         self._build_reactor(canvas.layer())
+        if self.style == "knot":
+            self._build_knot(canvas.layer())
         clip = AppKit.NSView.alloc().initWithFrame_(((M.HALO, M.HALO), (M.ORB, M.ORB)))   # the label never spills
         clip.setWantsLayer_(True)                                                         # out of the capsule
         clip.layer().setCornerRadius_(C)
@@ -225,6 +228,140 @@ class Orb:
         self.hold.addSublayer_(self.core)
         r.addSublayer_(self.hold)
 
+    # ---------------------------------------------------------------- the knot (preview style, STITI_ORB=knot)
+    def _knot_path(self, pts, closed: bool):
+        p = Quartz.CGPathCreateMutable()
+        for i, (x, y) in enumerate(pts):
+            (Quartz.CGPathMoveToPoint if i == 0 else Quartz.CGPathAddLineToPoint)(p, None, C + M.R_KNOT * x, C + M.R_KNOT * y)
+        if closed:
+            Quartz.CGPathCloseSubpath(p)
+        return p
+
+    def _build_knot(self, base) -> None:
+        """One closed line woven over and under itself on an indigo disc, three points travelling along it, a dashed
+        ring around. The reactor's rings stay built but hidden, so the two styles share every other code path."""
+        for lay in (self.aura, self.track, self.comet, self.tickring, self.mid, self.inner, self.bloom, self.hold):
+            lay.setHidden_(True)
+        fill = cg(M.INDIGO, surface_alpha(M.DISC_A, self.acc))
+        self.shade.setBackgroundColor_(fill)
+        self.glow.setBackgroundColor_(fill)
+        self.glow.setShadowColor_(cg(M.AMBER))
+        k = self.kbox = _layer()
+        k.setBounds_(((0, 0), (M.ORB, M.ORB)))
+        k.setPosition_((M.HALO + C, M.HALO + C))
+        base.addSublayer_(k)
+        self.kaura = _radial(M.ORB, [(0.0, M.AMBER, 0.34), (0.55, M.AMBER, 0.10), (1.0, M.AMBER, 0.0)])
+        k.addSublayer_(self.kaura)
+        p = Quartz.CGPathCreateMutable()
+        Quartz.CGPathAddEllipseInRect(p, None, ((C - M.R_KNOT_RING, C - M.R_KNOT_RING), (2 * M.R_KNOT_RING, 2 * M.R_KNOT_RING)))
+        self.kring = _stroke(p, cg(M.AMBER, 0.75), 1.0)
+        self.kring.setLineDashPattern_([0.6, 3.4])
+        k.addSublayer_(self.kring)
+        self.knot = _layer(frame=((0, 0), (M.ORB, M.ORB)))           # turns slowly, swells with the level
+        k.addSublayer_(self.knot)
+        pts = M.knot_points()
+        self.kpath = self._knot_path(pts, True)
+        self.kline = _stroke(self.kpath, cg(M.RICE), 2.0)
+        self.kline.setLineJoin_(Quartz.kCALineJoinRound)
+        self.knot.addSublayer_(self.kline)
+        self.kover = _layer(frame=((0, 0), (M.ORB, M.ORB)))          # the three stretches that pass OVER
+        n = len(pts)
+        for a, b in M.knot_overs(pts):
+            seg = [pts[i % n] for i in range(a, b + 1)]
+            gap = [pts[i % n] for i in range(a + 3, b - 2)]          # the cut in the line underneath
+            self.kover.addSublayer_(_stroke(self._knot_path(gap, False), fill, 5.4, Quartz.kCALineCapButt))
+            self.kover.addSublayer_(_stroke(self._knot_path(seg, False), cg(M.RICE), 2.0, Quartz.kCALineCapButt))
+        self.knot.addSublayer_(self.kover)
+        self.beads = []
+        for j, col in enumerate((M.CORAL, M.AMBER, M.AMBER)):
+            holder = _layer()                                        # rides the line
+            holder.setBounds_(((0, 0), (0, 0)))
+            x, y = pts[(j * n) // 3]
+            holder.setPosition_((C + M.R_KNOT * x, C + M.R_KNOT * y))
+            dot = _layer()                                           # swells with the level
+            dot.setBounds_(((0, 0), (2 * M.BEAD_R, 2 * M.BEAD_R)))
+            dot.setCornerRadius_(M.BEAD_R)
+            dot.setBackgroundColor_(cg(col))
+            dot.setShadowColor_(cg(col))
+            dot.setShadowRadius_(2.5)
+            dot.setShadowOpacity_(0.9)
+            dot.setShadowOffset_((0.0, 0.0))
+            holder.addSublayer_(dot)
+            self.knot.addSublayer_(holder)
+            self.beads.append((holder, dot))
+        self.kphase, self.klap, self.kt = 0.0, 0.0, Quartz.CACurrentMediaTime()
+        self.ks = 1.0
+
+    def _knot_look(self, look: M.Look) -> None:
+        e = look.glow
+        Quartz.CATransaction.begin()
+        Quartz.CATransaction.setAnimationDuration_(M.STATE_S)
+        Quartz.CATransaction.setAnimationTimingFunction_(state_ease())
+        self.glow.setShadowOpacity_(look.glow)
+        self.rim.setBorderColor_(cg(M.RICE, 0.95 if self.acc.increase_contrast else look.rim))
+        self.kaura.setOpacity_(0.3 + 0.7 * e)
+        self.kring.setOpacity_(0.45 + 0.55 * e)
+        self.kline.setOpacity_(0.7 + 0.3 * e)
+        self.kover.setOpacity_(0.0 if look.comet else 1.0)           # while the line draws itself it lies flat
+        Quartz.CATransaction.commit()
+        still_now = self.acc.reduce_motion
+        self._spin(self.knot, 0.0 if still_now else look.counter * 4, clockwise=False)
+        self._spin(self.kring, 0.0 if still_now else look.counter * 2, clockwise=True)
+        now = Quartz.CACurrentMediaTime()                            # carry the points on from where they are
+        if self.klap > 0:
+            self.kphase = (self.kphase + (now - self.kt) / self.klap) % 1.0
+        self.kt, self.klap = now, (0.0 if still_now or look.spin <= 0 else look.spin * M.KNOT_LAP)
+        for j, (holder, _) in enumerate(self.beads):
+            holder.removeAnimationForKey_("ride")
+            if self.klap <= 0:
+                continue
+            a = Quartz.CAKeyframeAnimation.animationWithKeyPath_("position")
+            a.setPath_(self.kpath)
+            a.setCalculationMode_(Quartz.kCAAnimationPaced)
+            a.setDuration_(self.klap)
+            a.setRepeatCount_(1e9)
+            a.setBeginTime_(now - ((self.kphase + j / 3.0) % 1.0) * self.klap)
+            frame_rate(a, self.fps)
+            holder.addAnimation_forKey_(a, "ride")
+        self.kline.removeAnimationForKey_("draw")
+        if look.comet and not still_now:                             # thinking: the line keeps drawing itself
+            a = Quartz.CAKeyframeAnimation.animationWithKeyPath_("strokeEnd")
+            a.setValues_([0.0, 1.0, 1.0])
+            a.setKeyTimes_([0.0, 0.78, 1.0])
+            a.setDuration_(look.comet * 2.4)
+            a.setRepeatCount_(1e9)
+            frame_rate(a, self.fps)
+            self.kline.addAnimation_forKey_(a, "draw")
+        self.kbox.removeAnimationForKey_("pulse")
+        if look.pulse:
+            a = Quartz.CABasicAnimation.animationWithKeyPath_("opacity")
+            a.setFromValue_(0.5)
+            a.setToValue_(1.0)
+            a.setDuration_(look.pulse / 2)
+            a.setAutoreverses_(True)
+            a.setRepeatCount_(1e9)
+            frame_rate(a, M.FPS_LOW_POWER)
+            self.kbox.addAnimation_forKey_(a, "pulse")
+
+    def _knot_level(self, v: float, force: bool, secs: float) -> None:
+        a = min(1.0, max(0.0, v * self.look.gain))
+        ks = 1.0 + (0.0 if self.acc.reduce_motion else M.KNOT_SWELL * a)
+        if not force and not M.changed(a, self.cs):
+            return
+        Quartz.CATransaction.begin()
+        if secs > 0:
+            Quartz.CATransaction.setAnimationDuration_(secs)
+            Quartz.CATransaction.setAnimationTimingFunction_(state_ease())
+        else:
+            Quartz.CATransaction.setDisableActions_(True)
+        self.kbox.setAffineTransform_((ks, 0.0, 0.0, ks, 0.0, 0.0))
+        bs = 1.0 + M.BEAD_SWELL * a
+        for _, dot in self.beads:
+            dot.setAffineTransform_((bs, 0.0, 0.0, bs, 0.0, 0.0))
+        self.kaura.setOpacity_((0.3 + 0.7 * self.look.glow) * (0.55 + 0.45 * a) if self.look.source else 0.3 + 0.7 * self.look.glow)
+        Quartz.CATransaction.commit()
+        self.cs = a
+
     # ---------------------------------------------------------------- show / hide / move
     def frame_for(self, w: float, anchor=None):
         x, top = anchor or self.anchor
@@ -293,6 +430,10 @@ class Orb:
         for lay in (self.reactor, self.inner, self.mid, self.comet, self.core, self.aura, *self.ticks):
             lay.removeAllAnimations()
         self.waving = False
+        if self.style == "knot":
+            for lay in (self.kbox, self.knot, self.kring, self.kline, *[h for h, _ in self.beads]):
+                lay.removeAllAnimations()
+            self.klap = 0.0
 
     # ---------------------------------------------------------------- state look
     def set_look(self, look: M.Look) -> None:
@@ -303,6 +444,8 @@ class Orb:
             self.set_level(0.0, force=True, secs=M.STATE_S)
         if self.dim and not look.click_through:
             self.set_dim(False)
+        if self.style == "knot":
+            return self._knot_look(look)
         e = look.glow                                # how "awake" she looks, 0..1
         Quartz.CATransaction.begin()
         Quartz.CATransaction.setAnimationDuration_(M.STATE_S)
@@ -418,6 +561,8 @@ class Orb:
         """0..1 level → tick lengths (a wave travelling round the ring) + core size and bloom.
         Reduce Motion: brightness instead of size. secs > 0 = a state cross-fade."""
         look = self.look
+        if self.style == "knot":
+            return self._knot_level(v, force, secs)
         a = min(1.0, max(0.0, v * look.gain))
         if self.acc.reduce_motion:
             b = 0.45 + 0.55 * a if look.source else 1.0
