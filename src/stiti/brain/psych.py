@@ -107,6 +107,27 @@ def _memclaim(text: str, s) -> bool:
     return False
 
 
+# Tool-call syntax a model wrote as TEXT instead of making the call (2026-11-18: "<toolcallwebsearch <argkeyquery…" was
+# spoken — GLM's <tool_call>web_search<arg_key>query</arg_key>… after the tool loop took its tools away). Never speech.
+TOOL_MARKUP_RX = re.compile(
+    r"<\|?/?(?:tool_?call|function_?call|tool_?response|tool_?result|arg_?key|arg_?value|python_tag|invoke\b|parameter\b)"
+    r"|<function=|\[TOOL_CALLS\]|\bto=functions\.|\bfunctions\.\w+\s*\("
+    r"|\{\s*\"(?:name|function|tool|tool_name)\"\s*:\s*\"[\w.\-]+\"\s*,\s*\"(?:arguments|parameters|args|input)\"\s*:"
+    r"|\{\s*\"tool_calls\"\s*:|\{\s*\"type\"\s*:\s*\"function\""
+    r"|\b(?:web_search|web_read|live_news|research_papers|calendar_\w+|mail_\w+|files_find|screen_\w+)\s*\(", re.I)
+HONEST_NO_LOOKUP = "I couldn't finish looking that up just now. Ask me again in a moment."
+
+
+def tool_markup(text: str | None) -> bool:
+    return bool(TOOL_MARKUP_RX.search(text or ""))
+
+
+def strip_markup(text: str | None) -> str:
+    """The reply up to where tool-call syntax starts ("" when it IS the reply)."""
+    m = TOOL_MARKUP_RX.search(text or "")
+    return (text or "") if m is None else text[:m.start()].rstrip(" \n`")
+
+
 HONEST_NO_BOARD = "I haven't opened the whiteboard yet. Say “teach me {topic} on the whiteboard” and I'll open it."
 HONEST_NOT_DONE = "I haven't saved that yet. Say “add it to my list” or “remind me at …” and I will."
 LONE_DONE = re.compile(r"(all )?done[.!]?", re.I)
@@ -215,7 +236,7 @@ def _keep(sentence: str, s, last: bool) -> bool:
     st = sentence.strip()
     if not st:
         return False
-    if BANNED_RX.search(st) or MACHINE_RX.search(st):
+    if BANNED_RX.search(st) or MACHINE_RX.search(st) or TOOL_MARKUP_RX.search(st):
         return False
     if s is not None and s.name != "DO" and LONE_DONE.fullmatch(st):
         return False                             # "…rate limits prevent overload. Done." — nothing was done
@@ -255,7 +276,7 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
     humour, emojis, feminine Hindi, one "!" at most, list items, and the strategy's word cap (cut at a sentence/clause)."""
     if s is None:
         return lint(text, user_text=user_text)
-    out = text.replace("’", "'").replace("‘", "'")
+    out = strip_markup(text).replace("’", "'").replace("‘", "'")
     for rx, rep in GUILT:
         out = re.sub(rx, rep, out, flags=re.I)
     lines, items = [], 0
@@ -321,7 +342,7 @@ def enforce(text: str, s=None, user_text: str = "") -> str:
 
 def lint(text: str, max_items: int = 3, user_text: str = "") -> str:
     """Final pass on every reply (LLM or fast path). Machine-talk sentences are dropped here too."""
-    out = text
+    out = strip_markup(text)
     if MACHINE_RX.search(out):
         sents = [x for x in _SENT.split(out) if x.strip()]
         kept = [x for x in sents if not MACHINE_RX.search(x)]
@@ -378,12 +399,18 @@ class StreamLint:
         self.said = 0                                        # pieces let through (0 → the loop speaks the final reply)
         self.open = False                                    # a spoken sentence hasn't ended yet
         self.skip = False                                    # drop the rest of the current sentence
+        self.markup = False                                  # tool-call syntax started: nothing after it is speech
 
     def feed(self, piece: str) -> str | None:
         if not self._bound:
             self.policy, self._bound = current_policy(), True
         s = self.policy
         piece = piece.replace("’", "'").replace("‘", "'")
+        if self.done and self.markup:
+            return None
+        if TOOL_MARKUP_RX.search(piece):                     # tool-call syntax is never spoken, nor anything after it
+            self.done = self.markup = True
+            return None
         for rx, rep in GUILT:
             piece = re.sub(rx, rep, piece, flags=re.I)
         if self.BULLET.match(piece):

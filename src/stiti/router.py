@@ -17,6 +17,7 @@ import httpx
 
 from openai import OpenAI
 
+from .brain.psych import tool_markup
 from .config import CFG
 from .db import one, q, unheld
 
@@ -81,6 +82,15 @@ CHAINS["tutor_answer"] = [("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss
 # providers/models with strict json_schema (constrained decoding); others get json_object + validation
 STRICT_SCHEMA = {("groq", "openai/gpt-oss-20b"), ("groq", "openai/gpt-oss-120b"), ("groq", "qwen/qwen3.8-27b"),
                  ("cerebras", "gpt-oss-120b"), ("cerebras", "qwen-3.8-27b")}
+# Tool turns (D43): only models whose tool calls came back PARSED through the OpenAI-compatible API (checked live
+# 2026-11-18 with one web_search tool). Not here: Z.ai GLM (429 / 12 s, and it wrote <tool_call> markup as text, which
+# was spoken), OpenRouter gemma (429), Cerebras + Mistral (no key to check with).
+TOOL_OK = {("groq", "qwen/qwen3.8-27b"), ("groq", "openai/gpt-oss-120b"), ("groq", "openai/gpt-oss-20b"),
+           ("cloudflare", "@cf/openai/gpt-oss-120b"), ("cloudflare", "@cf/meta/llama-3.3-70b-instruct-fp8-fast"),
+           ("nvidia", "nvidia/nemotron-3.5-lightning-30b-a3b"), ("nvidia", "nvidia/nemotron-3.5-bolt-e4b"),
+           ("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"), ("openrouter", "nvidia/nemotron-3-ultra-550b-a55b:free"),
+           ("gemini", "gemini-flash-lite-latest")}
+MARKUP_HEAD = 24                 # stream(): this many characters are held back to check for tool-call syntax
 # last-resort extras for public (P0) questions
 P0_EXTRA = [("nvidia", "nvidia/nemotron-3-ultra-550b-a55b"), ("gemini", "gemini-flash-lite-latest")]
 
@@ -214,6 +224,8 @@ def _attempts(messages, route, privacy, max_tokens, temperature, json_mode, tool
              if PROVIDERS[p].max_privacy >= privacy and is_free(p, m)]
     est = sum(len(str(m.get("content") or "")) for m in messages) // 4 + max_tokens + (300 if tools else 0)
     for p, model in chain:
+        if tools and (p, model) not in TOOL_OK:
+            continue                                   # its tool calls aren't parsed here: never used for a tool turn
         cli = _client(p)
         if cli is None:
             continue
@@ -284,6 +296,11 @@ def complete(messages: list[dict], *, route: str = "voice_fast", privacy: int = 
         if not text and not calls:
             errors.append(f"{p}/{model}: empty")
             continue
+        if schema is None and not json_mode and tool_markup(text):
+            if not calls:                              # a tool call written as text: never a reply — next provider
+                errors.append(f"{p}/{model}: tool-call markup as text")
+                continue
+            text = ""                                  # (the parsed calls are the real thing)
         if schema is not None and not _shape_ok(text, schema):
             errors.append(f"{p}/{model}: wrong JSON shape")
             continue
@@ -312,24 +329,46 @@ def stream(messages: list[dict], *, route: str = "voice_fast", privacy: int = 1,
                 _failed(p, model, e, errors)
                 continue
             text = _clean((r.choices[0].message.content or "").strip())
+            if tool_markup(text[:MARKUP_HEAD * 4]):
+                errors.append(f"{p}/{model}: tool-call markup as text")
+                continue
             if text:
                 parts.append(text)
                 info["first_ms"] = (time.perf_counter() - t) * 1000
                 yield text
         else:
+            held: list[str] | None = []            # the first few characters wait: a reply that opens with tool-call
+            bad = False                            # syntax is dropped before a word of it is spoken (next provider)
             try:
                 for ch in cli.chat.completions.create(**kwargs, stream=True):
                     d = ch.choices[0].delta.content if ch.choices else None
-                    if d:
-                        if not parts:
-                            info["first_ms"] = (time.perf_counter() - t) * 1000
-                        parts.append(d)
-                        yield d
+                    if not d:
+                        continue
+                    if held is not None:
+                        held.append(d)
+                        head = "".join(held)
+                        if len(head.strip()) < MARKUP_HEAD:
+                            continue
+                        if tool_markup(head):
+                            bad = True
+                            break
+                        d, held = head, None
+                    if not parts:
+                        info["first_ms"] = (time.perf_counter() - t) * 1000
+                    parts.append(d)
+                    yield d
             except Exception as e:
-                if not parts:
+                if not parts and not held:
                     _failed(p, model, e, errors)
                     continue
                 errors.append(f"{p}/{model}: dropped mid-reply ({type(e).__name__})")
+            if bad or (held and tool_markup("".join(held))):
+                errors.append(f"{p}/{model}: tool-call markup as text")
+                continue
+            if held:                               # a reply shorter than the held head
+                info["first_ms"] = (time.perf_counter() - t) * 1000
+                parts.append("".join(held))
+                yield parts[-1]
         text = "".join(parts).strip()
         _record(p, model, est - max_tokens, len(text) // 4)
         if not text:
