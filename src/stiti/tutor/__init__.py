@@ -212,32 +212,55 @@ def _teach(args: list[str]) -> dict:
     mode = "silent" if "--silent" in args else "type" if "--type" in args else "voice"
     board = "--no-board" not in args
     holder: dict = {}
-    srv = BoardServer(on_connect=lambda: holder["t"].on_connect() if "t" in holder else []) if board else None
+    course = "--night" in args or "--resume-course" in args or "--revise" in args
+    waiting = [{"type": "status", "mode": "playing", "text": "getting ready",
+                "caption": f"Getting your lesson{' on ' + target if target and '/' not in target else ''} ready…"}]
+    srv = BoardServer(on_connect=lambda: holder["t"].on_connect() if "t" in holder else waiting) if board else None
     events = srv.events if srv else queue.Queue()
     print("Stiti is getting ready… (voice, whiteboard)" if mode == "voice" else "Stiti is getting ready…")
-    audio = au.make(mode, events, debug="--debug" in args)
-    if "--night" in args or "--resume-course" in args or "--revise" in args:
+    if course:
+        audio = au.make(mode, events, debug="--debug" in args)
         return _course_session(args, target, audio, events, srv, stop_args=args)
-    try:
-        lesson, planner, start = make_lesson(target, args)
-    except SystemExit as e:
-        audio.close()
-        print(e)
-        return {"finished": False}
-    except Exception as e:                          # LLM down / rate limited / bad output
-        audio.close()
-        print(f"Couldn't plan that lesson right now ({type(e).__name__}: {str(e)[:160]}).\n"
-              "Try again in a minute, or run the built-in lesson: uv run stiti teach")
-        return {"finished": False}
-    tutor = Tutor(lesson, audio=audio, events=events, server=srv, planner=answerer(planner, lesson), start=start)
-    holder["t"] = tutor
-    stop = threading.Event()
+    # D42: the board opens FIRST and the lesson is planned WHILE her voice loads. Before, he said "teach me X" and
+    # looked at nothing for ~19 s: voice models (13 s), then the plan (5 s), and only then the board — in a row.
     if srv:
         srv.start()
         print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
         if "--no-open" not in args:
             srv.open_browser()
+    planned: dict = {}
+
+    def plan():
+        try:
+            planned["ok"] = make_lesson(target, args)
+        except BaseException as e:                  # SystemExit (friendly message) or LLM down / bad output
+            planned["err"] = e
+    pt = threading.Thread(target=plan, daemon=True, name="lesson-plan")
+    pt.start()
+    try:
+        audio = au.make(mode, events, debug="--debug" in args)
+    except BaseException:
+        if srv:
+            srv.stop()
+        raise
+    pt.join()
+    if "err" in planned:
+        audio.close()
+        if srv:
+            srv.stop()
+        e = planned["err"]
+        print(e if isinstance(e, SystemExit) else
+              f"Couldn't plan that lesson right now ({type(e).__name__}: {str(e)[:160]}).\n"
+              "Try again in a minute, or run the built-in lesson: uv run stiti teach")
+        return {"finished": False}
+    lesson, planner, start = planned["ok"]
+    tutor = Tutor(lesson, audio=audio, events=events, server=srv, planner=answerer(planner, lesson), start=start)
+    holder["t"] = tutor
+    stop = threading.Event()
+    if srv:
         srv.connected.wait(15)
+        for m in tutor.on_connect():                # the page connected while we were loading: give it the board now
+            srv.send(m)
     if mode != "voice" or sys.stdin.isatty():     # --silent / --type read typed lines (piped too); the app gives DEVNULL
         threading.Thread(target=_stdin_reader, args=(events, stop), daemon=True).start()
     print("Talk any time: ruko / continue / phir se / peeche / skip / dheere / tez / bas karo — or just ask.\n"
