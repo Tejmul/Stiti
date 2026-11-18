@@ -132,6 +132,39 @@ class Out:
     chunk: str | None = None            # hand over to the step-by-step chunker with this goal (the engine owns it)
 
 
+_ready: bool | None = None
+
+
+def ready() -> bool:
+    """Is the `noticed` table there (migration 011)? Until it is, this whole feature is off — no turn may fail on it.
+    (to_regclass never raises, so this is safe inside a held speculative transaction too.)"""
+    global _ready
+    if _ready is None:
+        try:
+            _ready = bool(one("SELECT to_regclass('noticed') IS NOT NULL AS ok")["ok"])
+        except Exception:
+            return False
+        if not _ready:
+            print("[important] off — apply db/migrations/011_noticed.sql", flush=True)
+    return _ready
+
+
+def _guard(default):
+    """A public entry point: off until the table exists, and an error here never breaks his turn."""
+    def wrap(fn):
+        def inner(*a, **kw):
+            if not ready():
+                return default
+            try:
+                return fn(*a, **kw)
+            except Exception as e:
+                print(f"[important] {fn.__name__}: {type(e).__name__}: {e}"[:240], flush=True)
+                return default
+        inner.__name__, inner.__doc__ = fn.__name__, fn.__doc__
+        return inner
+    return wrap
+
+
 # ------------------------------------------------------------------------------------------------ the outside world
 # (tests swap these three: no real calendar is ever touched)
 def add_event(title: str, start: datetime, minutes: int = 60, all_day: bool = False, notes: str | None = None) -> str | None:
@@ -314,10 +347,11 @@ def open_question(now: datetime | None = None) -> dict | None:
                    ORDER BY asked_at DESC LIMIT 1""", (now - ANSWER_WINDOW, now + timedelta(minutes=1)))
 
 
+@_guard(None)
 def settle(now: datetime | None = None) -> None:
     """He talked about something else: the question is no longer "the last thing she said". The item stays in the
     noticed list; a bare "yes" later must not book it."""
-    q("UPDATE noticed SET stage=NULL WHERE stage IS NOT NULL")
+    q("UPDATE noticed SET stage=NULL, undo_until=NULL WHERE stage IS NOT NULL OR undo_until IS NOT NULL")
 
 
 def expire(now: datetime | None = None) -> None:
@@ -481,9 +515,9 @@ def book(r: dict, now: datetime, times: list[datetime] | None = None, *, cal: bo
     if dropped and set_times:
         text += " One time you said has already passed, so I skipped it."
     prep = r["kind"] in PREP_KINDS and when - now >= PREP_MIN_AHEAD and not r["prep_intent_id"] and r["status"] != "accepted"
-    q("""UPDATE noticed SET status='accepted', stage=%s, asked_at=%s, answered_at=%s, answer=%s,
+    q("""UPDATE noticed SET status='accepted', stage=%s, asked_at=%s, answered_at=%s, undo_until=%s, answer=%s,
                 event_id=COALESCE(%s, event_id), reminder_ids = reminder_ids || %s::bigint[] WHERE id=%s""",
-      ("prep" if prep else None, now, now, answer[:200], event_id, ids, r["id"]))
+      ("prep" if prep else None, now, now, now + UNDO_WINDOW, answer[:200], event_id, ids, r["id"]))
     if prep:
         text += (" Want a preparation plan, and when do you want to start?" if r["kind"] != "deadline"
                  else " Want a plan for it, and when do you want to start?")
@@ -553,7 +587,7 @@ def undo(r: dict, now: datetime) -> str:
             print(f"[important] undo calendar: {type(e).__name__}: {e}", flush=True)
     if r["task_id"]:
         q("UPDATE tasks SET status='cancelled' WHERE id=%s AND status='open'", (r["task_id"],))
-    q("""UPDATE noticed SET status='declined', stage=NULL, answer='undone', reminder_ids='{}', prep_intent_id=NULL,
+    q("""UPDATE noticed SET status='declined', stage=NULL, undo_until=NULL, answer='undone', reminder_ids='{}', prep_intent_id=NULL,
                 event_id=%s WHERE id=%s""", (None if off_cal or not r["event_id"] else r["event_id"], r["id"]))
     parts = []
     if gone:
@@ -736,6 +770,7 @@ def _instruction(text: str, now: datetime) -> tuple[Item, list[datetime] | None,
     return it, (got[0] if got else None), (got[1] if got else 0), True
 
 
+@_guard(False)
 def hint(text: str, now: datetime | None = None) -> bool:
     """Pure read: would this text be handled here? (a speculative voice turn must not start it — D29)"""
     try:
@@ -748,6 +783,7 @@ def hint(text: str, now: datetime | None = None) -> bool:
         return False
 
 
+@_guard(None)
 def from_turn(text: str, *, now: datetime | None = None, privacy: int = 1, calm: bool = True) -> str | None:
     """His own words in a normal turn. Returns her reply (the one question, or the read-back of a direct instruction)
     or None (nothing to say: maybe a thing was quietly put on the noticed list for a better moment)."""
@@ -793,6 +829,7 @@ def from_turn(text: str, *, now: datetime | None = None, privacy: int = 1, calm:
     return ask_text(dict(r, asked_via="turn"), now)
 
 
+@_guard(None)
 def answer(text: str, *, now: datetime | None = None) -> Out | None:
     """Is this his answer to her question, or a request about the noticed things? None = no: the turn goes on."""
     now = _now(now)
@@ -819,8 +856,8 @@ def answer(text: str, *, now: datetime | None = None) -> Out | None:
             return Out(ask_text(dict(r, _turn=r["asked_via"] == "turn"), now) if r["stage"] == "important"
                        else "Want a plan for it, and when do you want to start?")
     if UNDO.search(text) and len(text.split()) <= 8:
-        last = one(f"""SELECT {COLS} FROM noticed WHERE status='accepted' AND answered_at >= %s
-                       ORDER BY answered_at DESC LIMIT 1""", (now - UNDO_WINDOW,))
+        last = one(f"""SELECT {COLS} FROM noticed WHERE status='accepted' AND undo_until >= %s
+                       ORDER BY answered_at DESC LIMIT 1""", (now,))
         if last is not None:
             return Out(undo(last, now))
     # "yes, save that exam one" · "the first one" · "the mail one is not important" — about the noticed list, later
@@ -837,6 +874,7 @@ def answer(text: str, *, now: datetime | None = None) -> Out | None:
 
 
 # ------------------------------------------------------------------------------------------------ she asks first
+@_guard(None)
 def candidate(present: bool, now: datetime | None = None) -> tuple[str, dict] | None:
     """One noticed thing to ask about now, or None. The proactive gate (quiet hours, daily nudge budget, busy) is
     applied by proactive.tick(); here: he's present, not in a call, ≤ MAX_ASKS_PER_DAY a day, ≥ 30 min apart, and no
@@ -880,6 +918,7 @@ def scan_mail(now: datetime | None = None, fetch=None) -> int:
     return n
 
 
+@_guard(0)
 def scan_document(title_: str, text: str, privacy: int = 1, now: datetime | None = None, limit: int = 3) -> int:
     """A document he ingested: dated things in it go on the noticed list (soonest first, at most `limit`)."""
     now = _now(now)
@@ -896,6 +935,7 @@ def scan_document(title_: str, text: str, privacy: int = 1, now: datetime | None
 _scan = {"t": 0.0, "busy": False}
 
 
+@_guard(None)
 def background_scan() -> None:
     """Called by the app scheduler once a minute: every 15 min, unread mail is scanned off-thread (when set up)."""
     from ..connectors import mail

@@ -1120,7 +1120,8 @@ half the time; nobody ships Hinglish date rules.
   submission, fee, result, flight, appointment, birthday, meeting, hackathon… English + Hinglish; or "I have to submit /
   pay / finish X by …") **and** a day that is today or later → (what, kind, when, has a time?, confidence). Not noticed:
   questions, past tense ("was", "tha", "ho gaya"), "if" / "not" / cancelled, someone else's thing (except birthdays),
-  anything starting within 2 hours, plain commands. Confidence under 0.7 → she says nothing.
+  a weekly routine ("every Monday…"), his own birthday, anything starting within 2 hours, plain commands. Confidence
+  under 0.7 → she says nothing. Two things in one sentence are both noticed.
 - **Dates (`fastpath/dates.py`):** new `find_days` — "the 9th" (its next occurrence), "9th December", "December 9",
   "9 tarikh", "9/12/2026", "by Friday", "3 din baad", "in 2 weeks", "this weekend". `parse_when` uses the
   unmistakable forms too, so "remind me on the 1st to pay rent" now works on the normal reminder path.
@@ -1129,8 +1130,11 @@ half the time; nobody ships Hinglish date rules.
     December. Want me to put that on the calendar and remind you a few days before?"
   - He already gave the instruction ("…give me a reminder on the 1st", "…put it on my calendar", "remind me two days
     before my exam on the 9th") → no question: booked and read back.
-  - Mail, documents, a long sentence (> 22 words), upset words or an upset voice, or another command in the same
-    sentence → it goes on the noticed list and is asked through the proactive gate: he is present, not in a call, not
+  - "kal 2 baje meeting yaad dilana" / "remind me at 7 pm to call mummy" stay plain reminders on their old fast path:
+    a direct instruction needs a stated event ("… hai", "… is on …") or his own reminder time relative to it.
+  - Mail, documents, a long sentence (> 22 words), upset words ("nervous", "stressed") or an upset voice, another
+    request in the same breath ("…find me interview questions", "…how should I prepare"), or a question of hers he
+    just let pass (never a quiz) → it goes on the noticed list and is asked through the proactive gate: he is present, not in a call, not
     mid-conversation, not 23:00–08:00, inside the daily nudge budget, **at most 2 a day, 30 min apart**. "Kabir, there's
     a mail from <sender> about <thing> on <date>. Is that important? I can put it on the calendar and remind you before."
     The name comes from the profile.
@@ -1155,7 +1159,9 @@ half the time; nobody ships Hinglish date rules.
   "this weekend" = a start reminder + a to-do with the due date (hidden from the day planner until that day);
   "yes" / "aaj se" = the existing step-by-step chunker opens. "No" → dropped, never asked again. "Just note it" /
   "save it somewhere else" → a fact in memory, no calendar. "Put it on my list" → a to-do with the date.
-  "No, it's on the 12th" → the day is fixed and asked once more. "Undo" within 5 min → reminders cancelled, entry removed.
+  "No, it's on the 12th" → the day is fixed and asked once more. "Not now" → it waits in the list (not a no).
+  "What?" → the same question again. "Undo" / "that's wrong" right after the booking (≤ 5 min, nothing else said
+  since) → reminders cancelled, entry removed.
 - **State (migration `011_noticed.sql`):** one row per thing; `source_ref` = hash of kind + day + its words (the same
   exam from his mouth and from a mail is one thing); status new / asked / accepted / declined / noted / expired; the
   open question is `stage` + `asked_at` in the row, so it survives a restart. A bare "yes" counts for 10 minutes and
@@ -1168,14 +1174,19 @@ half the time; nobody ships Hinglish date rules.
 - **Local vs LLM:** noticing, the decision to ask, the wording, the booking and the read-back are all local. The only
   cloud use is optional and in the background: his own non-private sentence that names an event but no date the rules
   can read ("in the second week of December") goes to the free `extract` chain; its answer is checked (real future
-  date, known kind, words from his sentence) and only ever lands on the noticed list. `STITI_NOTICE_LLM=0` turns it off.
+  date, known kind, words from his sentence) and only ever lands on the noticed list, where she says it as her
+  working-out ("I make that around Tuesday the 8th of December"). Live check with Groq (gpt-oss-120b, ~1 s, made-up
+  sentences): two of two came back grounded. `STITI_NOTICE_LLM=0` turns it off.
 - **Mail:** `connectors/mail.py` can now return the first lines of a body (`unread(snippet=True)`, 2 KB partial fetch,
   plain text only). The app scans unread mail every 15 min **when mail is set up** — it is not, on his Mac. "Check my
   mail for anything important" then answers: "I can't read your mail yet. Put MAIL_ADDRESS and MAIL_APP_PASSWORD, a
   Google app password, in the .env file and restart me."
-- Tests: `tests/important_things_eval.py` 219 (fake LLM, fake mail, fake calendar, clock fixed at Wed 18 Nov 2026 10:00).
+- **Until migration 011 is applied the feature is simply off** (one `to_regclass` check; no turn can fail on it).
+- Tests: `tests/important_things_eval.py` 244 (fake LLM, fake mail, fake calendar, clock fixed at Wed 18 Nov 2026 10:00).
 - **NOT verified:** on the mic; a real Apple Calendar entry (the all-day flag was never run against EventKit); real
   mail (IMAP partial fetch + MIME reading are tested on made-up bytes only); the 15-min scan inside the running app.
 - **Open / his call:** when he names his own reminder ("on the 1st") the defaults are dropped — no automatic
-  "day before" on top. Interviews get the prep offer too. Lessons are not consulted for the spoken question beyond
-  "stop asking". No "important to him" learning yet: `noticed.status` is the label set for it.
+  "day before" on top. Interviews get the prep offer too. Every short dated sentence of his gets the question
+  (a cap per day exists only for the ones she starts herself). Lessons are not consulted for the spoken question
+  beyond "stop asking". A moved date ("postponed to the 12th") is asked about as a new thing; the old booking stays
+  until he says undo. No "important to him" learning yet: `noticed.status` is the label set for it.

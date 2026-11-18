@@ -460,6 +460,14 @@ r = say(e, "undo")
 check("'undo' → reminders cancelled, entry taken off the calendar", not reminders() and not cal
       and cal_state["removed"] == ["Exams start"] and "cancelled all 3 reminders" in r and "off the calendar" in r, r)
 
+reset()
+e = Engine("text")
+say(e, "mom's birthday is on 12 March")
+say(e, "yes")
+say(e, "tell me something about black holes")
+r = say(e, "wrong")
+check("after other talk, 'wrong' is not about the booking: nothing is taken back", len(cal) == 1 and len(reminders()) == 1, r)
+
 print("what is left alone")
 reset()
 e = Engine("text")
@@ -683,6 +691,22 @@ check("a made-up thing is refused", I.from_llm('{"what": "dentist visit", "kind"
 check("a past or broken date is refused", I.from_llm('{"what": "exams", "kind": "exam", "date": "2025-12-08"}', "my exams", NOW) is None
       and I.from_llm("sure! here you go", "my exams", NOW) is None and I.from_llm('{"date": null}', "my exams", NOW) is None)
 llm_reply["text"] = "Hmm, tell me more."
+
+print("before the migration is applied the feature is off, and no turn fails")
+reset()
+q("ALTER TABLE noticed RENAME TO noticed_gone")
+I._ready = None
+try:
+    e = Engine("text")
+    r = say(e, "my exams start from the 9th")
+    check("no `noticed` table → she just talks", r == llm_reply["text"] and not I.ready(), r)
+    check("…the proactive pass and a document scan are quiet too", I.candidate(True, NOW) is None
+          and I.scan_document("x", "DBMS exam on 9 December 2026") == 0 and not asks(NOW))
+    check("…and reminders still work", "reminder" in say(e, "remind me at 7 pm to call mummy").lower())
+finally:
+    q("ALTER TABLE noticed_gone RENAME TO noticed")
+    I._ready = None
+check("after the migration it is on again", I.ready() and "calendar" in say(Engine("text"), "my exams start from the 9th"))
 
 print(f"\n{passed}/{total} passed")
 sys.exit(0 if passed == total else 1)

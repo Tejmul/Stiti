@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS noticed (
   asked_at      timestamptz,
   asked_via     text,                                   -- turn | voice | notification | telegram | list
   answered_at   timestamptz,
+  undo_until    timestamptz,                            -- "undo" takes the booking back until then (cleared when he moves on)
   answer        text,                                   -- his words
   event_id      text,                                   -- Apple Calendar event identifier
   reminder_ids  bigint[] NOT NULL DEFAULT '{}',         -- intents she booked for it
