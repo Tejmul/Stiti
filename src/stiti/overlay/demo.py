@@ -276,6 +276,8 @@ def main():
             print("[demo] overlay unavailable (no display / AppKit)")
             AppHelper.stopEventLoop()
             return
+        if args.shots and overlay._ui is not None:    # he may be working while this runs: a click of his elsewhere
+            overlay._ui._click_away = lambda event: None   # would close the card before its shot (shots only)
         demo.start()
     AppHelper.callLater(0.3, go)
     AppHelper.runEventLoop(installInterrupt=True)
