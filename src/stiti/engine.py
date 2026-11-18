@@ -13,6 +13,7 @@ from datetime import date, datetime
 
 from . import embed, router
 from .brain import compiler, emotion, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
+from .brain import lang as lang_mod
 from .config import CFG
 from . import db
 from .db import one, q
@@ -92,6 +93,7 @@ HOLD_RX = re.compile(r"^\s*(hey stiti[, ]+)?(ek (sec|second|min|minute)|ek secon
                      r"hmm+,? let me think)[.!…, ]*$", re.I)
 # "Not yet / nothing / that's it" right after her "Anything else?" — he's done asking, not leaving
 TOPIC_HINT_S = 300.0    # "open the whiteboard" with no topic uses what he asked her to explain in the last 5 min
+TE_EARS_S = 30 * 60.0          # "talk in Telugu" keeps the Telugu speech check open this long after his last Telugu turn
 TEACH_ASK_S = 90.0      # after "what should I teach you?", his next short line is the topic …
 COMMAND_RX = re.compile(r"\b(add|remind\w*|alarms?|to-?do|todos?|tasks?|delete|list|timers?)\b", re.I)   # … unless a command
 CANCEL_ASK_RX = re.compile(r"^\W*(never ?mind|cancel|leave it|forget it|no|nahi|rehne do|chhodo|nothing)\W*$", re.I)
@@ -144,6 +146,7 @@ class Engine:
         self.topic_hint: tuple[str, float] | None = None    # (what he last asked her to explain, when) → "open whiteboard"
         self.lang_prev: str | None = None                   # her last reply language (D34: "ok"/"bye" keep it)
         self.lang_pref: str | None = None                   # his "talk in Telugu" (held while he speaks it / English)
+        self.te_ears_until = 0.0                            # D41: the Telugu speech check is open until then (voice/lid.py)
         self.pending: tuple | None = None        # (tool, args) awaiting his "haan"
         self.onboarding = None                    # active onboarding interview
         self.askme = None                         # active "ask me questions" round (brain/askme.py, D37)
@@ -157,6 +160,7 @@ class Engine:
         self.last_lesson_ids: list[int] = []
         self.last_reply_text: str | None = None
         self.said = norepeat.Ledger().with_ignore(_name_words())   # what she said this conversation (D36)
+        self._sync_ears()                                   # a saved Telugu lock re-opens the Telugu check at start (D41)
         self.info_at = 0.0                              # when she last gave an informational answer ("what else?" follows it)
         self.last_user_text: str | None = None
         self.last_route: str | None = None
@@ -287,6 +291,19 @@ class Engine:
         self.last_reply_text = text
         self.last_interrupted = True
         self.said = self.said.replace(self.last_reply_ep, heard)   # only what he heard counts as said (D36)
+
+    def _sync_ears(self) -> None:
+        """Tell the ears whether Telugu speech is expected (D41: English first — the Telugu check turned 1 in 5 of his
+        English turns into Telugu script). Open after "talk in Telugu" (30 min, rolling) or under a Telugu lock."""
+        if self.channel != "voice":
+            return
+        try:
+            from .voice import lid
+            lock = lang_mod.locked([r["directive"] for r in q(
+                "SELECT directive FROM user_directives WHERE status='active' AND category='talk_style' ORDER BY id")])
+            lid.listen_telugu(float("inf") if lock in ("telugu", "tenglish") else self.te_ears_until)
+        except Exception as e:
+            print(f"[ears] {type(e).__name__}: {e}")
 
     def forget_fragment(self, user_ep: int | None) -> None:
         """He wasn't done: this half sentence was answered as part of the whole one, so it's kept out of recall (like
@@ -524,7 +541,6 @@ class Engine:
         elif not taught and (nag_ack := alarms.ack(text, via=self.channel)) is not None:
             reply = nag_ack                     # "ok / got it / ho gaya" right after a reminder: stop repeating it
         elif after_offer:
-            from .brain import lang as lang_mod
             reply = lang_mod.phrase("here", strat.lang)
         elif taught:
             vocab.add(taught.term, taught.heard, taught.source)
@@ -570,12 +586,16 @@ class Engine:
             if (c := weather.city_from_text(text)) is not None:
                 reply = weather.set_city(c)     # "I live in Porto" is his home AND his weather city (D38 + D39)
             strat = strategy.make("DO", strat.lang)
-        elif domain not in ("todo", "time") and (inst := instructions.parse(text)):
+        elif (domain not in ("todo", "time") or (lang_mod.command(text) and not COMMAND_WORDS_RX.search(text))) \
+                and (inst := instructions.parse(text)):     # "Stiti, talk in Telugu" was once judged a to-do (0.57): a
+                                                            # clear language command wins over the domain guess (D41)
             reply = instructions.apply(inst, [i for i in (self.last_reply_ep, user_ep) if i])
             strat = strategy.make("REPAIR" if corrected else "DO", strat.lang)
             if inst.lang_cmd:                   # lock / unlock / "talk in Telugu": the ack is already in that language
                 op, lg = inst.lang_cmd
                 self.lang_pref = lg if op == "switch" else None
+                # D41: her ears listen for Telugu only after he asks for it (and stop when he picks another language)
+                self.te_ears_until = time.time() + TE_EARS_S if lg in ("telugu", "tenglish") else 0.0
                 strat = strategy.make("DO", lg or "english")
         elif strat.name == "QUIET" and self.onboarding is None and self.chunker is None and self.woop is None \
                 and self.pending is None:
@@ -865,6 +885,9 @@ class Engine:
         self.lang_prev = strat.lang
         if self.lang_pref and strat.lang != self.lang_pref:
             self.lang_pref = None                       # he moved on to another language: mirror him again
+        if self.te_ears_until and lang_mod.TE_CHARS.search(text):
+            self.te_ears_until = time.time() + TE_EARS_S    # still speaking Telugu: the window rolls on
+        self._sync_ears()
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)
