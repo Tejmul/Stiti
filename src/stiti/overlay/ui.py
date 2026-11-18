@@ -1,8 +1,8 @@
-"""The overlay controller (main thread only): pill + card + timers + click-away + accessibility.
+"""The overlay controller (main thread only): orb + card + timers + click-away + accessibility.
 
 The public, thread-safe API is in __init__.py; it marshals every call here with AppHelper.callAfter. Python runs
-per frame only while the dots follow a level (listening / speaking), at ≤ 30 fps, and the timer is stopped in every
-other state. A 4 Hz timer runs only while a card or a pill confirmation is up (auto-dismiss).
+per frame only while the orb follows a level (listening / speaking), at ≤ 30 fps, and the timer is stopped in every
+other state. A 4 Hz timer runs only while a card or an orb confirmation is up (auto-dismiss).
 """
 from __future__ import annotations
 
@@ -16,8 +16,8 @@ from Foundation import NSObject, NSRunLoop, NSRunLoopCommonModes, NSTimer
 from PyObjCTools import AppHelper
 
 from . import model as M
-from .card import Card
-from .pill import Pill
+from .card import Card, headline_lines
+from .orb import Orb
 from .surface import Access, pointer_screen, screen_anchor, screen_key, screen_locked
 
 
@@ -51,9 +51,9 @@ class Overlay:
         self.lv = levels                       # [mic_rms, out_rms], written by the audio callback
         self.respect_lock = respect_lock
         self.tick_todo = tick_todo or _db_tick
-        self.on_click = on_click               # pill click while she thinks / speaks = stop her
+        self.on_click = on_click               # orb click while she thinks / speaks = stop her
         self.acc = Access.read()
-        self.state = M.PillState()
+        self.state = M.OrbState()
         self.meters = {k: M.LevelMeter(**v) for k, v in M.METER.items()}
         self.src: str | None = None
         self.timer = None
@@ -75,8 +75,8 @@ class Overlay:
         self._build()
 
     def _build(self) -> None:
-        self.pill = Pill(self.acc, self._pill_clicked)
-        self.pill.clickable = self.on_click is not None
+        self.orb = Orb(self.acc, self._orb_clicked)
+        self.orb.clickable = self.on_click is not None
         self.card = Card(self.acc, self._row_clicked, self.hide_card, self._card_hover)
 
     # ---------------------------------------------------------------- safe entry (called via callAfter)
@@ -96,7 +96,7 @@ class Overlay:
         if tr.hide:
             self._stop_timer()
             self._stop_follow()
-            self.pill.hide()
+            self.orb.hide()
             self.hide_card()
             self._end_confirm(collapse=False)
             return
@@ -106,15 +106,15 @@ class Overlay:
                 return
             scr = pointer_screen()             # the display he is using right now
             self.screen = screen_key(scr)
-            self.pill.show(screen_anchor(scr))
+            self.orb.show(screen_anchor(scr))
             self._start_follow()
-        self.pill.set_look(tr.look)
-        if self.confirm is None:               # a ✓ confirmation owns the wide pill until it times out
+        self.orb.set_look(M.look_for(tr.new, self.acc.reduce_motion))
+        if self.confirm is None:               # a ✓ confirmation owns the capsule until it times out
             lbl = M.doing_label(tr.detail)
             if lbl:
-                self.pill.expand(lbl[0], lbl[1], with_dots=True, tint=M.BLUE)
-            elif self.pill.expanded:
-                self.pill.collapse()
+                self.orb.expand(lbl[0], lbl[1])
+            elif self.orb.expanded:
+                self.orb.collapse()
         if tr.look.source != self.src:
             self.src = tr.look.source
             if self.src in self.meters:
@@ -142,9 +142,10 @@ class Overlay:
         self.ticks += 1
         m = self.meters.get(self.src)
         if m is not None:
-            self.pill.set_level(m.step(self.lv[0] if self.src == "mic" else self.lv[1], time.monotonic()))
-        if self.state.state == "listening":    # pointer over the click-through pill → it fades out of the way
-            self.pill.set_dim(self.pill.contains_pointer())
+            now = time.monotonic()
+            self.orb.set_level(m.step(self.lv[0] if self.src == "mic" else self.lv[1], now), now)
+        if self.state.state == "listening":    # pointer over the click-through orb → it fades out of the way
+            self.orb.set_dim(self.orb.contains_pointer())
 
     # ---------------------------------------------------------------- cards
     def show_card(self, card: dict, speaking: bool = True) -> None:
@@ -152,22 +153,22 @@ class Overlay:
             return
         now = time.monotonic()
         kind = card.get("kind")
-        if kind in M.CONFIRM_KINDS:            # "Added" / "Reminder set": the pill widens into a one-line ✓
+        if kind in M.CONFIRM_KINDS:            # "Added" / "Reminder set": the orb widens into a one-line ✓
             if self.state.state == "hidden":
                 self.apply_state("idle")
                 self.confirm_hides = self.state.state != "hidden"
             if self.state.state == "hidden":
                 return
-            self.pill.expand("checkmark.circle.fill", M.confirm_text(card), with_dots=False, tint=M.BLUE)
+            self.orb.expand("checkmark.circle.fill", M.confirm_text(card))
             self.confirm = M.DismissTimer(kind, 1, now, speaking)
             self._start_slow()
             return
-        lay = M.layout(card)
+        lay = M.layout(card, measure=headline_lines)
         if lay is None:
             return
         if self.respect_lock and screen_locked():
             return
-        anchor = self.pill.anchor if self.pill.visible and self.pill.anchor else screen_anchor(pointer_screen())
+        anchor = self.orb.anchor if self.orb.visible and self.orb.anchor else screen_anchor(pointer_screen())
         self.card.show(lay, anchor)
         self.dismiss = M.DismissTimer(kind, lay.n, now, speaking)
         if self.monitor is None:               # click anywhere else closes it (mouse monitors need no permission)
@@ -225,10 +226,10 @@ class Overlay:
     def _end_confirm(self, collapse: bool = True) -> None:
         self.confirm = None
         if collapse:
-            self.pill.collapse()
+            self.orb.collapse()
             lbl = M.doing_label(self.state.detail)
             if lbl:
-                self.pill.expand(lbl[0], lbl[1], with_dots=True)
+                self.orb.expand(lbl[0], lbl[1])
         if self.confirm_hides:
             self.confirm_hides = False
             if self.state.state == "idle":
@@ -270,7 +271,7 @@ class Overlay:
             self.follow = None
 
     def _follow(self) -> None:
-        if not self.pill.visible:
+        if not self.orb.visible:
             self._stop_follow()
             return
         scr = pointer_screen()
@@ -278,18 +279,18 @@ class Overlay:
         if key != self.screen:                 # he moved to another display: fade over there
             self.screen = key
             anchor = screen_anchor(scr)
-            self.pill.move(anchor)
+            self.orb.move(anchor)
             self.card.move(anchor)
 
-    # ---------------------------------------------------------------- pill click, settings, lifecycle
-    def _pill_clicked(self) -> None:
+    # ---------------------------------------------------------------- orb click, settings, lifecycle
+    def _orb_clicked(self) -> None:
         if self.state.state in ("thinking", "speaking") and self.on_click is not None:
             self.on_click()
 
     def set_click_handler(self, fn) -> None:
         self.on_click = fn
-        self.pill.clickable = fn is not None
-        self.pill.set_look(self.pill.look)
+        self.orb.clickable = fn is not None
+        self.orb.panel.setIgnoresMouseEvents_(self.orb.look.click_through or fn is None)
 
     def set_enabled(self, on: bool) -> None:
         if not on:
@@ -300,7 +301,7 @@ class Overlay:
         """Reduce Motion / Transparency / Increase Contrast changed: rebuild the views with the new look."""
         state, detail = self.state.state, self.state.detail
         self.apply_state("hidden")
-        self.pill.close()
+        self.orb.close()
         self.card.close()
         self.acc = Access.read()
         self._build()
@@ -317,5 +318,5 @@ class Overlay:
             self.slow.invalidate()
             self.slow = None
         AppKit.NSWorkspace.sharedWorkspace().notificationCenter().removeObserver_(self._t_a11y)
-        self.pill.close()
+        self.orb.close()
         self.card.close()

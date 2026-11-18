@@ -900,6 +900,54 @@ an empty screen and silence.
   (2) lesson writing depends on free-tier limits: Cerebras is first in the `tutor_plan` chain and has no key, so Groq
   (8k tokens/min) carries it and the planner sleeps 15 s when the minute is used up.
 
+## D44: The overlay is an orb — arc-reactor circle + solid HUD cards (2026-11-18)
+**Problem (his words):** "Improve the cards' UI, it's like shit. I'm feeling like the Jarvis should be in a circle and
+it's a crazy animated thing, but the card is looking like shit." In the screenshots the pill was a row of 7 dots (no
+presence) and the cards were see-through grey glass: muddy over whatever was behind them, text without contrast.
+Behaviour is unchanged (D26: anchor, click rules, timers, multi-display follow, capture exclusion; D30: the card
+timeline). Public API in `overlay/__init__.py` is identical; `engine.py`, `voice/`, `app.py` untouched.
+- **Orb** (`overlay/orb.py`, replaces `pill.py`): a 64 pt navy disc (#0A0F24), 1 pt SKY hairline rim, BLUE glow that
+  grows with the state, soft black shadow. Inside, centre outward, all Core Animation layers: glowing core (14 pt,
+  white → SKY → BLUE, swells 1.0 → 1.6 with the level, with a bloom) · inner ring of three 80° arcs (r 13, 2 pt, turns
+  clockwise) · dashed mid ring (r 18, 1 pt, BLUE 60 %, 24 dashes, turns the other way, slower) · 36 ticks (r 21.5,
+  2.4 → 4.6 pt) as a circular equaliser: length = level × a per-tick phase, 3 crests travelling clockwise · outer arc
+  (r 28.5, 300°, gap pointing at the card) with a comet (0.9 s lap) while she thinks. Radii are a little smaller than
+  first sketched (outer arc 30 → 28.5, ticks 24–28 → 21.5–26.1) so nothing touches the rim at 1x.
+- **Looks** (`model.LOOKS` / `look_for`): idle dim, rings slow (14 s / 30 s), core breathes 3 s · listening: ticks +
+  core follow his mic · thinking: comet, inner ring 1.6 s, tick wave with per-tick delays · speaking: brightest, her
+  voice with gain 1.3. "Checking calendar" / "✓ Start the resume · today, 4 PM": the disc grows to the right into a
+  capsule (≤ 340 pt) and the orb stays as its round left end.
+- **Motion rules:** transform / opacity only. Everything that loops is a render-server animation; a state change
+  cross-fades in 200 ms ease-out and each loop restarts from where it was (no snap). The 30 Hz Python tick only pushes
+  the level, with implicit animations off, and only when something moved. Reduce Motion: no rotation, comet, wave or
+  breathing; the level shows as brightness and thinking is a slow opacity pulse. Reduce Transparency / Increase
+  Contrast / low-power 15 fps are honoured (exercised offscreen only, not with the system settings switched on).
+- **Cards** (`overlay/card.py`): solid navy #0B1026 panel, radius 20, 1 pt SKY hairline (30 %), a short bright beam on
+  the top edge under the orb. Eyebrow SF Mono 10.5 pt kern 1.6 SKY · title 17 pt semibold white 96 % · rows 15 pt white
+  90 %, 34 pt high, white 7 % separators, hover wash · meta SF Mono 11 pt white 50 %, right-aligned; long text
+  truncates with an ellipsis and never overlaps it. Ring checkbox (16 pt, 1.5 pt SKY); done = filled SKY, navy ✓, SKY
+  strike. Arriving rows get a BLUE wash. Headlines are numbered 01 / 02 / 03, wrap to two lines, source in SKY caps.
+  Choices that differ from the first brief, each made on real screenshots: **the card is fully opaque (alpha 1.0, not
+  0.96)** because at 96 % a page of white text behind it was still readable through it; every card is 380 wide;
+  "due today, 4 PM" is shown as "today, 4 PM" (the eyebrow already says TO-DO) so due times are not clipped.
+- **Measured** (`overlay.demo --measure --hold 6`, M2, three runs, 3–6 s per phase, his other apps running, so treat
+  these as rough): our process: idle 0.9–1.5 % and thinking 0.7–0.8 % of one core against 0.9–1.4 % for the demo
+  itself with the overlay hidden (i.e. nothing measurable); listening with a fake mic 2.1–3.1 %; speaking + card
+  3.4–3.7 % (those two from the two runs after the fix below); listening in silence with a card up 1.8–1.9 %. A first version let the render server glide between level
+  pushes: 36 implicit animations per frame, 8–12 % of a core; fixed by plain steps. WindowServer (whole machine):
+  hidden 19–30 %, orb idle 28–35 %, thinking 31–38 %, listening / speaking 34–41 %; in each run the idle orb was
+  5–10 points above that run's hidden phase, but the phases were not even monotonic within a run, so this is not a
+  clean number. **The orb animates all the time it is visible, so its idle cost on the compositor is small but not
+  zero.** Memory (phys_footprint): 31–32 MB before the overlay exists, +5 MB with the orb, +11–17 MB once cards and
+  the capsule have been shown (fonts / symbols; not run for hundreds of cards this time).
+- **Tests:** `tests/overlay_eval.py` 109 (state machine, looks, Reduce Motion look has no rotation, level meter, tick
+  wave phases and direction, circular hit-test, capsule width, card layout, opaque colours and text contrast, dismiss
+  timers, API no-ops, audio levels, voice-loop hooks, to-do tick), `tests/card_motion_eval.py` 46.
+- **Checked by eye** on real screenshots (`overlay.demo --all --shots`, Retina and the 1x external display, plus
+  `--motion` bursts) and offscreen renders over light / grey / black. Stills only: nobody has watched the motion.
+- **NOT yet seen by the owner.** Not verified: the look over a pure white window on his display, full-screen video,
+  notch Macs, the real accessibility settings, and whether he likes a 64 pt capsule and two-line headlines.
+
 ## D45: With a Bluetooth headset she listens on the Mac's own microphone (2026-11-18)
 **Found in his log:** he wears AirPods and they were macOS's default input, so the always-open mic stream ran on the
 headset. Effects: (1) macOS kept flipping the default input between the AirPods and the MacBook mic and the D-mic-follow

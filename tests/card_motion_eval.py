@@ -98,6 +98,18 @@ rem = M.layout({"kind": "reminders", "title": "Coming up", "focus": {"op": "canc
 check("cancelled reminder: counted (2) until it folds, then 1",
       rem.eyebrow == "REMINDERS · 2" and M.collapse(rem, {0}).eyebrow == "REMINDERS · 1", rem.eyebrow)
 check("plain list (no change): only enters", {s for _, s, _ in M.choreography(big)} == {"enter"})
+check("timeline unchanged by the restyle: strike at 0.55 s for 0.30 s, hold 0.75 s, fold 0.30 s, wash 1.6 s",
+      (M.STRIKE_AT_S, M.STRIKE_S, M.COLLAPSE_HOLD_S, M.COLLAPSE_S, M.HIGHLIGHT_S, M.LAND_S) == (0.55, 0.30, 0.75, 0.30, 1.6, 0.32))
+hl = M.layout({"kind": "news", "title": "AI updates", "focus": {"op": "removed", "ids": [1]},
+               "items": [{"id": 1, "text": "x" * 70, "meta": "HN"}, {"id": 2, "text": "Short", "meta": "HN"}]})
+folded = M.collapse(hl, {0})
+check("a two-line row folds by its own height; the rows keep their text, op and line count",
+      abs((hl.height - folded.height) - (M.NEWS_ROW_H + M.NEWS_LINE_H)) < 1e-6 and folded.rows[1].y == hl.rows[0].y
+      and (folded.rows[0].lines, folded.rows[0].op, folded.rows[0].text) == (2, "removed", hl.rows[0].text))
+gone_all = M.collapse(last, {0})
+check("the last row folding leaves a header-only card (no row padding left over)",
+      gone_all.height == M.PAD + M.EYEBROW_H + M.TITLE_H + M.EMPTY_H + M.PAD
+      and gone_all.height == M.layout({"kind": "todos", "title": "Nothing on your list", "items": []}).height)
 
 # ================================================================ brain → card
 print("brain → card")

@@ -1,8 +1,9 @@
 """Desktop overlay eval (headless: no window is created, no mic, no models).
 
-The pure parts of the pill + cards (state machine, level smoothing, card layout, dismiss timing, pill width), the
-no-op API before init(), the audio callback publishing levels, the voice-loop hooks (thinking → speaking → card →
-speech ended → listening) and the to-do tick write (only against a throwaway test DB).
+The pure parts of the orb + cards (state machine, looks, level smoothing, the tick wave, circular hit-testing, card
+layout, colours, dismiss timing, capsule width), the no-op API before init(), the audio callback publishing levels,
+the voice-loop hooks (thinking → speaking → card → speech ended → listening) and the to-do tick write (only against
+a throwaway test DB).
 """
 from __future__ import annotations
 
@@ -34,13 +35,13 @@ def check(name: str, cond: bool, detail: str = "") -> None:
 
 # ================================================================ 1. state machine
 print("state machine")
-s = M.PillState()
+s = M.OrbState()
 t = s.apply("listening")
-check("hidden → listening shows the pill (wake bloom)", t is not None and t.show and not t.hide and t.look.timer)
+check("hidden → listening shows the orb (wake bloom)", t is not None and t.show and not t.hide and t.look.timer)
 check("same state again is a no-op (cheap to call often)", s.apply("listening") is None)
 t = s.apply("thinking")
-check("thinking: no Python timer (render-server ripple), clickable", not t.look.timer and t.look.anim == "wave"
-      and not t.look.click_through and not t.show)
+check("thinking: no Python timer (render-server comet + tick wave), clickable", not t.look.timer
+      and t.look.comet > 0 and t.look.wave > 0 and not t.look.click_through and not t.show)
 t = s.apply("thinking", "calendar")
 check("thinking + detail is a change (label 'Checking calendar')", t is not None and t.detail == "calendar")
 t = s.apply("speaking")
@@ -113,27 +114,130 @@ check("frame-rate independent smoothing (60 vs 30 fps ≈ same)", abs(la.value -
       f"{la.value} vs {lb.value}")
 check("output always 0..1 in 0.01 steps", all(0 <= v <= 1 and abs(v * 100 - round(v * 100)) < 1e-6 for v in vals))
 check("her voice meter: floor stays within -40..-25 dB", M.METER["out"]["floor_min"] == -40)
-sc = M.dot_scales(1.0)
-check("dots: centre bulge 1 − d²/48, symmetric, 1.0 at rest",
-      sc[3] == max(sc) and sc[0] == sc[6] and sc[1] == sc[5] and M.dot_scales(0.0) == [1.0] * 7
-      and M.bulge(3) == 1.0 and abs(M.bulge(0) - (1 - 4.5 ** 2 / 48)) < 1e-9)
-keys, delay = M.shimmer(3)
-k0, d0 = M.shimmer(0)
-check("shimmer: 1 s keyframes ×1→1.2→1.5→1.1→1.3→1, 0.1 s per dot from the centre",
-      keys == M.SHIMMER_KEYS and delay == 0.0 and abs(d0 - 0.3) < 1e-9 and max(k0) < 1.5 and k0[0] == k0[-1] == 1.0
-      and M.SHIMMER_TIMES == [0.0, 0.2, 0.4, 0.8, 0.9, 1.0])
-check("state transitions 100 ms on Flow's curve", M.STATE_S == 0.1 and M.STATE_EASE == (0.05, 0.6, 0.4, 0.95))
-check("commit only when the swell moved", not M.changed(1.0, 1.005) and M.changed(1.0, 1.02))
+# ================================================================ 2b. the orb: looks, rings, tick wave, hit-testing
+print("orb looks")
+VIS = ("idle", "listening", "thinking", "speaking")
+check("idle is the dimmest, speaking the brightest (glow, rim, ticks)",
+      all(getattr(M.LOOKS[a], k) < getattr(M.LOOKS[b], k) for a, b in zip(VIS, VIS[1:]) for k in ("glow", "rim", "ticks")))
+check("both rings turn in every visible state, the mid ring slower (and the other way: drawn by orb.py)",
+      all(0 < M.LOOKS[k].spin < M.LOOKS[k].counter for k in VIS))
+check("idle turns slowly and breathes ~3 s; thinking is the fastest",
+      M.LOOKS["idle"].spin >= 10 and 2.5 <= M.LOOKS["idle"].breathe <= 3.5
+      and M.LOOKS["thinking"].spin == min(M.LOOKS[k].spin for k in VIS) and M.LOOKS["thinking"].breathe < 1.0)
+check("only thinking has the comet (~0.9 s lap) and the render-server tick wave",
+      {k for k in VIS if M.LOOKS[k].comet} == {"thinking"} == {k for k in VIS if M.LOOKS[k].wave}
+      and M.LOOKS["thinking"].comet == 0.9)
+check("her voice moves the ticks more than his mic (gain)", M.LOOKS["speaking"].gain > M.LOOKS["listening"].gain > 0
+      and M.LOOKS["idle"].gain == 0 == M.LOOKS["thinking"].gain)
+check("look_for without Reduce Motion is the state's own look", all(M.look_for(k) is M.LOOKS[k] for k in M.STATES))
+RM = {k: M.look_for(k, reduce_motion=True) for k in M.STATES}
+check("Reduce Motion: nothing rotates, travels or breathes in any state",
+      all(v.spin == v.counter == v.comet == v.wave == v.breathe == 0 for v in RM.values()))
+check("Reduce Motion: thinking is a calm opacity pulse; level, glow and clicks are unchanged",
+      RM["thinking"].pulse > 0 and all(RM[k].pulse == 0 for k in M.STATES if k != "thinking")
+      and all((RM[k].timer, RM[k].source, RM[k].click_through, RM[k].glow, RM[k].gain)
+              == (M.LOOKS[k].timer, M.LOOKS[k].source, M.LOOKS[k].click_through, M.LOOKS[k].glow, M.LOOKS[k].gain)
+              for k in M.STATES))
+check("a state cross-fades in 150–250 ms", 0.15 <= M.STATE_S <= 0.25 and M.MORPH_S <= 0.3)
+check("rings are concentric and never touch: core < inner < mid < ticks < outer arc < rim",
+      M.R_CORE * (1 + M.CORE_SWELL) < M.R_INNER < M.R_MID < M.R_TICK
+      and M.R_TICK + M.TICK_MAX + 0.75 < M.R_OUTER - 0.75 and M.R_OUTER + 0.75 < M.ORB / 2 - 1 and M.ORB == 64)
+d, g = M.dash_pattern(M.R_MID)
+check("mid ring: a whole number of dashes fits the circle (no seam)",
+      abs(M.MID_DASHES * (d + g) - 2 * math.pi * M.R_MID) < 1e-9 and 0 < d < g)
+
+print("tick wave")
+N, W = M.N_TICKS, M.WAVES
+check("36 ticks, 10° apart, clockwise from 12 o'clock", N == 36 and M.tick_angle(0) == 0
+      and abs(M.tick_angle(9) - math.pi / 2) < 1e-9)
+ph = [M.tick_phase(i) for i in range(N)]
+check("per-tick phase: rises evenly, wraps once per crest (3 crests around the ring)",
+      ph[0] == 0 and all(abs((b - a) - W / N) < 1e-9 for a, b in zip(ph[:N // W - 1], ph[1:N // W]))
+      and all(abs(ph[i] - ph[i + N // W]) < 1e-9 for i in range(N - N // W)) and all(0 <= x < 1 for x in ph))
+check("silence: every tick at rest, exactly 1.0 (nothing to commit)",
+      M.tick_scales(0.0, 1.23) == [1.0] * N and M.tick_scales(-1, 0.5) == [1.0] * N
+      and not M.changed_any(M.tick_scales(0.0, 1.0), M.tick_scales(0.0, 2.0)))
+loud = M.tick_scales(1.0, 0.37)
+check("loud: ticks between rest and the longest tick (0.01 steps), not all the same (a wave)",
+      all(1.0 <= x <= M.TICK_MAX / M.TICK_LEN + 0.005 and abs(x * 100 - round(x * 100)) < 1e-6 for x in loud)
+      and max(loud) - min(loud) > 0.3
+      and max(loud) > 0.95 * M.TICK_MAX / M.TICK_LEN)
+crest = lambda t: max(range(N // W), key=lambda i: M.tick_scales(1.0, t)[i])     # noqa: E731
+check("the crest travels clockwise around the circle", crest(0.5 / M.WAVE_HZ) == 3 and crest(0.75 / M.WAVE_HZ) == 6
+      and crest(1.0 / M.WAVE_HZ) == 9)
+check("the same wave on each third of the ring", all(loud[i] == loud[i + N // W] for i in range(N - N // W)))
+check("the level sets how far: half as loud = shorter ticks; her gain pushes further",
+      max(M.tick_scales(0.5, 0.37)) < max(loud) and max(M.tick_scales(0.5, 0.37, 1.3)) > max(M.tick_scales(0.5, 0.37)))
+check("a moving wave is a visible change, a still one is not",
+      M.changed_any(M.tick_scales(0.6, 1.0), M.tick_scales(0.6, 1.05))
+      and not M.changed_any(loud, list(loud)) and M.changed_any([1.0], [1.0, 1.0]))
+dl = [M.tick_delay(i, 0.9) for i in range(N)]
+check("thinking: per-tick start delays inside one period, in step with the phase",
+      dl[0] == 0 and all(0 <= x < 0.9 for x in dl) and abs(dl[1] - 0.9 * W / N) < 1e-9 and abs(dl[N // W]) < 1e-9)
+check("core: 1.0 at rest → 1.6 at full level, clamped",
+      M.core_scale(0.0) == 1.0 and M.core_scale(1.0) == 1.6 and M.core_scale(5.0) == 1.6 and M.core_scale(0.5, 1.3) == 1.39)
+sv = M.sine_values(0.86, 1.14)
+check("breathing loop: starts and ends at the low point, peaks in the middle, no jump at the seam",
+      sv[0] == sv[-1] == 0.86 and abs(max(sv) - 1.14) < 1e-9 and sv.index(max(sv)) == len(sv) // 2)
+check("…and a new loop picks up where the old one was (phase of the current value)",
+      M.sine_phase(0.86, 0.86, 1.14) == 0 and abs(M.sine_phase(1.14, 0.86, 1.14) - 0.5) < 1e-9
+      and abs(M.sine_phase(1.0, 0.86, 1.14) - 0.25) < 1e-9 and M.sine_phase(9, 0.86, 1.14) == 0.5
+      and M.sine_phase(1, 1, 1) == 0)
+check("commit only when something moved", not M.changed(1.0, 1.005) and M.changed(1.0, 1.02))
 
 print("shapes + displays")
-check("capsule hit-test: centre in, corners out", M.in_round_rect(84, 20, 168, 40, 20)
-      and not M.in_round_rect(1, 1, 168, 40, 20) and not M.in_round_rect(167, 39, 168, 40, 20)
-      and M.in_round_rect(20, 1, 168, 40, 20) and not M.in_round_rect(-1, 20, 168, 40, 20))
-check("card hit-test: rounded corners out", M.in_round_rect(180, 140, 360, 280, 18) and not M.in_round_rect(2, 2, 360, 280, 18))
+R = M.ORB / 2
+k = math.sqrt(0.5)
+check("orb hit-test is a circle: centre in, the square's corners out",
+      M.in_orb(R, R) and not M.in_orb(4, 4) and not M.in_orb(M.ORB - 4, 4) and not M.in_orb(4, M.ORB - 4)
+      and not M.in_orb(M.ORB - 4, M.ORB - 4))
+check("…exactly the disc: just inside the rim in, just outside out, in every direction",
+      all(M.in_orb(R + (R - 0.5) * math.cos(a), R + (R - 0.5) * math.sin(a))
+          and not M.in_orb(R + (R + 0.5) * math.cos(a), R + (R + 0.5) * math.sin(a))
+          for a in [i * math.pi / 8 for i in range(16)]))
+check("…and nothing beside the disc (the glow is not clickable)", not M.in_orb(-1, R) and not M.in_orb(M.ORB + 1, R)
+      and not M.in_orb(100, R) and M.in_orb(R + (R - 1) * k, R + (R - 1) * k))
+check("as a capsule: the label part is in, the rounded ends' corners are out",
+      M.in_orb(200, 5, 246) and M.in_orb(120, R, 246) and not M.in_orb(243, 3, 246) and not M.in_orb(3, 3, 246)
+      and not M.in_orb(250, R, 246))
+check("card hit-test: rounded corners out", M.in_round_rect(190, 140, 380, 280, M.CARD_RADIUS)
+      and not M.in_round_rect(2, 2, 380, 280, M.CARD_RADIUS) and M.CARD_RADIUS == 20)
 FR = [(0, 0, 1440, 900), (1440, 0, 1920, 1080)]
 check("pointer's display, else the nearest one", M.screen_index(FR, (100, 100)) == 0
       and M.screen_index(FR, (2000, 500)) == 1 and M.screen_index(FR, (5000, 500)) == 1
       and M.screen_index(FR, (-50, 10)) == 0 and M.FOLLOW_S == 0.4)
+
+
+def lum(c):                                    # WCAG relative luminance of an sRGB colour
+    f = lambda v: v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4     # noqa: E731
+    r, g_, b_ = (f(x / 255) for x in c)
+    return 0.2126 * r + 0.7152 * g_ + 0.0722 * b_
+
+
+def over(fg, a, bg):                           # fg at alpha a over bg
+    return tuple(a * x + (1 - a) * y for x, y in zip(fg, bg))
+
+
+def contrast(c1, c2):
+    hi, lo = sorted((lum(c1), lum(c2)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
+print("colours")
+check("card and disc are opaque (alpha ≥ 0.94): what is behind never muddies them",
+      M.CARD_A >= 0.94 and M.DISC_A >= 0.94 and M.CARD_A <= 1 and M.DISC_A <= 1)
+check("always dark, in Stiti's blues", lum(M.CARD) < 0.02 and lum(M.DISC) < 0.02
+      and M.CARD == (0x0B, 0x10, 0x26) and M.DISC == (0x0A, 0x0F, 0x24) and M.BLUE == (0x46, 0x56, 0xD6)
+      and M.SKY == (0x7F, 0xB2, 0xF0))
+worst = over(M.CARD, M.CARD_A, M.WHITE)        # the card over a pure white window
+check("text contrast on the card, even over a white window: rows ≥ 7:1, meta + eyebrow ≥ 4.5:1",
+      contrast(over(M.WHITE, M.ROW_A, worst), worst) >= 7 and contrast(over(M.WHITE, M.TEXT_A, worst), worst) >= 7
+      and contrast(over(M.WHITE, M.META_A, worst), worst) >= 4.5 and contrast(M.SKY, worst) >= 4.5,
+      f"{contrast(over(M.WHITE, M.META_A, worst), worst):.2f}")
+check("text alphas 96 / 90 / 50 %, hairline 28–35 %", (M.TEXT_A, M.ROW_A, M.META_A) == (0.96, 0.90, 0.50)
+      and 0.28 <= M.HAIR_A <= 0.35)
+ghost = contrast(over(M.CARD, M.CARD_A, M.WHITE), over(M.CARD, M.CARD_A, (0, 0, 0)))
+check("text on a window behind the card cannot be read through it (ghost contrast < 1.05:1)", ghost < 1.05, f"{ghost:.3f}")
 
 # ================================================================ 3. card layout
 print("card layout")
@@ -144,7 +248,10 @@ check("todos: 5 rows, all tickable, count in the eyebrow, 'You have these to com
       L5.n == 5 and all(r.tickable for r in L5.rows) and L5.eyebrow == "TO-DO · 5 OPEN" and L5.more == 0
       and L5.title == "You have these to complete")
 check("rows stack top-down without overlap", all(b.y == a.y + a.h for a, b in zip(L5.rows, L5.rows[1:])))
-check("width 360, height fits title + 5 rows", L5.width == 360 and 240 < L5.height < 300, f"{L5.height}")
+check("width 380, height fits title + 5 rows of 34", L5.width == 380 and 230 < L5.height < 280 and M.ROW_H == 34
+      and L5.height == L5.rows[-1].y + M.ROW_H + M.PAD_BOTTOM, f"{L5.height}")
+check("'due today, 4 PM' is shown as 'today, 4 PM' (the eyebrow says TO-DO)", L5.rows[0].meta == "today, 4 PM"
+      and M.row_meta("reminders", "due soon") == "due soon" and M.row_meta("todos", "") == "")
 check("row_at maps a click to its row", M.row_at(L5, L5.rows[2].y + 5) == 2 and M.row_at(L5, 1) is None)
 many = {"kind": "todos", "title": "12 things to do", "items": [{"id": i, "text": f"T{i}", "meta": ""} for i in range(8)]}
 L8 = M.layout(many)
@@ -156,10 +263,20 @@ check("empty list: the brain's title only, small card",
 news = M.layout({"kind": "news", "title": "AI updates", "items": [{"id": None, "text": "x" * 200, "meta": "HN"}]})
 check("news: 380 wide, not tickable, long headline clipped",
       news.width == 380 and not news.rows[0].tickable and len(news.rows[0].text) <= 90)
+n2 = M.layout({"kind": "news", "title": "AI", "items": [{"id": None, "text": "Short one", "meta": "HN"},
+                                                        {"id": None, "text": "y" * 70, "meta": "HN"},
+                                                        {"id": None, "text": "Another short one", "meta": "HN"}]})
+check("news: a long headline gets a second line and a taller row; rows still stack without overlap",
+      [r.lines for r in n2.rows] == [1, 2, 1] and n2.rows[1].h == M.NEWS_ROW_H + M.NEWS_LINE_H
+      and n2.rows[0].h == M.NEWS_ROW_H and all(b.y == a.y + a.h for a, b in zip(n2.rows, n2.rows[1:])))
+n3 = M.layout({"kind": "news", "title": "AI", "items": [{"id": None, "text": "Short one", "meta": "HN"}]},
+              measure=lambda text: 7)
+check("news: the real text measure (AppKit) wins over the guess, capped at two lines",
+      n3.rows[0].lines == 2 and M.layout(TODOS, measure=lambda text: 2).rows[0].lines == 1)
 rem = M.layout({"kind": "reminders", "title": "Coming up", "items": [{"id": 3, "text": "Alarm", "meta": "today, 7 AM"}]})
 check("reminders: not tickable (cancel is by voice), eyebrow ≠ title",
       rem.n == 1 and not rem.rows[0].tickable and rem.eyebrow == "REMINDERS · 1" and rem.title == "Coming up")
-check("todo_added / reminder_set don't open a card (pill confirmation)",
+check("todo_added / reminder_set don't open a card (orb confirmation)",
       M.layout({"kind": "todo_added", "items": [{"id": 1, "text": "x"}]}) is None
       and M.layout({"kind": "reminder_set", "items": []}) is None and M.layout({}) is None)
 bad = M.layout({"kind": "todos", "title": "2 things to do", "items": [None, {"id": "7", "text": " "}, {"id": 2, "text": "ok"}]})
@@ -167,17 +284,20 @@ check("junk items dropped, non-int ids not tickable", bad.n == 1 and bad.rows[0]
 check("long to-do text clipped to one line", len(M.layout({"kind": "todos", "title": "1 thing to do",
                                                          "items": [{"id": 1, "text": "y" * 300}]}).rows[0].text) <= 60)
 
-# ================================================================ 4. pill confirmation + width
-print("pill confirmation")
+# ================================================================ 4. orb confirmation + capsule width
+print("orb confirmation")
 check("confirm text: item · when (no 'due ')",
       M.confirm_text({"items": [{"text": "Start resume", "meta": "due today, 4 PM"}]}) == "Start resume · today, 4 PM")
 check("confirm text without meta / without items",
       M.confirm_text({"items": [{"text": "Call home", "meta": ""}]}) == "Call home"
       and M.confirm_text({"title": "Alarm set", "items": []}) == "Alarm set")
 check("confirm text clipped", M.confirm_text({"items": [{"text": "z" * 100}]}).endswith("…"))
-check("pill width: compact 168, grows with the label, ≤ 320",
-      M.pill_width(0) == 168 and 168 < M.pill_width(100) < M.pill_width(150) <= M.PILL_MAX_W)
-check("pill width clamps", M.pill_width(1000) == M.PILL_MAX_W and M.pill_width(120, with_dots=False) < M.pill_width(120))
+check("capsule: no label = the disc alone (64); a label widens it by exactly what it needs, ≤ 340",
+      M.capsule_width(0) == M.ORB == 64 and M.capsule_width(-5) == M.ORB
+      and M.capsule_width(120) == M.ORB + M.CAP_GAP + M.CAP_SYM + 120 + M.CAP_PAD
+      and M.ORB < M.capsule_width(100) < M.capsule_width(150) <= M.ORB_MAX_W == 340)
+check("capsule width clamps; without an icon it is narrower",
+      M.capsule_width(1000) == M.ORB_MAX_W and M.capsule_width(120, symbol=False) == M.capsule_width(120) - M.CAP_SYM)
 
 # ================================================================ 5. dismiss timer
 print("dismiss timer")
@@ -327,7 +447,7 @@ vl.acks, vl.ack_text = {"calendar": (np.ones(1200, np.float32), 24000)}, {"calen
 vl.engine = CardEngine(ack="calendar")
 vl._handle("what's on my calendar", None, None)
 vl._wait_work()
-check("on_ack → the pill says what she's doing", ("set_state", "thinking", "calendar") in calls, str(calls))
+check("on_ack → the orb says what she's doing", ("set_state", "thinking", "calendar") in calls, str(calls))
 calls.clear()
 vl.say("Hello.")
 check("say() while awake: speaking → listening", [c[1] for c in calls if c[0] == "set_state"] == ["speaking", "listening"])

@@ -89,7 +89,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Talks like a person + whole sentences + honesty (D31, D35) | 🟢 no machine-talk, no missing words, never claims an undone action | DECISIONS D31/D35 |
 | Learns from normal conversation (D38, `brain/lifeupdate.py`, `brain/factstore.py`, `brain/sleep.py`) | 🟢 in-turn life updates ("I left X", "Riya is my sister", "remember that…", "actually it's X, not Y"), night/nap extraction with ends + merge + validation, honest "noted" only when saved; NOT tried on his mic/real chats | DECISIONS D38, `docs/research/learn_from_chat.md` |
 | Never repeats herself (D36, `brain/norepeat.py`) | 🟢 said-ledger, "what else?" → only new things / honest "that's all", repeat filter in code; NOT heard on the mic | DECISIONS D36, `docs/research/no_repeat.md` |
-| Desktop overlay (D26, D30) | 🟢 pill + cards that animate add/done/cancel; NOT seen by him on screen yet | DECISIONS D26/D30 |
+| Desktop overlay (D26, D30, D44) | 🟢 arc-reactor orb (was a pill of dots) + solid HUD cards that animate add/done/cancel; checked on screenshots only, NOT seen by him yet | DECISIONS D26/D30/D44 |
 | Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
 | Four languages (D34) + English first (D41) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; Telugu speech check is opt-in ("talk in Telugu" → 30 min) because it turned 1 in 5 of his English turns into Telugu script; NOT tested on his real voice | `docs/research/language_switching.md` |
 

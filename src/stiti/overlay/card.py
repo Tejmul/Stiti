@@ -1,13 +1,18 @@
-"""Cards: native AppKit rows on the same white glass, dropping 8 pt below the pill.
+"""Cards: quiet, sharp HUD panels that drop out from under the orb (D44).
+
+A solid navy panel (what is behind it never shows through, so every word stays readable over any window), a SKY
+hairline border and a short bright beam on its top edge, under the orb. Mono eyebrow, a title, then rows: a ring
+checkbox for to-dos, a bell for reminders, 01 / 02 / 03 for headlines; due times in mono on the right.
 
 Data comes from the brain (cards.py → Engine.last_card), never from the LLM's words, and only card titles/items are
 shown (no captions of the conversation, D24). Click a to-do row = tick it (ui.py writes the brain in a worker thread).
 The card panel is key-CAPABLE (so Esc works after he clicks it) but still non-activating: his app stays frontmost.
 
 Motion (model.choreography decides the timeline, this file only plays it): rows rise in one after another; a row he
-just added / a reminder he just set arrives tinted and its icon bounces, then settles; a to-do he finished gets ✓ and a
-strike line drawn left → right, holds a moment, then folds away while the rows below close up and the card shortens
-(the eyebrow counts down). Removed / cancelled rows do the same with ✕ / a slashed bell. Reduce Motion: no slides.
+just added / a reminder he just set arrives on a blue wash and its icon bounces, then settles; a to-do he finished
+gets a filled ✓ and a strike line drawn left → right, holds a moment, then folds away while the rows below close up
+and the card shortens (the eyebrow counts down). Removed / cancelled rows do the same with ✕ / a slashed bell.
+Reduce Motion: no slides.
 """
 from __future__ import annotations
 
@@ -17,18 +22,26 @@ import Quartz
 from PyObjCTools import AppHelper
 
 from . import model as M
-from .surface import Access, animate_frame, cg, fade, label, make_panel, make_surface, ns, out_ease, set_symbol, \
-    set_text, symbol
+from .surface import Access, animate_frame, cg, crisp, fade, label, make_hud, make_panel, ns, out_ease, set_symbol, \
+    set_text, symbol, text_alpha, text_lines
 
-RADIUS = 18.0
-F_TEXT = lambda: AppKit.NSFont.systemFontOfSize_(13.5)                                              # noqa: E731
-F_TITLE = lambda: AppKit.NSFont.systemFontOfSize_weight_(17, AppKit.NSFontWeightSemibold)            # noqa: E731
-F_EYEBROW = lambda: AppKit.NSFont.monospacedSystemFontOfSize_weight_(10, AppKit.NSFontWeightMedium)  # noqa: E731
-F_META = lambda: AppKit.NSFont.monospacedSystemFontOfSize_weight_(11, AppKit.NSFontWeightRegular)    # noqa: E731
-ICON = {"todos": "circle", "reminders": "bell", "news": None}
+F_TEXT = lambda: AppKit.NSFont.systemFontOfSize_(15)                                                 # noqa: E731
+F_TITLE = lambda: AppKit.NSFont.systemFontOfSize_weight_(17, AppKit.NSFontWeightSemibold)             # noqa: E731
+F_EYEBROW = lambda: AppKit.NSFont.monospacedSystemFontOfSize_weight_(10.5, AppKit.NSFontWeightMedium)  # noqa: E731
+F_META = lambda: AppKit.NSFont.monospacedSystemFontOfSize_weight_(11, AppKit.NSFontWeightRegular)     # noqa: E731
+F_SOURCE = lambda: AppKit.NSFont.monospacedSystemFontOfSize_weight_(10, AppKit.NSFontWeightMedium)    # noqa: E731
+EYEBROW_KERN, SOURCE_KERN = 1.6, 0.9
+TEXT_X = M.ROW_PAD + M.LEAD_W                # where a row's text starts, inside the row
+TEXT_H, META_H, BOX = 19.0, 15.0, 16.0       # line boxes; the checkbox's diameter
 ENTER_DY = 8.0                               # rows rise this far as they fade in
-STRUCK = {"done": ("checkmark.circle.fill", M.BLUE, 1.0), "removed": ("xmark.circle.fill", M.NAVY, 0.4),
-          "cancelled": ("bell.slash", M.NAVY, 0.45)}
+STRUCK_A = 0.42                              # a struck row's text
+CHECK = ((4.3, 8.3), (6.9, 10.9), (11.7, 5.5))                           # ✓ inside the 16 pt ring (y down)
+CROSS = (((5.4, 5.4), (10.6, 10.6)), ((10.6, 5.4), (5.4, 10.6)))         # ✕
+
+
+def headline_lines(text: str, card_w: float = M.CARD_W["news"]) -> int:
+    """1 or 2: the lines a headline really needs on the news card (model.layout asks, so rows get the right height)."""
+    return text_lines(text, F_TEXT(), card_w - 2 * M.ROW_INSET - TEXT_X - M.ROW_PAD)
 
 
 class _CardPanel(AppKit.NSPanel):
@@ -63,7 +76,7 @@ class _CardView(AppKit.NSView):
             return None
         p = self.convertPoint_fromView_(point, self.superview())
         b = self.bounds().size
-        return hit if M.in_round_rect(p.x, p.y, b.width, b.height, RADIUS) else None
+        return hit if M.in_round_rect(p.x, p.y, b.width, b.height, M.CARD_RADIUS) else None
 
     def mouseEntered_(self, event):
         cb = getattr(self, "on_hover", None)
@@ -93,7 +106,7 @@ class _RowView(AppKit.NSView):
 
     def mouseEntered_(self, event):
         if getattr(self, "hoverable", False):
-            self.layer().setBackgroundColor_(cg(M.NAVY, 0.06))
+            self.layer().setBackgroundColor_(cg(M.WHITE, M.HOVER_A))
 
     def mouseExited_(self, event):
         self.layer().setBackgroundColor_(None)
@@ -103,6 +116,15 @@ def _track(view) -> None:
     opts = (AppKit.NSTrackingMouseEnteredAndExited | AppKit.NSTrackingActiveAlways | AppKit.NSTrackingInVisibleRect)
     view.addTrackingArea_(AppKit.NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(
         ((0, 0), (0, 0)), opts, view, None))
+
+
+def _lines(segments) -> object:
+    p = Quartz.CGPathCreateMutable()
+    for seg in segments:
+        Quartz.CGPathMoveToPoint(p, None, *seg[0])
+        for pt in seg[1:]:
+            Quartz.CGPathAddLineToPoint(p, None, *pt)
+    return p
 
 
 class Card:
@@ -116,13 +138,16 @@ class Card:
         self.gen = 0
         self.lay: M.CardLayout | None = None
         self.anchor = None
-        self.rows: list[dict] = []           # per row: view, icon, text, meta, line, glow
+        self.rows: list[dict] = []           # per row: view, icon | box, text, meta, line, glow
         self.gone: set[int] = set()          # rows that have folded away (indices into lay.rows stay stable)
         self.head: dict = {}                 # eyebrow / title / "+N more" labels
 
+    def white(self, alpha: float):
+        return ns(M.WHITE, text_alpha(alpha, self.acc))
+
     def frame_for(self, lay: M.CardLayout, anchor):
         x, top = anchor
-        y = top - M.TOP_GAP - M.PILL_H - M.CARD_GAP - lay.height
+        y = top - M.TOP_GAP - M.ORB - M.CARD_GAP - lay.height
         return ((round(x - lay.width / 2), round(y)), (lay.width, lay.height))
 
     def show(self, lay: M.CardLayout, anchor) -> None:
@@ -142,25 +167,25 @@ class Card:
             self.panel.setFrame_display_(((x, y), (w, h)), True)
             self.panel.orderFrontRegardless()
             fade(self.panel, 1.0, 0.2)
-        else:                                # drops 10 pt out of the pill, 320 ms --out ease
+        else:                                # drops 10 pt out from under the orb, 320 ms --out ease
             self.panel.setFrame_display_(((x, y + 10), (w, h)), True)
             self.panel.orderFrontRegardless()
-            animate_frame(self.panel, ((x, y), (w, h)), 1.0, 0.32, out_ease())
+            animate_frame(self.panel, ((x, y), (w, h)), 1.0, M.LAND_S, out_ease())
 
     def move(self, anchor) -> None:
-        """Follow the pill to another display (fade, jump, fade in)."""
+        """Follow the orb to another display (fade, jump, fade in)."""
         if not self.visible or self.lay is None or anchor == self.anchor:
             return
         self.anchor = anchor
         self.gen += 1
         g = self.gen
-        fade(self.panel, 0.0, M.STATE_S)
+        fade(self.panel, 0.0, 0.1)
 
         def land():
             if g == self.gen and self.visible:
                 self.panel.setFrame_display_(self.frame_for(self.lay, anchor), True)
                 fade(self.panel, 1.0, 0.2)
-        AppHelper.callLater(M.STATE_S + 0.02, land)
+        AppHelper.callLater(0.12, land)
 
     def hide(self) -> None:
         if not self.visible:
@@ -183,14 +208,15 @@ class Card:
     # ---------------------------------------------------------------- content
     def _build(self, lay: M.CardLayout) -> None:
         w, h = lay.width, lay.height
-        outer, host = make_surface(w, h, RADIUS, self.acc, _CardView)
+        host = make_hud(w, h, M.CARD_RADIUS, self.acc, _CardView)
         host.on_hover = self.on_hover
         _track(host)
-        eb = label(lay.eyebrow, F_EYEBROW(), ns(M.BLUE), kern=1.2)
+        self._beam(host.layer(), w)
+        eb = label(lay.eyebrow, F_EYEBROW(), ns(M.SKY), kern=EYEBROW_KERN)
         eb.setFrame_(((M.PAD, M.PAD - 2), (w - 2 * M.PAD, M.EYEBROW_H)))
         host.addSubview_(eb)
-        tl = label(lay.title, F_TITLE(), ns(M.NAVY))
-        tl.setFrame_(((M.PAD, M.PAD + M.EYEBROW_H - 2), (w - 2 * M.PAD, M.TITLE_H)))
+        tl = label(lay.title, F_TITLE(), self.white(M.TEXT_A))
+        tl.setFrame_(((M.PAD, M.PAD + M.EYEBROW_H), (w - 2 * M.PAD, M.TITLE_H)))
         host.addSubview_(tl)
         self.head = {"eyebrow": eb, "title": tl, "more": None}
         self.rows = []
@@ -199,58 +225,143 @@ class Card:
             row = self._row(host, lay, i, r, w)
             if hidden:
                 row["view"].setAlphaValue_(0.0)
-                row["view"].setFrameOrigin_((8, r.y + ENTER_DY))
+                row["view"].setFrameOrigin_((M.ROW_INSET, r.y + ENTER_DY))
             self.rows.append(row)
         if lay.more:
-            mo = label(f"+{lay.more} more", F_META(), ns(M.NAVY, 0.5))
-            mo.setFrame_(((M.PAD + 26, lay.more_y + 4), (w - 2 * M.PAD, 16)))
+            mo = label(f"+{lay.more} more", F_META(), self.white(M.META_A))
+            mo.setFrame_(((M.ROW_INSET + TEXT_X, lay.more_y + 5), (w - 2 * M.PAD, 16)))
             host.addSubview_(mo)
             self.head["more"] = mo
-        self.panel.setContentView_(outer)
+        self.panel.setContentView_(host)
+
+    def _beam(self, base, w: float) -> None:
+        """A short bright hairline centred on the top edge, with a faint glow under it: the light of the orb above."""
+        glow = crisp(Quartz.CAGradientLayer.layer())
+        glow.setFrame_(((w / 2 - 120, -26), (240, 52)))
+        glow.setType_("radial")
+        glow.setStartPoint_((0.5, 0.5))
+        glow.setEndPoint_((1.0, 1.0))
+        glow.setColors_([cg(M.SKY, 0.16), cg(M.SKY, 0.0)])
+        base.addSublayer_(glow)
+        beam = crisp(Quartz.CAGradientLayer.layer())
+        beam.setFrame_(((w / 2 - 72, 0), (144, 1.5)))
+        beam.setStartPoint_((0.0, 0.5))
+        beam.setEndPoint_((1.0, 0.5))
+        beam.setColors_([cg(M.SKY, 0.0), cg(M.WHITE, M.BEAM_A), cg(M.SKY, 0.0)])
+        base.addSublayer_(beam)
 
     def _row(self, host, lay: M.CardLayout, i: int, r: M.Row, w: float) -> dict:
-        rw = w - 16
-        rv = _RowView.alloc().initWithFrame_(((8, r.y), (rw, r.h)))
+        rw = w - 2 * M.ROW_INSET
+        rv = _RowView.alloc().initWithFrame_(((M.ROW_INSET, r.y), (rw, r.h)))
         rv.setWantsLayer_(True)
-        rv.layer().setCornerRadius_(9)
+        rv.layer().setCornerRadius_(8)
         rv.idx, rv.on_click, rv.hoverable = i, self.on_row, r.tickable
         _track(rv)
         rv.setAccessibilityElement_(True)
         rv.setAccessibilityRole_(AppKit.NSAccessibilityCheckBoxRole if r.tickable else AppKit.NSAccessibilityStaticTextRole)
         rv.setAccessibilityLabel_(f"{r.text} {r.meta}".strip())
         host.addSubview_(rv)
-        icon_name = ICON.get(lay.kind)
-        icon = symbol(icon_name, 15, ns(M.NAVY, 0.35) if lay.kind == "todos" else ns(M.BLUE, 0.85)) if icon_name else None
-        x = 8.0
-        if icon is not None:
-            icon.setFrame_(((x, (r.h - 18) / 2), (18, 18)))
-            rv.addSubview_(icon)
-            x += 26
-        meta = label(r.meta, F_META(), ns(M.NAVY, 0.55)) if r.meta else None
-        if lay.kind == "news":               # headline over its source
-            tx = label(r.text, F_TEXT(), ns(M.NAVY))
-            tx.setFrame_(((x, 5), (rw - x - 8, 18)))
+        sep = Quartz.CALayer.layer()                 # hairline above every row (the first one closes the header)
+        sep.setFrame_(((M.ROW_PAD, 0), (rw - 2 * M.ROW_PAD, 1)))
+        sep.setBackgroundColor_(cg(M.WHITE, 0.2 if self.acc.increase_contrast else M.SEP_A))
+        rv.layer().addSublayer_(sep)
+        row = {"view": rv, "icon": None, "box": None, "text": None, "meta": None, "line": None, "glow": None,
+               "kind": lay.kind}
+        if lay.kind == "todos":
+            row["box"] = self._checkbox(rv.layer(), r.h)
+        elif lay.kind == "reminders":
+            row["icon"] = symbol("bell", 13, ns(M.SKY, 0.85))
+            if row["icon"] is not None:
+                row["icon"].setFrame_(((M.ROW_PAD - 1, (r.h - 18) / 2), (18, 18)))
+                rv.addSubview_(row["icon"])
+        else:                                        # headlines are numbered
+            num = label(f"{i + 1:02d}", F_SOURCE(), ns(M.SKY, 0.6), kern=0.4)
+            num.setFrame_(((M.ROW_PAD, 9), (M.LEAD_W, 14)))
+            rv.addSubview_(num)
+        x = TEXT_X
+        room = rw - x - M.ROW_PAD
+        if lay.kind == "news":                       # headline (up to two lines) over its source
+            tx = label(r.text, F_TEXT(), self.white(M.ROW_A), lines=2)
+            tx.setFrame_(((x, 6), (room, r.lines * M.NEWS_LINE_H)))
             rv.addSubview_(tx)
-            if meta is not None:
-                meta.setFrame_(((x, 25), (rw - x - 8, 15)))
+            if r.meta:
+                meta = label(r.meta.upper(), F_SOURCE(), ns(M.SKY, text_alpha(0.7, self.acc)), kern=SOURCE_KERN)
+                meta.setFrame_(((x, 6 + r.lines * M.NEWS_LINE_H + 3), (room, 14)))
                 rv.addSubview_(meta)
-        else:                                # text … meta (right-aligned, mono); the shorter one gives way
-            tx = label(r.text, F_TEXT(), ns(M.NAVY))
+                row["meta"] = meta
+        else:                                        # text … meta (right-aligned, mono); text truncates, meta doesn't
+            tx = label(r.text, F_TEXT(), self.white(M.ROW_A))
             tx.sizeToFit()
             mw = 0.0
-            if meta is not None:
+            if r.meta:
+                meta = label(r.meta, F_META(), self.white(M.META_A))
                 meta.sizeToFit()
-                room = rw - x - 8 - 12
-                mw = min(meta.frame().size.width, max(110.0, room - min(tx.frame().size.width, room * 0.55)))
+                mw = min(meta.frame().size.width + 1, room * 0.55)
                 meta.setAlignment_(AppKit.NSTextAlignmentRight)
-                meta.setFrame_(((rw - 8 - mw, (r.h - 15) / 2), (mw, 15)))
+                meta.setFrame_(((rw - M.ROW_PAD - mw, (r.h - META_H) / 2 + 0.5), (mw, META_H)))
                 rv.addSubview_(meta)
-            tx.setFrame_(((x, (r.h - 18) / 2), (rw - x - 8 - (mw + 12 if mw else 0), 18)))
+                row["meta"] = meta
+            tx.setFrame_(((x, (r.h - TEXT_H) / 2), (room - (mw + 10 if mw else 0), TEXT_H)))
             rv.addSubview_(tx)
-        row = {"view": rv, "icon": icon, "text": tx, "meta": meta, "line": None, "glow": None, "kind": lay.kind}
+        row["text"] = tx
         if r.done:
             self._paint(row, r, True, animate=False)
         return row
+
+    def _checkbox(self, base, row_h: float) -> dict:
+        """16 pt ring, 1.5 pt SKY. Done = filled SKY with a navy ✓; removed = dim ring with a ✕."""
+        box = Quartz.CALayer.layer()
+        box.setFrame_(((M.ROW_PAD, (row_h - BOX) / 2), (BOX, BOX)))
+        ring, mark = crisp(Quartz.CAShapeLayer.layer()), crisp(Quartz.CAShapeLayer.layer())
+        ring.setPath_(Quartz.CGPathCreateWithEllipseInRect(((0.75, 0.75), (BOX - 1.5, BOX - 1.5)), None))
+        ring.setLineWidth_(1.5)
+        ring.setStrokeColor_(cg(M.SKY))
+        ring.setFillColor_(cg(M.SKY, 0.0))
+        mark.setFillColor_(None)
+        mark.setLineWidth_(1.8)
+        mark.setLineCap_(Quartz.kCALineCapRound)
+        mark.setLineJoin_(Quartz.kCALineJoinRound)
+        mark.setStrokeEnd_(0.0)
+        for lay in (ring, mark):
+            lay.setFrame_(((0, 0), (BOX, BOX)))
+            box.addSublayer_(lay)
+        base.addSublayer_(box)
+        return {"box": box, "ring": ring, "mark": mark}
+
+    def _tick_box(self, b: dict, state: str, animate: bool) -> None:
+        """open | done | removed."""
+        Quartz.CATransaction.begin()
+        Quartz.CATransaction.setDisableActions_(not animate)
+        Quartz.CATransaction.setAnimationDuration_(0.18)
+        if state == "done":
+            b["ring"].setStrokeColor_(cg(M.SKY))
+            b["ring"].setFillColor_(cg(M.SKY, 1.0))
+            b["mark"].setPath_(_lines([CHECK]))
+            b["mark"].setStrokeColor_(cg(M.CARD))
+        elif state == "removed":
+            b["ring"].setStrokeColor_(cg(M.WHITE, 0.32))
+            b["ring"].setFillColor_(cg(M.SKY, 0.0))
+            b["mark"].setPath_(_lines(CROSS))
+            b["mark"].setStrokeColor_(cg(M.WHITE, 0.55))
+        else:
+            b["ring"].setStrokeColor_(cg(M.SKY))
+            b["ring"].setFillColor_(cg(M.SKY, 0.0))
+        Quartz.CATransaction.commit()
+        Quartz.CATransaction.begin()                 # the mark is drawn (or wiped) as a stroke
+        Quartz.CATransaction.setDisableActions_(not animate)
+        Quartz.CATransaction.setAnimationDuration_(0.22)
+        b["mark"].setStrokeEnd_(0.0 if state == "open" else 1.0)
+        Quartz.CATransaction.commit()
+        if animate and state != "open":
+            self._bounce(b["box"])
+
+    def _bounce(self, layer) -> None:
+        a = Quartz.CAKeyframeAnimation.animationWithKeyPath_("transform.scale")
+        a.setValues_([1.0, 1.22, 0.96, 1.0])
+        a.setKeyTimes_([0.0, 0.35, 0.75, 1.0])
+        a.setDuration_(0.36)
+        a.setTimingFunction_(out_ease())
+        layer.addAnimation_forKey_(a, "bounce")
 
     def set_done(self, i: int, done: bool) -> None:
         if self.lay is None or not (0 <= i < len(self.rows)):
@@ -260,16 +371,18 @@ class Card:
         self._paint(self.rows[i], r, done, animate=not self.acc.reduce_motion)
 
     def _paint(self, row: dict, r: M.Row, done: bool, animate: bool, op: str = "done") -> None:
-        """○ → ✓ (or ✕ / slashed bell) + the text dims and a strike line is drawn across it; reversible (a click)."""
+        """○ → filled ✓ (or ✕ / slashed bell) + the text dims and a strike line is drawn across it; reversible."""
+        if row["box"] is not None:
+            self._tick_box(row["box"], ("removed" if op == "removed" else "done") if done else "open", animate)
         if row["icon"] is not None:          # SF Symbol replace + bounce
-            name, colour, a = STRUCK.get(op, STRUCK["done"]) if done else (ICON.get(row["kind"]) or "circle", M.NAVY, 0.35)
+            name, colour, a = ("bell.slash", M.WHITE, 0.45) if done else ("bell", M.SKY, 0.85)
             set_symbol(row["icon"], name, ns(colour, a), animate)
-        self._strike(row, done, animate)
+        self._strike(row, done, animate, bright=op == "done")
         if row["meta"] is not None:
-            row["meta"].setAlphaValue_(0.45 if done else 1.0)
+            row["meta"].setAlphaValue_(0.5 if done else 1.0)
         row["view"].setAccessibilityValue_(1 if done else 0)
 
-    def _strike(self, row: dict, on: bool, animate: bool) -> None:
+    def _strike(self, row: dict, on: bool, animate: bool, bright: bool = True) -> None:
         tx = row["text"]
         if not on:
             if row["line"] is not None:
@@ -282,11 +395,11 @@ class Card:
         f = tx.frame()
         w = max(8.0, min(tx.attributedStringValue().size().width, f.size.width))
         line = Quartz.CALayer.layer()
-        line.setBackgroundColor_(cg(M.NAVY, 0.6))
+        line.setBackgroundColor_(cg(M.SKY, 0.95) if bright else cg(M.WHITE, 0.5))
         line.setCornerRadius_(0.75)
         line.setAnchorPoint_((0.0, 0.5))
-        line.setBounds_(((0, 0), (w + 2, 1.5)))
-        line.setPosition_((f.origin.x - 1, f.origin.y + f.size.height / 2 + 0.5))
+        line.setBounds_(((0, 0), (w + 4, 1.5)))
+        line.setPosition_((f.origin.x - 2, f.origin.y + f.size.height / 2 + 0.5))
         row["view"].layer().addSublayer_(line)
         row["line"] = line
         if animate:                          # drawn left → right
@@ -298,10 +411,10 @@ class Card:
             line.addAnimation_forKey_(a, "draw")
             AppKit.NSAnimationContext.beginGrouping()
             AppKit.NSAnimationContext.currentContext().setDuration_(M.STRIKE_S)
-            tx.animator().setAlphaValue_(0.5)
+            tx.animator().setAlphaValue_(STRUCK_A)
             AppKit.NSAnimationContext.endGrouping()
         else:
-            tx.setAlphaValue_(0.5)
+            tx.setAlphaValue_(STRUCK_A)
 
     # ---------------------------------------------------------------- choreography
     def _play(self, lay: M.CardLayout) -> None:
@@ -341,16 +454,16 @@ class Card:
             for i in idx:
                 rv = self.rows[i]["view"]
                 rv.animator().setAlphaValue_(1.0)
-                rv.animator().setFrameOrigin_((8, self.lay.rows[i].y))
+                rv.animator().setFrameOrigin_((M.ROW_INSET, self.lay.rows[i].y))
         self._anim(M.ENTER_S, go)
 
     def _do_arrive(self, idx: list[int]) -> None:
         for i in idx:
             row = self.rows[i]
-            if row["glow"] is None:          # soft blue wash behind the new row
+            if row["glow"] is None:          # blue wash behind the new row
                 glow = Quartz.CALayer.layer()
-                glow.setBackgroundColor_(cg(M.BLUE, 0.10))
-                glow.setCornerRadius_(9)
+                glow.setBackgroundColor_(cg(M.BLUE, 0.34))
+                glow.setCornerRadius_(8)
                 glow.setFrame_(row["view"].layer().bounds())
                 glow.setOpacity_(0.0)
                 row["view"].layer().insertSublayer_atIndex_(glow, 0)
@@ -360,8 +473,9 @@ class Card:
             row["glow"].setOpacity_(1.0)
             Quartz.CATransaction.commit()
             if row["icon"] is not None:
-                name = "bell.fill" if row["kind"] == "reminders" else "circle"
-                set_symbol(row["icon"], name, ns(M.BLUE), not self.acc.reduce_motion)
+                set_symbol(row["icon"], "bell.fill", ns(M.SKY), not self.acc.reduce_motion)
+            if row["box"] is not None and not self.acc.reduce_motion:
+                self._bounce(row["box"]["box"])
 
     def _do_settle(self, idx: list[int]) -> None:
         for i in idx:
@@ -371,9 +485,8 @@ class Card:
                 Quartz.CATransaction.setAnimationDuration_(0.6)
                 row["glow"].setOpacity_(0.0)
                 Quartz.CATransaction.commit()
-            if row["icon"] is not None and row["kind"] in ("todos", "reminders"):
-                set_symbol(row["icon"], ICON[row["kind"]],
-                           ns(M.NAVY, 0.35) if row["kind"] == "todos" else ns(M.BLUE, 0.85), False)
+            if row["icon"] is not None:
+                set_symbol(row["icon"], "bell", ns(M.SKY, 0.85), False)
 
     def _do_strike(self, idx: list[int]) -> None:
         for i in idx:
@@ -393,11 +506,11 @@ class Card:
                 if i in self.gone:
                     rv.animator().setAlphaValue_(0.0)
                     if not self.acc.reduce_motion:
-                        rv.animator().setFrameOrigin_((8, r.y - 6))
+                        rv.animator().setFrameOrigin_((M.ROW_INSET, r.y - 6))
                 else:
-                    rv.animator().setFrameOrigin_((8, r.y))
+                    rv.animator().setFrameOrigin_((M.ROW_INSET, r.y))
             if self.head.get("more") is not None:
-                self.head["more"].animator().setFrameOrigin_((M.PAD + 26, new.more_y + 4))
+                self.head["more"].animator().setFrameOrigin_((M.ROW_INSET + TEXT_X, new.more_y + 5))
         if secs:
             self._anim(secs, go)
         else:
@@ -406,9 +519,9 @@ class Card:
             self.rows[i]["view"].setAccessibilityElement_(False)
         g = self.gen
         AppHelper.callLater(secs + 0.05, self._hide_gone, g)
-        set_text(self.head["eyebrow"], new.eyebrow, F_EYEBROW(), ns(M.BLUE), kern=1.2)
+        set_text(self.head["eyebrow"], new.eyebrow, F_EYEBROW(), ns(M.SKY), kern=EYEBROW_KERN)
         if new.title != self.head["title"].stringValue():
-            set_text(self.head["title"], new.title, F_TITLE(), ns(M.NAVY))
+            set_text(self.head["title"], new.title, F_TITLE(), self.white(M.TEXT_A))
         if self.visible and self.anchor is not None:      # the card shortens from the bottom; its top stays put
             frame = self.frame_for(new, self.anchor)
             if secs:

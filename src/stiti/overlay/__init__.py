@@ -1,5 +1,6 @@
-"""Stiti on screen: a calm liquid-glass pill that shows she is listening / thinking / speaking, and cards that drop
-out of it (to-dos, reminders, headlines). Design + measurements: docs/research/desktop_overlay.md, DECISIONS D26.
+"""Stiti on screen: an arc-reactor orb that shows she is listening / thinking / speaking, and solid HUD cards that
+drop out from under it (to-dos, reminders, headlines). Design + measurements: docs/research/desktop_overlay.md,
+DECISIONS D26 (behaviour), D30 (card motion), D44 (the orb + HUD look).
 
 Thread-safe API. Any thread may call these; every AppKit call is marshalled to the main thread. Until `init()` has
 run on the main thread of an AppKit app (Stiti.app), every function is a cheap no-op, so the voice loop in a terminal
@@ -7,7 +8,7 @@ run on the main thread of an AppKit app (Stiti.app), every function is a cheap n
 
     overlay.set_state("listening" | "thinking" | "speaking" | "idle" | "hidden", detail=None)
     overlay.level(mic_rms, out_rms)        # from the audio callback: stores two floats, nothing else
-    overlay.show_card(card)                # cards.py dict; todos/reminders/news open a card, *_added/_set widen the pill
+    overlay.show_card(card)                # cards.py dict; todos/reminders/news open a card, *_added/_set widen the orb
     overlay.hide_card()
     overlay.speech_ended()                 # starts the card's auto-dismiss clock
 """
@@ -82,7 +83,7 @@ def speech_ended() -> None:
 
 
 def set_click_handler(fn) -> None:
-    """fn() runs on the main thread when he clicks the pill while she thinks / speaks (= stop her)."""
+    """fn() runs on the main thread when he clicks the orb while she thinks / speaks (= stop her)."""
     _call("set_click_handler", fn)
 
 
