@@ -115,14 +115,54 @@ from stiti.voice import lid, stt, stt_cloud                             # noqa: 
 check("pooling: Kannada counts as Telugu", lid.pooled({"kn": 0.5, "te": 0.1, "en": 0.2, "hi": 0.2})["te"] == 0.6)
 os.environ["STITI_STT_CLOUD"] = "on"
 lid_detect, cloud_enabled = lid.detect, stt_cloud.enabled
+import time as _time                                                     # noqa: E402
+import numpy as np                                                       # noqa: E402
+
+print("English first (D41): the Telugu check runs only after he asks for Telugu")
+os.environ.pop("STITI_LID_TELUGU", None)
+lid.listen_telugu(0.0)
+asked = []
+lid.detect = lambda audio, sr=16000: asked.append(1) or ("te", 0.9)
+check("by default the ears don't expect Telugu", not lid.telugu_on())
+r0 = stt.transcribe_ex(np.zeros(16000 * 2, dtype=np.float32))
+check("default: no Telugu check, never Telugu script", not asked and not TE.search(r0.text), f"{asked} {r0.text!r}")
+lid.listen_telugu(_time.time() + 60)
+check("'talk in Telugu' window open → Telugu expected", lid.telugu_on())
+lid.listen_telugu(_time.time() - 1)
+check("window over → English again", not lid.telugu_on())
+lid.listen_telugu(float("inf"))
+check("a Telugu lock keeps it open", lid.telugu_on())
+os.environ["STITI_LID_TELUGU"] = "off"
+check("STITI_LID_TELUGU=off wins", not lid.telugu_on())
+os.environ.pop("STITI_LID_TELUGU")
+
+from stiti.engine import Engine as _E, TE_EARS_S                         # noqa: E402
+lid.listen_telugu(0.0)
+ev = _E("voice")
+check("a fresh voice engine: Telugu ears closed", not lid.telugu_on())
+ev.turn("Stiti, talk in Telugu")
+check("'talk in Telugu' opens the Telugu ears for 30 min",
+      lid.telugu_on() and 0 < ev.te_ears_until - _time.time() <= TE_EARS_S + 1, str(ev.te_ears_until))
+ev.turn("talk in English")
+check("'talk in English' closes them", not lid.telugu_on() and ev.te_ears_until == 0.0)
+ev.turn("only talk in Telugu, no other language")
+check("a Telugu lock opens them", lid.telugu_on())
+check("…and a new voice engine (restart) keeps them open", (_E("voice"), lid.telugu_on())[1])
+ev.turn("you can talk in any language now")
+check("unlock closes them", not lid.telugu_on())
+et = _E("text")
+lid.listen_telugu(_time.time() + 60)
+et.turn("hello there")
+check("the web/text engine never touches the ears", lid.telugu_on())
+
+lid.listen_telugu(float("inf"))                      # he asked for Telugu: now Telugu speech is transcribed as Telugu
 lid.detect = lambda audio, sr=16000: ("te", 0.9)
 stt_cloud.enabled = lambda: True
 fake = lambda audio, prompt, language="en": stt_cloud.CloudResult("రేపు పొద్దున ఆరు గంటలకి అలారం పెట్టు", 250.0, [])  # noqa: E731
-import numpy as np                                                       # noqa: E402
-
 r = stt.transcribe_ex(np.zeros(16000 * 2, dtype=np.float32), cloud_call=fake)
 check("Telugu speech → transcribed AS Telugu (not translated)", TE.search(r.text) and r.lang == "telugu", f"{r}")
 lid.detect, stt_cloud.enabled = lid_detect, cloud_enabled
+lid.listen_telugu(0.0)
 
 print("waking is never routed through the language check (2026-11-11: 'Suno Stiti' heard as Telugu script)")
 from stiti.voice import wake                                            # noqa: E402
