@@ -104,6 +104,11 @@ def ingest_file(path: Path, privacy: int | None = None) -> str:
         for j, ((sec, txt), h, v) in enumerate(zip(batch, headers, vecs)):
             q("""INSERT INTO chunks(document_id, ord, section, header, text, privacy, embedding, embed_model)
                  VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""", (doc_id, i + j, sec, h, txt, priv, v, embed.EMBED_MODEL))
+    try:                                            # D49: an exam timetable, a fee notice… → the noticed list
+        from ..life import important                # (she asks before anything is booked; document text is untrusted)
+        important.scan_document(title, md, priv)
+    except Exception as e:
+        print(f"[important] {type(e).__name__}: {e}"[:160])
     return f"{'updated' if prev else 'added'}: {len(parts)} chunks (P{priv})"
 
 

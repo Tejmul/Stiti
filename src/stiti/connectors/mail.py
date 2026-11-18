@@ -32,7 +32,35 @@ def _hdr(v) -> str:
     return str(make_header(decode_header(v or ""))).strip()
 
 
-def _fetch(m, ids: list[bytes], limit: int) -> list[dict]:
+def snippet_of(raw: bytes, n: int = 300) -> str:
+    """The first readable lines of a mail body (plain text; tags, headers of MIME parts and base64 blobs dropped).
+    Best effort on a partial fetch: when it can't be read, "" — the subject alone is used. UNTRUSTED text."""
+    import base64
+    import quopri
+    import re
+    text = raw.decode("utf-8", "replace")
+    part = re.search(r"content-type:\s*text/plain[^\n]*\n(?P<h>(?:[\w-]+:[^\n]*\n)*)\r?\n(?P<b>.*?)(?:\n--|\Z)", text,
+                     re.I | re.S)
+    head, body = (part["h"], part["b"]) if part else ("", text)
+    if re.search(r"content-transfer-encoding:\s*base64", head, re.I):
+        try:
+            blob = re.sub(r"\s+", "", body)
+            body = base64.b64decode(blob[:len(blob) // 4 * 4]).decode("utf-8", "replace")
+        except Exception:
+            return ""
+    elif re.search(r"content-transfer-encoding:\s*quoted-printable", head, re.I) or "=\r\n" in body or "=\n" in body:
+        try:
+            body = quopri.decodestring(body.encode()).decode("utf-8", "replace")
+        except Exception:
+            pass
+    if not part and re.search(r"^--[\w=.-]{8,}\s*$|content-type:", body, re.I | re.M):
+        return ""                                   # a MIME tangle with no plain-text part in reach
+    body = re.sub(r"(?s)<(script|style)\b.*?</\1>|<[^>]+>", " ", body)
+    body = re.sub(r"(?m)^>.*$|https?://\S+", " ", body)                 # quoted replies and links say nothing new
+    return re.sub(r"\s+", " ", body).strip()[:n]
+
+
+def _fetch(m, ids: list[bytes], limit: int, snippet: bool = False) -> list[dict]:
     out = []
     for i in reversed(ids[-limit:]):
         typ, data = m.fetch(i, "(BODY.PEEK[HEADER.FIELDS (FROM SUBJECT DATE)])")
@@ -44,18 +72,25 @@ def _fetch(m, ids: list[bytes], limit: int) -> list[dict]:
         except Exception:
             when = None
         sender = _hdr(msg["From"]).split("<")[0].strip(' "') or _hdr(msg["From"])
-        out.append({"from": sender, "subject": _hdr(msg["Subject"]) or "(no subject)", "date": when})
+        row = {"from": sender, "subject": _hdr(msg["Subject"]) or "(no subject)", "date": when}
+        if snippet:                                 # D49: first lines only, never the whole mail
+            try:
+                typ, body = m.fetch(i, "(BODY.PEEK[TEXT]<0.2048>)")
+                row["snippet"] = snippet_of(body[0][1]) if typ == "OK" and body and body[0] else ""
+            except Exception:
+                row["snippet"] = ""
+        out.append(row)
     return out
 
 
-def unread(limit: int = 5) -> dict:
+def unread(limit: int = 5, snippet: bool = False) -> dict:
     if not configured():
         return {"error": "mail not configured (MAIL_ADDRESS / MAIL_APP_PASSWORD in .env)"}
     m = _conn()
     try:
         typ, data = m.search(None, "UNSEEN")
         ids = data[0].split() if typ == "OK" else []
-        return {"unread": len(ids), "latest": _fetch(m, ids, limit)}
+        return {"unread": len(ids), "latest": _fetch(m, ids, limit, snippet)}
     finally:
         m.logout()
 
