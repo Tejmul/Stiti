@@ -374,12 +374,23 @@ def parse_yahoo_alt(tree) -> list[dict]:
     return out
 
 
+_engines: dict[str, type] = {}
+
+
+def _engine_cls(name: str) -> type:
+    """The ddgs engine class, imported once under a lock: two threads importing ddgs.engines.* at the same moment
+    hit Python's import-deadlock check, and the first search after every start silently lost Yahoo (2026-11-18)."""
+    with _lock:
+        if name not in _engines:
+            import importlib
+            mod = importlib.import_module(f"ddgs.engines.{name}")
+            _engines[name] = next(c for c in vars(mod).values() if isinstance(c, type) and getattr(c, "name", "") == name)
+    return _engines[name]
+
+
 def _engine(name: str, query: str) -> list[dict]:
     """One keyless search engine through the ddgs library's engine class → [{title, href, body}]."""
-    import importlib
-    mod = importlib.import_module(f"ddgs.engines.{name}")
-    cls = next(c for c in vars(mod).values() if isinstance(c, type) and getattr(c, "name", "") == name)
-    e = cls(timeout=int(PER_SOURCE_S) + 1)
+    e = _engine_cls(name)(timeout=int(PER_SOURCE_S) + 1)
     payload = e.build_payload(query=query, region="us-en", safesearch="moderate", timelimit=None, page=1)
     text = e.request("GET", e.search_url, params=payload)
     if not text:
@@ -1017,8 +1028,9 @@ def shape(req: LiveRequest) -> dict:
 
 _HOW = {"read": "- He asked you to read PAGE 1. Do exactly what he asked with it (summarise it, or answer his question "
                 "from it), at the length he asked for.",
-        "find": "- Give him what he asked for, in the number he asked for (\"the first three\"), using the names and "
-                "details exactly as they are written in the LIVE INFO.",
+        "find": "- Give him what he asked for, in the number he asked for (\"the first three\"): name the actual items "
+                "(titles, companies, projects) exactly as they are written in the LIVE INFO, not just the sites that "
+                "list them.",
         "compare": "- Compare them on what he asked. Say which one the sources favour and why; if the sources don't "
                    "settle it, say that instead of picking one yourself.",
         "research": "- Tell him the strongest findings, most useful first, each tied to where it comes from.",
@@ -1028,7 +1040,8 @@ _HOW = {"read": "- He asked you to read PAGE 1. Do exactly what he asked with it
 def _web_block(res: LiveResult, head: str, start_at: int, n: int) -> str:
     kind = res.req.kind
     lines = [f"PAGE {i} — {site(p.url)} ({_host(p.url)})" + (f" · {_data(p.title, 120)}" if p.title else "")
-             + f": {_data(p.text, PAGE_CHARS[kind])}" for i, p in enumerate(res.pages, 1)]
+             + f": {_data(p.text.replace(chr(10), ' | '), PAGE_CHARS[kind])}"      # ' | ' keeps list items apart on one line
+             for i, p in enumerate(res.pages, 1)]
     lines += [f"{i}. {_data(it.title, 200)} — {it.source}" + (f" · {_data(it.snippet, 240)}" if it.snippet else "")
               for i, it in enumerate(res.items[start_at:start_at + n], 1)]
     return (head + "\n" + "\n".join(lines) + "\n[END LIVE INFO]\n[HOW TO ANSWER THIS ONE]\n"

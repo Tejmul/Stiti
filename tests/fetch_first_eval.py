@@ -46,6 +46,24 @@ A1 = {"read": f"Read {URL} and summarise it in two lines.",
       "compare": "Compare the iPhone 17 and the Pixel 10 cameras and tell me which one is better.",
       "research": "Research the best free speech to text models and give me a short report."}
 
+# ---------------------------------------------------------------- 0. the search engines load (must be the first check)
+print("search engines")
+import threading                                                         # noqa: E402
+loaded: dict[str, object] = {}
+
+
+def _load(name: str) -> None:
+    try:
+        loaded[name] = live._engine_cls(name).__name__
+    except BaseException as ex:                                          # noqa: BLE001
+        loaded[name] = ex
+
+
+ths = [threading.Thread(target=_load, args=(n,)) for n in live.WEB_ENGINES]
+[t.start() for t in ths], [t.join(20) for t in ths]
+check("both engines load when asked at the same moment (cold start lost Yahoo to an import deadlock)",
+      loaded == {"yahoo": "Yahoo", "yandex": "Yandex"}, str(loaded))
+
 # ---------------------------------------------------------------- 1. the local decision (no LLM, no domain label)
 print("which sentences need the web (decided locally)")
 r = live.detect(A1["read"])
