@@ -2,8 +2,10 @@
 
 Until now every confirmation was one string ("Got it — added …", "Done — alarm …"), so ten to-dos in a row sounded
 like a machine. Each line here has 4–6 variants in her voice: warm, brief, the key slot (the item, the time) always
-said back, no machine-talk. All of them are original text. Home Assistant's `intents` responses, Leon's to-do / timer
-answers and the OVOS alerts dialogs were read to see WHICH situations to word; no sentence was copied.
+said back, no machine-talk. All of them are original text. Home Assistant's English `intents` responses (CC BY 4.0) were
+read to see WHICH situations a voice assistant words; they are one fixed sentence per intent ("Added {item}", "Timer
+set for …", "Checked off {item}"). Two of those plain forms are also ours ("Added …", and "Timer set for …", which was
+already Stiti's line) — docs/THIRD_PARTY_DATA.md credits them. Nothing else was taken from anywhere.
 
 `line(key, **slots)` picks the next variant in a fixed rotation (deterministic: after `reset()` the sequence is always
 the same), and skips a variant that opens with the same word as the line she said just before, so "Got it — … /

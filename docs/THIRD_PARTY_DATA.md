@@ -41,8 +41,12 @@ in the same file (`GUARD_EX` in the script) are our own.
 - Goel, R. et al. (2023). *PRESTO: A Multilingual Dataset for Parsing Realistic Task-Oriented Dialogs.*
   arXiv:2303.08954.
 
-## Looked at for ideas only (no text copied)
+## Wording: looked at for ideas
 
-Reply wordings in `src/stiti/say.py` and the example replies in `EXAMPLES.md` are original. Home Assistant
-`intents` (CC BY 4.0), Leon (MIT) and OVOS `ovos-skill-alerts` (BSD-3-Clause / Apache-2.0) were read to see which
-situations a voice assistant words (confirm, list, cancel, "for when?"); none of their sentences is reused.
+The reply wordings in `src/stiti/say.py` and the example replies in the default `EXAMPLES.md`
+(`src/stiti/brain/examples.py`) were written for Stiti. The English responses of **Home Assistant `intents`**
+(https://github.com/OHF-Voice/intents, [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) were read to see
+which situations a voice assistant words. They hold one fixed sentence per intent; two of those plain forms also
+appear among ours — "Added {item}" and "Timer set for {time}" (the second was Stiti's wording before) — and are
+credited here. Leon (MIT) and OVOS `ovos-skill-alerts` (BSD-3-Clause / Apache-2.0) were named in the research as
+further sources; their files were not read for this change and nothing from them is used.
