@@ -21,7 +21,7 @@ Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being
 | B2 | Real accuracy on his voice has never been measured (no recordings) | 🙋 OK to turn on the local recorder? |
 | B3 | Recogniser is the small local Whisper; large model only as a second opinion | ⬜ after B2 |
 | B4 | Raw mic for the recogniser (today it gets echo-cancelled audio); learn words from corrections automatically | ⬜ after B2 |
-| B5 | Every start logs "the Mac switched to a different microphone" and reopens the mic once | ⬜ low |
+| B5 | He wears AirPods: she listened on the headset mic (call-quality audio both ways) and macOS flipped the default mic back and forth → 4 reopens in a session | ✅ 🎙️ D45 `fix/mic-prefer-builtin` (listens on the Mac's own mic; headset keeps the sound) |
 | B6 | Replies dropped because she answered before he finished (15 in one week) | ⬜ |
 
 ## C. Whiteboard teacher
