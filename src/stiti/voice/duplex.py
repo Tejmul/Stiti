@@ -18,6 +18,8 @@ PortAudio would otherwise keep listening on the old device forever (2026-11-11, 
 from __future__ import annotations
 
 import math
+import os
+import re
 import threading
 import time
 from collections import deque
@@ -28,6 +30,7 @@ from livekit import rtc
 
 from ..overlay import level as _overlay_level
 from .coreaudio import default_input_id as _default_input_id
+from .coreaudio import transport as _transport
 
 RATE = 48000
 BLOCK = 480            # 10 ms — what the WebRTC APM expects
@@ -41,6 +44,35 @@ REOPEN_MAX_S = 600.0
 RECOVER_S = 6.0        # after a reopen, real sound must come back this fast — else the process itself is stuck
 DEVICE_CHECK_S = 2.0   # how often to ask CoreAudio which mic is the default (~0.1 ms per ask)
 SWITCHED = "the Mac switched to a different microphone"
+# D45 — a Bluetooth headset as the default mic (he wears AirPods): an always-open headset mic keeps the headset in
+# call mode (her voice and his music sound like a phone call, the mic is codec-compressed) and macOS kept flipping the
+# default between the headset and the Mac (4 reopens in one session, 2026-11-18). So in "auto" she listens on the
+# Mac's own microphone and leaves the headset for sound. STITI_MIC=default (or profile key mic=default) = follow macOS.
+BLUETOOTH = ("blue", "blea")
+BUILTIN_RX = re.compile(r"MacBook.*Microphone|Built-in Microphone|Internal Microphone", re.I)
+PIN_BLOCK_S = 600.0    # the Mac's own mic went dead while pinned (lid closed): use macOS's default for this long
+
+
+def mic_mode() -> str:
+    v = os.getenv("STITI_MIC")
+    if not v:
+        try:
+            from .. import profile
+            v = profile.get("mic")
+        except Exception:
+            v = None
+    return "default" if (v or "auto").lower() in ("default", "system", "headset", "airpods") else "auto"
+
+
+def builtin_mic() -> tuple[int, str] | None:
+    """(PortAudio index, name) of the Mac's own microphone, if it is in the device list."""
+    try:
+        for i, d in enumerate(sd.query_devices()):
+            if d["max_input_channels"] > 0 and BUILTIN_RX.search(d["name"]):
+                return i, d["name"]
+    except Exception:
+        pass
+    return None
 
 
 def resample(audio: np.ndarray, sr_in: int, sr_out: int) -> np.ndarray:
@@ -64,7 +96,22 @@ class Duplex:
         self.stream = self._new_stream()
 
     def _new_stream(self):
-        return sd.Stream(samplerate=RATE, blocksize=BLOCK, channels=1, dtype="float32", latency="low", callback=self._cb)
+        kw = dict(samplerate=RATE, blocksize=BLOCK, channels=1, dtype="float32", latency="low", callback=self._cb)
+        cur = _default_input_id()
+        tr = _transport(cur)
+        pin = None
+        if tr in BLUETOOTH and mic_mode() == "auto" and time.monotonic() >= self._no_pin_until:
+            pin = builtin_mic()
+        self._pinned, self._on_builtin, self.mic_name = False, tr == "bltn", None
+        if pin is not None:
+            try:
+                st = sd.Stream(device=(pin[0], None), **kw)
+            except Exception as e:                       # can't open it (in use / gone): macOS's default it is
+                print(f"🎙️  [mic] couldn't open {pin[1]} ({e}); using the default microphone")
+            else:
+                self._pinned, self._on_builtin, self.mic_name = True, True, pin[1]
+                return st
+        return sd.Stream(**kw)
 
     def _init_playback(self) -> None:
         """Playback state only (tests build a Duplex without a sound device through this)."""
@@ -91,6 +138,10 @@ class Duplex:
         self.reopens = 0
         self._streak = 0                  # reopens in a row without the mic coming back
         self._dev_id: int | None = None   # CoreAudio default input when the stream was (re)opened ...
+        self._pinned = False              # D45: opened on the Mac's own mic on purpose (the default is a headset)
+        self._on_builtin = False          # the stream's input is the Mac's own mic (pinned, or it was the default)
+        self._no_pin_until = 0.0          # pinning is off until then (the Mac's mic went dead while pinned)
+        self.mic_name: str | None = None  # the pinned mic's name, for the log
         self._dev_checked = 0.0           # ... and when we last compared it with the current default
 
     # ---------- mic watchdog ----------
@@ -108,6 +159,10 @@ class Duplex:
             self._dev_checked = now
             cur = _default_input_id()
             if cur is not None and cur != self._dev_id:    # incl. opened with no mic at all → a mic appeared
+                if (self._on_builtin and mic_mode() == "auto" and now >= self._no_pin_until
+                        and _transport(cur) in BLUETOOTH + ("bltn",)):
+                    self._dev_id = cur     # the default moved between his headset and the Mac's own mic: she is on
+                    return None            # the Mac's mic either way — nothing to reopen (D45)
                 return SWITCHED
         return None
 
@@ -126,6 +181,8 @@ class Duplex:
                 self._streak = 0                   # real sound since the last (re)open → it recovered
             return None
         switched = why == SWITCHED                 # a new default mic is not a dead mic: no backoff, no streak
+        if not switched and getattr(self, "_pinned", False):
+            self._no_pin_until = now + PIN_BLOCK_S   # the Mac's own mic is dead (lid closed?): follow macOS for a while
         if not switched and now - self._last_reopen < min(REOPEN_EVERY_S * 2 ** max(self._streak - 1, 0),
                                                           REOPEN_MAX_S):
             return None
@@ -149,7 +206,7 @@ class Duplex:
             why += f" (reopen failed: {e}; will retry)"
         else:
             try:
-                why += f" (now on: {sd.query_devices(kind='input')['name']})"
+                why += f" (now on: {self.mic_name or sd.query_devices(kind='input')['name']})"
             except Exception:
                 pass
         self._opened_at, self._zero_since = time.monotonic(), None
@@ -277,6 +334,9 @@ class Duplex:
 
     def __enter__(self):
         self._start()
+        if self._pinned:
+            print(f"🎙️  [mic] listening on {self.mic_name} — your headset stays in full quality for sound "
+                  "(STITI_MIC=default to use the headset's mic)")
         self._opened_at = time.monotonic()
         return self
 

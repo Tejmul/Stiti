@@ -54,3 +54,25 @@ def default_input_id() -> int | None:
     except Exception:
         return None
     return int(dev.value) if err == 0 and dev.value else None
+
+
+_TRANSPORT = 0x7472616E                    # 'tran' kAudioDevicePropertyTransportType
+
+
+def transport(dev_id: int | None) -> str | None:
+    """How a device is attached: 'bltn' (the Mac's own mic), 'blue' / 'blea' (Bluetooth headset), 'usb ', 'virt'…
+    None if unknown. One property read (~0.1 ms)."""
+    lib = _load()
+    if lib is None or not dev_id:
+        return None
+    addr = _Addr(_TRANSPORT, _SCOPE_GLOBAL, _ELEMENT_MAIN)
+    val = ctypes.c_uint32(0)
+    size = ctypes.c_uint32(ctypes.sizeof(val))
+    try:
+        err = lib.AudioObjectGetPropertyData(ctypes.c_uint32(dev_id), ctypes.byref(addr), ctypes.c_uint32(0),
+                                             None, ctypes.byref(size), ctypes.byref(val))
+    except Exception:
+        return None
+    if err != 0 or not val.value:
+        return None
+    return val.value.to_bytes(4, "big").decode("latin-1")
