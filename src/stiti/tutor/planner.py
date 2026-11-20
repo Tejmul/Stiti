@@ -89,9 +89,13 @@ BOARD (id | type | label):
 {board}
 {sources}
 {followup}QUESTION: {question}
-Decide intent + strategy first. Then say: 2–4 short spoken sentences (≤22 words each), a direct answer: the core idea
-in plain words, then one concrete example or analogy (clarify → answer + example; ahead → a one-line preview;
-tangent → one line, offer to park it; out of scope → say so kindly). Do NOT start with "Good question" (you already
+Decide first, like an expert tutor: stuck_at = the exact step or idea the learner is missing (≤12 words);
+error_type = missing_prerequisite / misconception / notation / lost_the_thread / wants_example / wants_more / none;
+then intent + strategy. Then say: 2–4 short spoken sentences (≤22 words each) that fix exactly stuck_at — the core
+idea in plain words, then one concrete example (missing_prerequisite → teach that piece first; misconception → name
+the wrong idea and contrast it; ahead → a one-line preview; tangent → answer it briefly, never just park it).
+check = one short question (≤15 words) he can answer out loud to show the gap is closed, with expected = the key
+words of a right answer; null for chit-chat. Do NOT start with "Good question" (you already
 said it). Don't say "shall we continue". ops: 2–4 board ops that DRAW the answer on a fresh doubt board (box /
 arrow / small graph / table / formula / text), each with "at" = a word copied from the sentence it belongs to, ids
 d1, d2, … Labels ≤4 words. Unused op fields = null. Facts about a book only from SOURCES; otherwise general knowledge."""

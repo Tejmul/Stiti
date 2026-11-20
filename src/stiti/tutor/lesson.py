@@ -286,8 +286,14 @@ SEGMENT_SCHEMA = {
 }
 ANSWER_SCHEMA = {   # live Q&A turn: decide first, then words + board ops (Tutor CoPilot ordering)
     "type": "object", "additionalProperties": False,
-    "required": ["intent", "strategy", "say", "ops", "pages"],
+    "required": ["intent", "stuck_at", "error_type", "strategy", "say", "ops", "pages", "check"],
     "properties": {
+        # D53 (Bridge, NAACL 2024): an expert tutor first decides WHERE he is stuck and WHY, then the move
+        "stuck_at": _S,
+        "error_type": {"type": "string", "enum": ["missing_prerequisite", "misconception", "notation",
+                                                  "lost_the_thread", "wants_example", "wants_more", "none"]},
+        "check": _nullable({"type": "object", "additionalProperties": False, "required": ["prompt", "expected"],
+                            "properties": {"prompt": _S, "expected": _S}}),
         "intent": {"type": "string", "enum": ["clarify", "ahead", "tangent", "challenge", "out_of_scope",
                                               "affect", "chitchat"]},
         "strategy": {"type": "string", "enum": ["direct_explain", "contrast_example", "redraw", "defer",
