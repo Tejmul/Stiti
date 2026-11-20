@@ -254,6 +254,22 @@ check("owner_profile stt_cloud=off works too", len(calls) == n and stt_cloud.set
 os.environ["STITI_STT_CLOUD"] = "on"
 check("env wins over the profile", stt_cloud.setting() == "on")
 profile.set("stt_cloud", "on")
+# D52: in a lesson every real sentence goes to the big ear (Wispr Flow), even when local looks confident
+stt._active_until = 0.0
+fake_local("The FA reads tokens.", 0.05, -0.2)                   # confident but wrong: "DFA" heard as "The FA"
+n = len(calls)
+stt.prefer_cloud(True)
+r = stt.transcribe_ex(speech, cloud_call=cloud("The DFA reads tokens."))
+check("D52 lesson: a confident sentence still goes to the big cloud ear, and its text wins",
+      len(calls) == n + 1 and r.source == "cloud" and r.text == "The DFA reads tokens.", str(r))
+r = stt.transcribe_ex(np.zeros(16000, np.float32), cloud_call=cloud("x"))
+check("D52 lesson: a blip never goes to the cloud", len(calls) == n + 1, str(r))
+r = stt.transcribe_ex(speech, cloud_call=cloud("late", delay=2.5))
+check("D52 lesson: cloud too slow → the local text, no long wait", r.source == "local" and r.ms < 2600, str(r))
+stt.prefer_cloud(False)
+stt_cloud.reset()
+r = stt.transcribe_ex(speech, cloud_call=cloud("x"))
+check("D52: after the lesson, a confident turn stays local again", r.source == "local" and len(calls) == n + 2, str(r))
 
 # ---------------------------------------------------------------- learning words from his corrections (Wispr §3)
 print("correction learning (personal vocabulary)")

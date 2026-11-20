@@ -97,6 +97,32 @@ arrow / small graph / table / formula / text), each with "at" = a word copied fr
 d1, d2, … Labels ≤4 words. Unused op fields = null. Facts about a book only from SOURCES; otherwise general knowledge."""
 
 ANSWER_NO_OPS = {"new_page", "focus", "erase", "strike", "title"}
+
+# He asks to change WHAT is taught (D52). 2026-11-20: "tomorrow I have exam, I gave you a HTML, explain me that" and
+# "I want to study a different syllabus" were answered as doubts about the current slide or parked.
+STEER_PROMPT = """The learner said this in the middle of a lesson. Work out what they WANT, like a teacher who listens.
+LESSON: {lesson} · now on part {pos} of {n}: {segment}
+PARTS OF THIS LESSON (number: title):
+{parts}
+{units}LEARNER SAID: {text}
+Pick ONE action:
+- "answer": a doubt or question about the material (then say = "").
+- "skip_to": they already know this / want a later part of THIS lesson → part = that part's number.
+- "restart": they are lost and want this lesson again from the start → part = 1.
+- "switch": they want a different unit, chapter or topic → target = that unit's name copied exactly from UNITS
+  (or a short topic name when there are no UNITS).
+- "crash": their exam is very soon, or they want the whole syllabus / whole book / whole file covered quickly.
+say: ONE short spoken sentence in plain English (≤ 20 words) saying what you'll do now, e.g. "Got it, exam
+tomorrow. Let's cover the whole notebook fast, unit by unit." Never park their request for later."""
+STEER_SCHEMA = {
+    "type": "object", "additionalProperties": False, "required": ["action", "part", "target", "say"],
+    "properties": {
+        "action": {"type": "string", "enum": ["answer", "skip_to", "restart", "switch", "crash"]},
+        "part": {"anyOf": [{"type": "integer"}, {"type": "null"}]},
+        "target": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+        "say": {"type": "string"},
+    },
+}
 FOLLOWUP_BLOCK = """EARLIER DOUBT: {q}
 YOUR EARLIER ANSWER: {a}
 {simpler}"""
@@ -238,6 +264,20 @@ class Planner:
         d["ops"] = [o for o in (sanitize_op(x) for x in d.get("ops") or [] if isinstance(x, dict))
                     if o and o.type not in ANSWER_NO_OPS][:4]    # the doubt board never flips/erases the lesson
         d["say"] = [s.strip() for s in d.get("say") or [] if isinstance(s, str) and s.strip()][:4]
+        return d
+
+    def steer(self, text: str, ctx: dict) -> dict:
+        """What he wants instead of the current plan → {action, part, target, say} (D52)."""
+        parts = "\n".join(f"{i + 1}: {t}" for i, t in enumerate(ctx["parts"]))
+        units = ("UNITS OF THE LEARNER'S FILE '" + ctx["book"] + "':\n" + "\n".join(f"- {u}" for u in ctx["units"]) + "\n"
+                 if ctx.get("units") else "")
+        d = _call(STYLE.format(name=_name()),
+                  STEER_PROMPT.format(lesson=ctx["lesson"], pos=ctx["pos"], n=len(ctx["parts"]), segment=ctx["segment"],
+                                      parts=parts, units=units, text=text[:400]),
+                  STEER_SCHEMA, "steer", 300, route="tutor_answer", reasoning="low")
+        if d.get("action") not in STEER_SCHEMA["properties"]["action"]["enum"]:
+            d["action"] = "answer"
+        d["say"] = str(d.get("say") or "").strip()[:200]
         return d
 
 

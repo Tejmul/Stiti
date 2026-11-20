@@ -35,11 +35,28 @@ QUESTION = re.compile(r"(\?$|^(what|why|how|when|where|who|which|is|are|can|coul
 IDK = re.compile(r"(pata nahi|nahi pata|no idea|don'?t know|dont know|idk|not sure|pata ni|maloom nahi|"
                  r"hint|help|give up|skip)")
 EXPLICIT_Q = re.compile(r"^(question|doubt|sawal|ek sawal|ek doubt|wait,? what|matlab kya|what is|what'?s|kya hota)")
+# He wants to change WHAT she teaches, not ask about it. 2026-11-20 log: "Bro, I don't need to go from all start",
+# "tomorrow I have exam, I gave you a HTML, explain me that", "I want to study a different syllabus" — one was taken
+# as his guess ("Hold that thought"), one answered as a doubt about HTML, one parked. The steer handler (player) asks
+# the LLM what he wants and falls back to answering, so a doubt caught here by mistake still gets answered.
+STEER = re.compile(
+    r"\b(i (already )?know (this|that|it|these|the basics)|(i )?(don'?t|do not) need (this|that|it|to|the|all)|"
+    r"no need (to|for)|(start|go) (from|with|at) |from (the |all )?(start|beginning|scratch|basics)|"
+    r"skip (the |this |these |all )?(basics|intro|introduction|part|chapter|unit|it|this|that)|"
+    r"(have|got|is|are) (an? |my |the )?(exams?|tests?|viva|quiz|paper)\b|exams? (is |are )?(tomorrow|today|on|in)|"
+    r"i want (to (study|learn|do|cover|go|start|revise)|you to (teach|explain|cover|start|go))|"
+    r"teach me (the|about|this|that|everything|unit|chapter|from)|cover (the )?(whole|full|entire|all|everything)|"
+    r"let'?s (do|study|go to|move to|start|jump|cover|skip|revise)|"
+    r"can (we|you) (start|go|move|skip|do|study|jump|cover|teach)|"
+    r"(different|another|other|next|new) (syllabus|topic|chapter|unit|part|subject|lesson)|"
+    r"go to (unit|chapter|part|section|the)|jump to|move (on )?to (unit|chapter|part|section)|(unit|chapter) \d|"
+    r"whole (syllabus|book|notebook|thing|html|file)|(the|this|that) (html|notebook|file|pdf|book) i (gave|sent|shared))\b")
 
 
 def classify(text: str, *, answering: bool = False) -> str:
     """-> end | pause | repeat | back | next | slower | faster | resume | confused | hindi | english |
-          question | answer | other.  While a check is open, plain sentences are answers."""
+          steer | question | answer | other.  While a check is open, plain sentences are answers — but a request
+          to change the lesson ("I don't need the basics", "exam tomorrow") is never taken as his answer."""
     t = _N(text)
     if not t:
         return "other"
@@ -54,6 +71,8 @@ def classify(text: str, *, answering: bool = False) -> str:
     for name in ("confused", "hindi", "english"):
         if dict(RULES)[name].search(t):
             return name
+    if len(t.split()) >= 3 and STEER.search(t):
+        return "steer"
     if answering:
         if EXPLICIT_Q.search(t) or (t.endswith("?") and not IDK.search(t) and len(t.split()) > 3
                                     and QUESTION.search(t) and not re.match(r"^(is it|it'?s|maybe|i think)", t)):

@@ -23,6 +23,8 @@ import threading
 import time
 from dataclasses import dataclass
 
+from concurrent.futures import ThreadPoolExecutor
+
 import numpy as np
 
 from . import glossary, hinglish, stt_cloud
@@ -63,7 +65,23 @@ def mark_active(seconds: float = ACTIVE_S) -> None:
 
 
 def conversation_active() -> bool:
-    return time.monotonic() < _active_until
+    return _prefer_cloud or time.monotonic() < _active_until
+
+
+# ---- D52 lesson ears (Wispr Flow: every request goes to a big cloud ASR with context, re_wispr_flow.md §3). In a
+# lesson the cloud lane was never open — only the engine calls mark_active — so every doubt he spoke went through the
+# local small model alone and was mis-heard. While a lesson runs, a real sentence goes to Groq whisper-large-v3 IN
+# PARALLEL with local Whisper (primed with the lesson's words); local stays the fallback.
+_prefer_cloud = False
+PREFER_MIN_MS = 900              # shorter than this = a command ("wait", "skip"): local is fast and good enough
+PREFER_CAP_MS = float(os.getenv("STITI_STT_LESSON_CLOUD_MS", "1800"))
+_side = ThreadPoolExecutor(max_workers=1, thread_name_prefix="stt-prefer")
+
+
+def prefer_cloud(on: bool) -> None:
+    """The tutor turns this on for the whole lesson (a deliberate session with him) and off at the end."""
+    global _prefer_cloud
+    _prefer_cloud = bool(on)
 
 
 @dataclass
@@ -312,8 +330,23 @@ def transcribe_ex(audio: np.ndarray, *, cloud_call=None, lid: bool = True) -> ST
     spoken = lid_mod.detect(audio) if lid and lid_mod.telugu_on() else None
     if spoken and spoken[0] == "te":
         return _telugu(audio, t0, fp, cloud_call)
+    side = None
+    if _prefer_cloud and stt_cloud.enabled() and voiced_ms(audio) >= PREFER_MIN_MS:
+        cp0 = build_prompt(lang, prev, cloud=True)
+        side = (cp0, _side.submit(stt_cloud.transcribe, audio, cp0, PREFER_CAP_MS, cloud_call))
     loc, _ = _local(audio, os.getenv("STITI_WHISPER", WHISPER_MAIN), p)
     loc.copy = prompt_copy(loc.text, p, terms)
+    if side is not None:                              # lesson: the big model's text wins when it is back and sane
+        try:
+            cr = side[1].result(timeout=PREFER_CAP_MS / 1000 + 0.3)
+        except Exception:
+            cr = None
+        if accept_cloud(cr, side[0], terms):
+            text = _finish(cr.text)
+            nsp, lp = score(cr.segments) if cr.segments else (0.1, -0.3)
+            heard_lang = hinglish.language(text) if text else lang
+            _remember(fp, text, heard_lang)
+            return STTResult(text, (time.perf_counter() - t0) * 1000, nsp, lp, "cloud", "lesson", heard_lang, -1)
     sp = -1
     text, reason = decide(loc, 10 ** 6)               # the speech length only matters if something looks wrong
     if reason or not loc.text.strip():
