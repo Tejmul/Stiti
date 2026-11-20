@@ -752,15 +752,17 @@ class Coach:
                 since += CONCEPT_MIN[self.mastery.level(c.id)]
                 est += CONCEPT_MIN[self.mastery.level(c.id)]
             est += n_brk * BREAK_MIN
-            dur = f"{max(5, round(est / 5) * 5):.0f} minutes" if est < 60 else f"{round(est / 30) / 2:g} hours"
+            def hours(h):
+                return f"{h:g} hour{'' if h == 1 else 's'}"
+            dur = f"{max(5, round(est / 5) * 5):.0f} minutes" if est < 60 else f"{hours(round(est / 30) / 2)}"
             dur += " with short breaks" if n_brk else ""
             hrs = self.goal.get("hours") or DAY_DEFAULT_H
-            yours = f"your {hrs:g} hours" if self.goal.get("hours_said", True) else "one day"
+            said = self.goal.get("hours_said", True)
             if n < (self.pool_n or n):               # it doesn't all fit: say so, and what she chose
-                body = f"{yours} fit the {n} most important of {self.pool_n} topics, about {dur}"
+                who = f"your {hours(hrs)} fit{'s' if hrs == 1 else ''}" if said else "one day fits"
+                body = f"{who} the {n} most important of {self.pool_n} topics, about {dur}"
             else:
-                body = f"{topics}, about {dur}" + (
-                    f", inside your {hrs:g} hours" if self.goal.get("hours_said", True) else "")
+                body = f"{topics}, about {dur}" + (f", inside your {hours(hrs)}" if said else "")
         else:
             body = topics + (", most important first for your exam" if exam else "")
         t.say(f"Here's the plan: {body}, starting with {first}. Stop me any time with a doubt.", interruptible=False)
