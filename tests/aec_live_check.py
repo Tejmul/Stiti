@@ -9,7 +9,7 @@ from stiti.voice.tts import TTS
 from stiti.voice.vad import VAD, FRAME
 
 tts = TTS()
-audio, sr = tts.synth("Hello Tejmul! This is Stiti testing echo cancellation. I am talking through the laptop "
+audio, sr = tts.synth("Hello Ravi! This is Stiti testing echo cancellation. I am talking through the laptop "
                       "speakers right now, and the microphone should not hear me as a person speaking.")
 for aec in (False, True):
     vad, buf, probs, raw_peak = VAD(), [np.zeros(0, np.float32)], [], [0.0]

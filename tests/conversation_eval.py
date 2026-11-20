@@ -30,18 +30,18 @@ cases = {
     "Bro what language are you talking bro? Talk in English.": "language",
     "can you talk in English": "language", "Hindi mein bolo": "language", "keep it short": "brevity",
     "don't ask me so many questions": "questions", "stop asking about my interview": "topic:interview",
-    "call me Tej": "call_me", "don't call me bro": "dont_call:bro",
+    "call me Ravi": "call_me", "don't call me bro": "dont_call:bro",
     "I speak English at work": None, "remind me at 4 to start my resume": None, "bye": None,
-    "turn off the lights": None, "my name is Tejmul and I study CS": None, "what is happening in tech": None,
+    "turn off the lights": None, "my name is Ravi and I study CS": None, "what is happening in tech": None,
 }
 got = {t: getattr(instructions.parse(t), "key", None) for t in cases}
 check("instructions vs statements", got == cases, str({k: v for k, v in got.items() if v != cases[k]}))
 
 # ---- greeting: a person's hello, never the same twice in a row; no intro offer once she knows him
-hellos = [hello("Tejmul", datetime(2026, 11, 11, 15, 0, tzinfo=CFG.tz)) for _ in range(6)]
+hellos = [hello("Ravi", datetime(2026, 11, 11, 15, 0, tzinfo=CFG.tz)) for _ in range(6)]
 check("hello uses his name and doesn't repeat back-to-back",
-      all("Tejmul" in h for h in hellos) and all(a != b for a, b in zip(hellos, hellos[1:])), str(hellos))
-late = hello("Tejmul", datetime(2026, 11, 11, 1, 0, tzinfo=CFG.tz)).lower()
+      all("Ravi" in h for h in hellos) and all(a != b for a, b in zip(hellos, hellos[1:])), str(hellos))
+late = hello("Ravi", datetime(2026, 11, 11, 1, 0, tzinfo=CFG.tz)).lower()
 check("late-night hello fits the hour", "up" in late or "late" in late, late)
 
 q("DELETE FROM owner_profile")
@@ -59,8 +59,8 @@ check("“turn this off” right after the offer disables it", "won't ask" in r.
 q("DELETE FROM owner_profile WHERE key='intro_offered_at'")
 profile._all.cache_clear()
 check("once off, never offered again", "intro" not in eng.greet())
-profile.set("name", "Tejmul", "owner_edit")
-check("once she knows his name → plain hello, no intro", "Tejmul" in eng.greet())
+profile.set("name", "Ravi", "owner_edit")
+check("once she knows his name → plain hello, no intro", "Ravi" in eng.greet())
 
 # ---- language (D34): "talk in X" switches; "just talk in English, no other language" is a saved lock
 r = eng.turn("Talk in English")

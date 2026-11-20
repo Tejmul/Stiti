@@ -1,4 +1,4 @@
-"""30 synthetic Hinglish/English turns with gold labels. Replace with Tejmul's real ones."""
+"""30 synthetic Hinglish/English turns with gold labels. Replace with the owner's real ones (kept local, never committed)."""
 # (text, domain, is_correction, privacy, emotion)
 GOLD = [
  ("add todo buy milk", "todo", 0, "P1", "calm"),
