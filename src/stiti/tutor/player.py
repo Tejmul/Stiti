@@ -97,6 +97,7 @@ class Tutor:
         self.switch: dict | None = None                 # {"mode": switch|crash, "target", "say"} → __init__ plans it
         self.on_check = None                            # D53 coach: (segment, record) after every graded check
         self.skip_to: int | None = None                 # D53 coach: jump here at the next step (he knows the rest)
+        self.before_end = None                          # D53 coach: () -> True when it added more segments
         if start:                                    # resuming: rebuild the board silently up to `start`
             flat = lesson.cue_list()
             for kk in range(min(start, len(flat))):
@@ -314,9 +315,12 @@ class Tutor:
             while not self.ended:
                 flat = self._flat()
                 if self.k >= len(flat):
-                    if getattr(self.L, "complete", True) or not self._wait_for_more():
-                        break
-                    continue
+                    if not getattr(self.L, "complete", True) and self._wait_for_more():
+                        continue
+                    if (getattr(self.L, "complete", True) and self.before_end is not None and not self.ended
+                            and self.before_end()):
+                        continue                    # D53 coach: come back to what's still wrong, then the recap
+                    break
                 seg, cue, si, ci = self._cue(self.k)
                 if seg.type == "summary" and ci == 0 and self.predict and not self._hook_done:
                     self._revisit_hook()
@@ -393,6 +397,7 @@ class Tutor:
         elif kind in ("slower", "faster"):
             self.speed = round(min(1.3, max(0.75, self.speed + (-0.1 if kind == "slower" else 0.1))), 2)
             self.futs.clear()
+            self.send({"type": "speed", "value": self.speed})      # the dock shows "0.9×"
             self.say("Okay, slower." if kind == "slower" else "Okay, a bit faster.")
         elif kind == "end":
             self.ended = True
