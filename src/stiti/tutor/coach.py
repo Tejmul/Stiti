@@ -603,7 +603,8 @@ class Coach:
                 return False
             if re.search(r"\b(skip|just (start|teach)|start (now|teaching)|no questions)\b", ans, re.I):
                 break
-            v = grade(Check(kind="recall", prompt=pr["question"], expectations=pr.get("expected") or []), ans)["verdict"]
+            v = grade(Check(kind="recall", prompt=pr["question"], expectations=pr.get("expected") or []), ans,
+                      llm=True, call=self.call)["verdict"]     # mis-heard right answers get a free-LLM second opinion
             c = byid[pr["concept_id"]]
             self.mastery.set(c.id, {"correct": 0.85, "partial": 0.55}.get(v, 0.15))
             if v == "correct":                       # what comes before it in the same unit is probably known too

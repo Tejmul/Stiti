@@ -809,7 +809,9 @@ class Tutor:
         if commands.classify(reply, answering=True) in ("question", "steer", "confused"):
             self.events.put({"type": "text", "text": reply, "_seen": True})   # another doubt: the follow-up takes it
             return
-        g = grade.grade(Check(kind="recall", prompt=chk["prompt"], expectations=[chk.get("expected") or ""]), reply)
+        g = grade.grade(Check(kind="recall", prompt=chk["prompt"], expectations=[chk.get("expected") or ""]), reply,
+                        llm=grade.llm_for(self.planner))
+        self._log_grade(g)
         if g["verdict"] == "correct":
             self.say("Yes, exactly.", interruptible=False)
         elif g["verdict"] == "partial":
@@ -954,7 +956,8 @@ class Tutor:
             # ---- it's an answer
             rec["attempts"] += 1
             rec["answers"].append(text[:200])
-            g = grade.grade(c, text)
+            g = grade.grade(c, text, llm=grade.llm_for(self.planner))   # wrong/partial → free-LLM second opinion
+            self._log_grade(g)
             v = g["verdict"]
             if v == "predict":
                 self.predict = (c, text)
@@ -992,6 +995,12 @@ class Tutor:
             except Exception as e:
                 self.log(f"   [coach] on_check {type(e).__name__}: {e}")
         return outcome
+
+    def _log_grade(self, g: dict) -> None:
+        if g.get("llm_error"):
+            self.log(f"   [grade] second opinion failed ({g['llm_error']}): keeping local {g['verdict']}")
+        elif g.get("source") == "llm":
+            self.log(f"   [grade] second opinion: {g['local_verdict']} → {g['verdict']} ({g['llm_ms']:.0f} ms) {g['reason']}")
 
     def _revisit_hook(self) -> None:
         self._hook_done = True
