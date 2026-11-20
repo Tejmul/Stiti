@@ -16,7 +16,13 @@ fail=0
 run() {
   name="$1"; shift
   if [ "${FRESH:-1}" = "1" ]; then fresh_db; fi
-  if out=$(uv run python "$@" 2>&1); then echo "✅ $name — $(echo "$out" | tail -1)"; else
+  out=""; ok=0
+  for attempt in 1 2; do                    # a test that DIES with no output (a native crash in the speech engine on
+    if out=$(uv run python "$@" 2>&1); then ok=1; break; fi   # the CI runner) gets one retry; a real failure prints
+    [ -n "$(echo "$out" | tr -d '[:space:]')" ] && break      # its ✗ lines and is never retried
+    echo "   ($name died with no output — retrying once)"
+  done
+  if [ $ok = 1 ]; then echo "✅ $name — $(echo "$out" | tail -1)"; else
     echo "❌ $name"
     { echo "$out" | grep -E "✗|❌|Traceback|Error:|assert" | head -20; } || true   # the failing checks (not cut off); no match must not stop the run
     echo "   … last lines:"; echo "$out" | tail -20; fail=1
@@ -49,7 +55,11 @@ run "language switching (D34)" tests/lang_switch_eval.py
 run "intent: life updates are chat" tests/intent_eval.py
 run "intent: public yardstick (D50)" tests/public_intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
+run "web Lessons page (files, notes, start a lesson)" tests/web_lessons_eval.py
 run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
+run "the coach: goal, probes, day mode, any subject (D53, D55)" tests/tutor_coach_eval.py
+run "real pictures on the notes page" tests/tutor_pictures_eval.py
+run "tutor grades spoken answers fairly (D54)" tests/tutor_grade_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
 run "card motion (added / done / cancelled)" tests/card_motion_eval.py

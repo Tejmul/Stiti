@@ -13,6 +13,12 @@ db = os.environ.get("STITI_DB", "")
 if not db.rstrip("/").split("/")[-1].startswith("stiti_test"):
     sys.exit(f"refusing to run against {db!r}: use a stiti_test* database")
 
+import tempfile  # noqa: E402
+
+# run_all.sh shares one STITI_HOME (STITI_TEST_HOME may be reused): the picture cache must start empty
+_home = os.environ.get("STITI_HOME") or ""
+os.environ["STITI_HOME"] = tempfile.mkdtemp(prefix="pictures_eval_", dir=_home if os.path.isdir(_home) else None)
+
 from PIL import Image  # noqa: E402
 
 from stiti.tutor import pictures as P  # noqa: E402

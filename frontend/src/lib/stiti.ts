@@ -105,3 +105,14 @@ export type Reply = {
   action?: { type: string; id: number } | null; ms?: number; ended?: boolean; used?: Used;
 };
 export type DayState = { todos: { id: number; title: string; due: string | null }[]; alarms: { id: number; kind: string; at: string; text: string }[] };
+
+// ---- the Lessons page (src/stiti/web/lessons.py)
+export type LessonMode = "learn" | "exam" | "day";
+export type StudyFile = { path: string; name: string; ext: string; size: number; modified: string };
+export type LessonNote = { name: string; title: string; path: string; modified: string; size: number };
+export type LessonProgress = {
+  key: string; source: string; kind: "file" | "topic"; total: number; known: number; shaky: number; new: number;
+  revise: string[]; last_seen: string | null;
+};
+export type Lessons = { active: boolean; board_url: string; files: StudyFile[]; notes: LessonNote[]; progress: LessonProgress[] };
+export type LessonStart = { target: string; mode: LessonMode; hours?: number; days?: number; focus?: string; ptt?: boolean };

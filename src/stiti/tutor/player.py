@@ -40,6 +40,7 @@ SEGMENT_GAP_S = 0.6         # a breath between ideas (end of a section)
 CHECKIN_MIN_GAP_S = 120.0   # "any doubt so far?" only at a section end, and at most this often
 CHECKIN_WAIT_S = 3.0        # … then this long for a doubt before she carries on
 LONG_PAUSE_S = 90.0         # paused and silent this long → one gentle "whenever you're ready"
+BREAK_NUDGE_S = 6 * 60.0    # a day-mode break (5 min): the gentle nudge only after the break is over
 # ---- his whole sentence before she acts (D52). The mic cuts his speech at every breath: 2026-11-20 "Tomorrow." was
 # dropped as too short, then "I meant to say, tomorrow I have exam…" came as its own turn and she answered half of it.
 GATHER_IDLE_S = 2.2         # no new words from him for this long (Whisper ~0.5 s + a breath) = he has finished
@@ -372,6 +373,8 @@ class Tutor:
                 if self.k >= len(flat):
                     if not getattr(self.L, "complete", True) and self._wait_for_more():
                         continue
+                    if self.k < len(self._flat()):
+                        continue                    # the writer finished between our two looks: not the end yet
                     if (getattr(self.L, "complete", True) and self.before_end is not None and not self.ended
                             and self.before_end()):
                         continue                    # D53 coach: come back to what's still wrong, then the recap
@@ -380,8 +383,11 @@ class Tutor:
                 if seg.type == "summary" and ci == 0 and self.predict and not self._hook_done:
                     self._revisit_hook()
                 ev = self._play_cue(self.k)
-                if ev is None and seg.type == "break" and not self.ended:   # day mode: wait for him to come back
-                    self._pause("Say continue when you're back.")
+                if seg.type == "break" and not self.ended:  # day mode: a real break — wait for him to come back
+                    if ev is None:
+                        self._pause("Say continue when you're back.", brk=True)
+                    elif self._kind(ev)[0] in ("resume", "next", "back"):
+                        ev = None                     # "no, carry on" said over her: skip the break, don't replay it
                 self.cue_open = ev is not None        # she was cut mid-sentence: a doubt now resumes THIS cue
                 if ev is not None:
                     self._handle(ev)
@@ -594,7 +600,9 @@ class Tutor:
         nxt = next((i for i, (s, _) in enumerate(flat) if s > si), len(flat))
         self.k = nxt
 
-    def _pause(self, line: str) -> None:
+    def _pause(self, line: str, *, brk: bool = False) -> None:
+        """Wait for "continue". brk=True (a day-mode break): no nudge before the break is over, and "back" /
+        "I'm back" / "next" end the break instead of replaying the previous step."""
         self.audio.stop()
         self.send({"type": "pause"})
         self.status("paused", "paused")
@@ -604,13 +612,14 @@ class Tutor:
         while not self.ended:
             ev = ev or self._next_event(0.5 if self.pace >= 1 else 0.05)
             if ev is None:
-                if not nudged and time.time() - since > LONG_PAUSE_S * self.pace:
+                if not nudged and time.time() - since > (BREAK_NUDGE_S if brk else LONG_PAUSE_S) * self.pace:
                     nudged = True
-                    ev = self.say("Whenever you're ready, say continue. Or ask me anything.")
+                    ev = self.say("Break's over whenever you're ready. Say continue." if brk
+                                  else "Whenever you're ready, say continue. Or ask me anything.")
                 continue
             kind, text = self._kind(ev)
             ev = None
-            if kind in ("resume", "repeat"):
+            if kind in ("resume", "repeat") or (brk and kind in ("back", "next")):
                 return
             if kind in ("pause", "hand", "other"):
                 continue
@@ -811,7 +820,9 @@ class Tutor:
         if commands.classify(reply, answering=True) in ("question", "steer", "confused"):
             self.events.put({"type": "text", "text": reply, "_seen": True})   # another doubt: the follow-up takes it
             return
-        g = grade.grade(Check(kind="recall", prompt=chk["prompt"], expectations=[chk.get("expected") or ""]), reply)
+        g = grade.grade(Check(kind="recall", prompt=chk["prompt"], expectations=[chk.get("expected") or ""]), reply,
+                        llm=grade.llm_for(self.planner))
+        self._log_grade(g)
         if g["verdict"] == "correct":
             self.say("Yes, exactly.", interruptible=False)
         elif g["verdict"] == "partial":
@@ -956,7 +967,8 @@ class Tutor:
             # ---- it's an answer
             rec["attempts"] += 1
             rec["answers"].append(text[:200])
-            g = grade.grade(c, text)
+            g = grade.grade(c, text, llm=grade.llm_for(self.planner))   # wrong/partial → free-LLM second opinion
+            self._log_grade(g)
             v = g["verdict"]
             if v == "predict":
                 self.predict = (c, text)
@@ -994,6 +1006,12 @@ class Tutor:
             except Exception as e:
                 self.log(f"   [coach] on_check {type(e).__name__}: {e}")
         return outcome
+
+    def _log_grade(self, g: dict) -> None:
+        if g.get("llm_error"):
+            self.log(f"   [grade] second opinion failed ({g['llm_error']}): keeping local {g['verdict']}")
+        elif g.get("source") == "llm":
+            self.log(f"   [grade] second opinion: {g['local_verdict']} → {g['verdict']} ({g['llm_ms']:.0f} ms) {g['reason']}")
 
     def _revisit_hook(self) -> None:
         self._hook_done = True

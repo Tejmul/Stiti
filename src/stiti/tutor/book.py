@@ -196,8 +196,9 @@ TEXT_PAGE_CHARS = 2500       # non-PDF books are cut into ~1-page chunks so sect
 _ROMAN = r"[IVXLCDM]{1,7}"
 _WORDNUM = r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|" \
            r"sixteen|seventeen|eighteen|nineteen|twenty|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)"
-# "Chapter 4", "CHAPTER IV. TITLE", "Part Two: …", "Lesson 3 - …"  (keyword case-insensitive)
-KW_HEAD = re.compile(rf"^(?:#{{1,3}}\s+)?(?i:chapter|book|part|lesson|unit|lecture)\s+(?i:\d{{1,3}}|{_ROMAN}|{_WORDNUM})"
+# "Chapter 4", "CHAPTER IV. TITLE", "Part Two: …", "Lesson 3 - …", "Module 2:", "Week 5 –"  (keyword case-insensitive)
+_KW = r"chapter|book|part|lesson|unit|lecture|module|week"
+KW_HEAD = re.compile(rf"^(?:#{{1,3}}\s+)?(?:\*\*)?(?i:{_KW})\s+(?i:\d{{1,3}}|{_ROMAN}|{_WORDNUM})"
                      rf"\b[.:]?(?:\s*[-—:.]?\s*(?P<t>[^\n]{{0,80}}))?\s*$")
 # "XII. PRIMITIVE THOUGHT" — Roman numeral + an ALL-CAPS title (uppercase only, so words like "did" never match)
 RN_HEAD = re.compile(rf"^(?:#{{1,3}}\s+)?(?P<rn>{_ROMAN})\.?\s+(?P<t>[A-Z][A-Z ,;'’&-]{{3,80}}?)\.?(?:\s+\d{{1,4}})?\s*$")
@@ -220,7 +221,7 @@ def _numkey(num: str) -> str:
 
 def _core(title: str) -> str:
     """Comparable title: no 'Chapter IV —', numbering, punctuation or page numbers."""
-    t = re.sub(rf"^(?i:chapter|book|part|lesson|unit|lecture)\s+\S+\s*[-—:.]?\s*", "", title.strip())
+    t = re.sub(rf"^(?i:{_KW})\s+\S+\s*[-—:.]?\s*", "", title.strip())
     t = re.sub(rf"^({_ROMAN}|\d+)\.?\s+", "", t)
     return re.sub(r"[^a-z ]", "", t.lower()).strip()
 
@@ -258,8 +259,8 @@ def load_text(path: Path) -> Book:
             continue
         nxt = next((ln for _, ln in lines[k + 1:k + 4] if ln), "").strip(" #*_.")
         if (h := KW_HEAD.match(line)):
-            t = (h.group("t") or "").strip(" .:-—#")
-            title = f"{line.strip('# ').rstrip('.')} — {nxt}" if not t and 3 <= len(nxt) <= 80 else line.strip("# ")
+            t = (h.group("t") or "").strip(" .:-—#*")
+            title = f"{line.strip('# *').rstrip('.')} — {nxt}" if not t and 3 <= len(nxt) <= 80 else line.strip("# *")
         elif (h := RN_HEAD.match(line)):
             title = f"{h.group('rn')}. {h.group('t').strip()}"
         elif RN_ALONE.match(line) and nxt.isupper() and 3 <= len(nxt) <= 80:
@@ -321,6 +322,67 @@ def _ocr_page(path: Path, i: int, scale: float = 2.0) -> str:
     Quartz.CGContextScaleCTM(ctx, scale, scale)
     Quartz.CGContextDrawPDFPage(ctx, page)
     return _recognize(Quartz.CGBitmapContextCreateImage(ctx))
+
+
+_TRAILER = re.compile(r"^\W*(?:text ?books?|reference books?|references|suggested readings?|recommended books?|"
+                      r"course outcomes?|assessment|evaluation scheme|lab(?:oratory)? experiments)\b.*$", re.I | re.M)
+_ITEM = re.compile(r"^\s*(?:[-*•▪◦–]|\d{1,2}[.)]|[a-z][.)])\s+\S")
+
+
+def is_outline(book: Book) -> bool:
+    """A syllabus / topic list / table of contents rather than a book: short, and mostly short list-like lines.
+    Its units only NAME topics, so the concepts and their teaching come from general knowledge (coach.py)."""
+    if book.path.suffix.lower() == ".pdf" and len(book.pages) > 6:
+        return False
+    text = "\n".join(book.pages)
+    if len(text) > 15000:
+        return False
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    if len(lines) < 4:
+        return False
+    wrapped = sum(bool(re.match(r"[a-z]", nxt)) for nxt in lines[1:])  # hard-wrapped prose continues in lowercase
+    short = sum(bool(_ITEM.match(ln)) or len(ln.split()) <= 12 for ln in lines)
+    return short >= 0.7 * len(lines) and wrapped < 0.25 * len(lines)
+
+
+def unit_text(book: Book, sec: Section, limit: int = 4000) -> str:
+    """The raw text under one unit heading, up to the next unit (for short outline files, where every unit sits on
+    the same pseudo-page and sentence-extraction finds nothing in a bullet list)."""
+    full = "\n".join(book.pages)
+    starts, pos = [], 0
+    for pg in book.pages:
+        starts.append(pos)
+        pos += len(pg) + 1
+
+    def at(s: Section, after: int) -> int:
+        words = re.findall(r"\w+", s.title)
+        base = max(after, starts[min(s.page, len(starts) - 1)] if starts else 0)
+        if words:
+            m = re.compile(r"\W+".join(map(re.escape, words)), re.I).search(full, base)
+            if m:
+                return m.start()
+        return base
+    units = book.chapters() or book.sections
+    if sec not in units:
+        units = book.sections
+    k = units.index(sec)
+    a = at(sec, 0)
+    line_end = full.find("\n", a)
+    a = line_end + 1 if line_end >= 0 else len(full)                 # skip the heading line itself
+    b = at(units[k + 1], a) if k + 1 < len(units) else len(full)
+    if k + 1 < len(units) and b <= a:
+        b = starts[units[k + 1].page] if units[k + 1].page > sec.page else len(full)
+    body = full[a:b]
+    if (m := _TRAILER.search(body)):                                  # "Text books:", "References", … end the topics
+        body = body[:m.start()]
+    return body.strip()[:limit]
+
+
+def outline_topics(text: str) -> list[str]:
+    """'- Paging and page tables, TLB' lines → topic strings (list items, else short lines)."""
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    items = [re.sub(r"^\s*(?:[-*•▪◦–]|\d{1,2}[.)]|[a-z][.)])\s+", "", ln) for ln in lines if _ITEM.match(ln)]
+    return items or [ln for ln in lines if len(ln.split()) <= 14]
 
 
 def ensure_text(book: Book, start: int, end: int) -> None:

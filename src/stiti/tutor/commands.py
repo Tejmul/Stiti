@@ -23,7 +23,8 @@ RULES: list[tuple[str, re.Pattern]] = [(k, re.compile(p)) for k, p in [
     ("faster", r"^(fast|faster|speed up|jaldi|jaldi bolo|tez|thoda tez|too slow|go faster)( please| na)?$"),
     ("resume", r"^(continue|go on|carry on|resume|play|aage|aage badho|aage chalo|chalo|chalo aage|haan|han|ha|"
                r"yes|yeah|yep|ok|okay|okay continue|hmm+|ji|haan ji|theek hai|thik hai|sure|got it|samajh gaya|"
-               r"samajh gayi|samjha|samjhi|done|ready|let'?s go|go)( please| na| stiti)?$"),
+               r"samajh gayi|samjha|samjhi|done|ready|let'?s go|go|i'?m back|i am back|back now|i'?m ready)"
+               r"( please| na| stiti)?$"),
     ("confused", r"(samajh nahi aaya|samjha nahi|samjhi nahi|didn'?t (get|understand)|don'?t (get|understand)|"
                  r"not clear|confus|explain (it )?again|explain differently|kuch samajh nahi)"),
     ("hindi", r"(hindi mein|in hindi|hinglish mein)"),

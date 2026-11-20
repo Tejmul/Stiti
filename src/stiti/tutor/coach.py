@@ -38,11 +38,31 @@ def _nullable(t):
     return {"anyOf": [t, {"type": "null"}]}
 
 
+def _cut(s: str, n: int) -> str:
+    """Clip at a word boundary with '…' ('Cell wall of Gram-positive and…', not '…Gram-negative bac')."""
+    s = " ".join((s or "").split())
+    if len(s) <= n:
+        return s
+    k = s.rfind(" ", 0, n)
+    return (s[:k] if k >= n // 2 else s[:n - 1]).rstrip(" ,;:-–—(") + "…"
+
+
 CONCEPTS_PROMPT = """List the key concepts of this unit of the learner's study material, in teaching order.
 UNIT: {unit}
 {sources}
-Return JSON: concepts = 2–{n} items, each: name (≤5 words), points (2–3 short key facts, ≤12 words each, the way an
-exam asks them), weight (1–3: how likely an exam asks it). Only what the SOURCES cover; no invented content."""
+Return JSON: concepts = 2–{n} items, each: name (≤5 words), points (2–3 short key facts, ≤12 words each, stated as
+facts the way an exam asks them, not instructions like "Explain X"), weight (1–3: how likely an exam asks it).
+Only what the SOURCES cover; no invented content."""
+OUTLINE_PROMPT = """This unit of the learner's syllabus only LISTS its topics. Plan the concepts to teach it, using
+accurate standard textbook knowledge at the level the course implies.
+COURSE: {course}
+UNIT: {unit}
+LISTED TOPICS:
+{topics}
+Return JSON: concepts = {lo}–{n} items in the listed order that together cover EVERY listed topic (one concept per
+topic; split a topic only when it lists several big ideas, merge two tiny ones), each: name (≤5 words: the
+syllabus's own term, shortened if long), points (2–3 key facts, ≤12 words each, stated as facts the way an exam asks them, not
+instructions like "Explain X"), weight (1–3: how likely an exam asks it). Nothing outside this unit's topics."""
 CONCEPTS_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["concepts"], "properties": {
     "concepts": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                             "required": ["name", "points", "weight"],
@@ -50,8 +70,12 @@ CONCEPTS_SCHEMA = {"type": "object", "additionalProperties": False, "required": 
                                                            "weight": {"type": "integer"}}}}}}
 
 TOPIC_PROMPT = """Plan the concepts a learner needs for: {topic}
-Return JSON: concepts = 6–12 items in teaching order, each: unit (a short group name), name (≤5 words), points (2–3
-key facts, ≤12 words each), weight (1–3: how central it is)."""
+{listed}Return JSON: concepts = {lo}–{hi} items in teaching order, grouped into 2–5 units: unit = a short group name
+shared by 2–4 consecutive concepts (never one unit per concept). Concepts of THIS topic itself: start with what it
+is and why it matters (at most one quick refresher of a prerequisite, only if essential), build up to its core
+ideas, end with how it is used / typical problems. Each: unit, name (≤5 words), points (2–3 key facts, ≤12 words
+each, stated as accurate facts, not instructions like "Explain X"), weight (1–3: how central it is, or how likely
+an exam asks it)."""
 TOPIC_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["concepts"], "properties": {
     "concepts": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                             "required": ["unit", "name", "points", "weight"],
@@ -59,12 +83,16 @@ TOPIC_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["c
                                                            "points": {"type": "array", "items": _S},
                                                            "weight": {"type": "integer"}}}}}}
 
-PROBES_PROMPT = """Write {n} quick diagnostic questions to find out what the learner already knows. Spread them across
-the units (early, middle, late). Each must be answerable by voice in one short sentence (a definition, a first step,
-or "what happens when…"), not a yes/no. CONCEPTS (id: unit · name · key facts):
+PROBES_PROMPT = """Write {n} quick diagnostic questions to find out what the learner already knows. Take each from a
+DIFFERENT unit (early, middle, late), on a central concept. Each question: ≤20 words, answerable by voice in one
+short sentence (a definition, a first step, a cause, "what happens when…"), with one clear right answer; not yes/no,
+not "list all…". CONCEPTS (id: unit · name · key facts):
 {concepts}
-Return JSON: probes = items of: concept_id (copied from the list), question (≤20 words), expected (1–2 short
-answers a correct reply must contain)."""
+Return JSON: probes = items of: concept_id (copied from the list), question, expected = usually ONE key point a
+right spoken answer must contain (a second only if the question asks for two things), 1–5 words, true and taken
+from that concept's key facts, not words from the question; add the common spoken ways to say it, and any other
+right answers, in that ONE point joined by " or " (e.g. "light intensity or amount of light", "throughput or
+waiting time")."""
 PROBES_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["probes"], "properties": {
     "probes": {"type": "array", "items": {"type": "object", "additionalProperties": False,
                                           "required": ["concept_id", "question", "expected"],
@@ -76,33 +104,55 @@ answers a question — that is how they learn (never a lecture).
 CONCEPT: {name} (unit: {unit}) · key facts: {points}
 LEARNER: {level_line} · mode: {mode_line}
 {sources}
-Return JSON: steps = {steps} item(s). Each step: say = 1–2 spoken sentences (≤22 words each, plain English, a
-concrete example before the jargon); board = 1–3 notes for the board, each with slot "point" (a key fact, ≤10
-words), "figure" (ONE small diagram: kind graph with ≤5 nodes + edges, or table ≤4 rows, or formula, or box) or
-"example" (one worked-example step, ≤8 words); check = one question the learner answers out loud right after
-(kind recall / apply / explain_why, or mcq with 3 options); expectations (1–2 points a right answer must contain),
-2 hints that don't give it away, reveal (the answer in one sentence). Step 1 explains and MUST draw one "figure"
-(e.g. a flow of steps, a labelled diagram of parts, a cycle, states with labelled arrows, a small comparison
-table — whatever fits the subject); a second step is a worked
-example with 2–4 "example" items, one per step of the working. remember = the one line to write in the "Remember" box (≤12 words). Facts only from SOURCES if given."""
+Return JSON: steps = {steps} item(s). Each step has:
+- say: 1–2 spoken sentences in total, one per array item (≤22 words each, plain English, a concrete example
+  before the jargon: a real everyday case, or for maths / code a small specific instance — no forced analogies).
+- points: 1–2 key facts for the board (≤10 words each).
+- figure: ONE small diagram that fits the subject, REQUIRED in step 1 (null in later steps): kind "graph" (≤5 nodes
+  with short labels + labelled edges: a process, a cause → effect chain, a cycle, a timeline, a structure), "table"
+  (rows = ≤4 rows × ≤3 cells: a comparison or values, first row = headers), "formula" (text = the formula; use it
+  whenever the concept IS an equation or rule in symbols), or "box" (text = one key term or rule, ≤4 words).
+- example: in a second step, 2–4 lines of working (≤8 words each), one per line: for a method, formula, rule or
+  code, solve one real problem step by step; for facts, history, biology or language, walk through one real case,
+  sequence or timeline (never a made-up "what if"). Empty in step 1.
+- check: one question the learner answers out loud right after, about what this step just showed, with one clear
+  right answer (never yes/no): kind recall / apply / explain_why, or mcq with 3 options (one correct).
+  expectations = usually ONE key point a right SPOKEN answer must contain (a second only if the question asks for
+  two things), 1–6 words in a student's own words (e.g. "longest match", "x squared"), not words from the question,
+  never rubric phrasing like "mentions …"; add the common spoken ways to say it (and other right answers) in that
+  ONE point joined by " or " (e.g. "light intensity or amount of light"); the exact number or value when the
+  answer is one. hints = 2 hints that don't give it away; reveal = the answer in one
+  sentence.
+remember = the one fact for the "Remember" box: a statement, not a question (≤12 words).
+{facts_rule}"""
+FACTS_FROM_SOURCES = "Facts only from SOURCES."
+FACTS_GENERAL = ("Use accurate standard textbook knowledge. Never claim \"the book says\" or \"your notes say\": the "
+                 "learner's file only lists topics.")
+_GRAPH = {"nodes": _nullable({"type": "array", "items": {
+              "type": "object", "additionalProperties": False, "required": ["id", "text"],
+              "properties": {"id": _S, "text": _S}}}),
+          "edges": _nullable({"type": "array", "items": {
+              "type": "object", "additionalProperties": False, "required": ["from", "to", "text"],
+              "properties": {"from": _S, "to": _S, "text": _nullable(_S)}}}),
+          "rows": _nullable({"type": "array", "items": {"type": "array", "items": _S}})}
+# the older one-list form (board = [{slot, kind, text, nodes, edges, rows}]) is still read by _step_board
 _BOARD_ITEM = {"type": "object", "additionalProperties": False,
                "required": ["slot", "kind", "text", "nodes", "edges", "rows"],
                "properties": {"slot": {"type": "string", "enum": ["point", "figure", "example"]},
                               "kind": _nullable({"type": "string", "enum": ["text", "graph", "table", "formula", "box"]}),
-                              "text": _nullable(_S),
-                              "nodes": _nullable({"type": "array", "items": {
-                                  "type": "object", "additionalProperties": False, "required": ["id", "text"],
-                                  "properties": {"id": _S, "text": _S}}}),
-                              "edges": _nullable({"type": "array", "items": {
-                                  "type": "object", "additionalProperties": False, "required": ["from", "to", "text"],
-                                  "properties": {"from": _S, "to": _S, "text": _nullable(_S)}}}),
-                              "rows": _nullable({"type": "array", "items": {"type": "array", "items": _S}})}}
+                              "text": _nullable(_S), **_GRAPH}}
+_FIGURE = _nullable({"type": "object", "additionalProperties": False,
+                     "required": ["kind", "text", "nodes", "edges", "rows"],
+                     "properties": {"kind": {"type": "string", "enum": ["graph", "table", "formula", "box"]},
+                                    "text": _nullable(_S), **_GRAPH}})
 STEP_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["steps", "remember"], "properties": {
     "steps": {"type": "array", "items": {"type": "object", "additionalProperties": False,
-                                         "required": ["say", "board", "check"],
+                                         "required": ["say", "points", "figure", "example", "check"],
                                          "properties": {
                                              "say": {"type": "array", "items": _S},
-                                             "board": {"type": "array", "items": _BOARD_ITEM},
+                                             "points": {"type": "array", "items": _S},
+                                             "figure": _FIGURE,
+                                             "example": {"type": "array", "items": _S},
                                              "check": {"type": "object", "additionalProperties": False,
                                                        "required": ["kind", "prompt", "options", "expectations",
                                                                     "hints", "reveal"],
@@ -128,6 +178,7 @@ class Concept:
     points: list[str] = field(default_factory=list)
     weight: int = 2
     unit_idx: int = 0
+    general: bool = False         # taught from general knowledge (a topic, or a syllabus that only lists topics)
 
 
 # ------------------------------------------------------------------------------------------------ concept map
@@ -136,11 +187,71 @@ def _cache_path(source: str) -> Path:
     return CFG.home / "tutor" / "concepts" / f"{key_for(source)}.json"
 
 
+def _concept(raw: dict, cid: str, unit: str, unit_idx: int, general: bool) -> Concept:
+    try:
+        w = min(3, max(1, int(raw.get("weight") or 2)))
+    except (TypeError, ValueError):
+        w = 2
+    return Concept(id=cid, name=_cut(str(raw.get("name") or "?"), 48), unit=unit[:60],
+                   points=[_cut(str(p), 90) for p in (raw.get("points") or []) if str(p).strip()][:3],
+                   weight=w, unit_idx=unit_idx, general=general)
+
+
+def _regroup(out: list[Concept]) -> list[Concept]:
+    """A weak model gives every concept its own 'unit': regroup consecutive ones in threes (units drive the probe
+    spread and 'a right answer means the earlier ones of that unit are known')."""
+    units = list(dict.fromkeys(c.unit for c in out))
+    if len(out) < 6 or len(units) <= max(5, len(out) // 2):
+        return out
+    for k, c in enumerate(out):
+        c.unit_idx = k // 3
+        c.unit = out[(k // 3) * 3].unit
+    return out
+
+
+def _topic_concepts(call, P, topic: str, listed: list[str] | None = None) -> list[Concept]:
+    if listed:                                     # a syllabus with no unit headings: group its topics into units
+        lst = ("LISTED TOPICS (cover every one, in this order; merge two tiny ones if needed):\n"
+               + "\n".join(f"- {t}" for t in listed[:30]) + "\n")
+        lo, hi = min(len(listed), 6), min(20, max(8, len(listed) + 2))
+    else:
+        lst, lo, hi = "", 6, 12
+    prompt = TOPIC_PROMPT.format(topic=topic[:200], listed=lst, lo=lo, hi=hi)
+    out: list[Concept] = []
+    for attempt in range(2):                       # a lazy free model sometimes returns ONE concept: ask once more
+        d = call(P.STYLE.format(name=P._name()), prompt + ("" if not attempt else
+                 f"\n(Your last answer had only {len(out)}. Give {lo}–{hi} concepts.)"),
+                 TOPIC_SCHEMA, "concepts", 2200 if listed else 1500, route="tutor_plan", reasoning="low", patience_s=30)
+        units: list[str] = []
+        got: list[Concept] = []
+        for c in d.get("concepts") or []:
+            if not c.get("name"):
+                continue
+            u = str(c.get("unit") or "Basics")[:60]
+            if u not in units:
+                units.append(u)
+            got.append(_concept(c, f"c{len(got)}", u, units.index(u), True))
+        if len(got) > len(out):
+            out = got
+        if len(out) >= min(lo, 4):
+            break
+    return _regroup(out[:hi])
+
+
 def concept_map(source: str, *, book_path: str | None = None, unit: str | None = None, call=None) -> list[Concept]:
-    """Every concept of his file (one LLM call per unit, two at a time) or of a topic (one call). Cached per file."""
+    """Every concept of his file (one LLM call per unit, two at a time) or of a topic (one call). Cached per file.
+    A syllabus / topic list (book.is_outline) has no text to teach from: its listed topics name the concepts and
+    general knowledge fills them in (Concept.general)."""
     from . import planner as P
     call = call or P._call
-    cache = _cache_path(source + (f"#{unit}" if unit else ""))
+    stamp = ""
+    if book_path:
+        try:                                       # he edits his syllabus → a fresh map, not last week's cache
+            st = Path(book_path).expanduser().stat()
+            stamp = f"@{int(st.st_mtime)}:{st.st_size}"
+        except OSError:
+            pass
+    cache = _cache_path(source + (f"#{unit}" if unit else "") + stamp)
     try:
         return [Concept(**c) for c in json.loads(cache.read_text())]
     except Exception:
@@ -153,15 +264,30 @@ def concept_map(source: str, *, book_path: str | None = None, unit: str | None =
         if unit:
             sec = b.find(unit)
             units = [sec] if sec else units
+        outline = B.is_outline(b)
+        course = b.title
+        if b.pages:
+            course = next((ln.strip(" #*") for ln in b.pages[0].splitlines() if ln.strip(" #*")), b.title)[:120]
+        if outline and len(units) <= 1:              # a flat topic list: the LLM groups it into units
+            topics = B.outline_topics(B.unit_text(b, units[0]) if units else "\n".join(b.pages))
+            out = _topic_concepts(call, P, course, topics)
+            units = []
         results: dict[int, list[dict]] = {}
+        caps: dict[int, int] = {}
 
         def one(i, sec):
             try:
-                srcs = B.sources_for(b, sec, n=30)
-                d = call(P.STYLE.format(name=P._name()),
-                         CONCEPTS_PROMPT.format(unit=sec.name, n=MAX_CONCEPTS_PER_UNIT,
-                                                sources=P._sources_block(srcs, 5000)),
-                         CONCEPTS_SCHEMA, "concepts", 900, route="tutor_plan", reasoning="low", patience_s=30)
+                if outline:                          # the unit only lists topics: those + general knowledge
+                    topics = B.outline_topics(B.unit_text(b, sec))[:12]
+                    caps[i] = n = min(8, max(3, len(topics) + 1))
+                    prompt = OUTLINE_PROMPT.format(course=course, unit=sec.name, lo=min(len(topics), n) or 2, n=n,
+                                                   topics="\n".join(f"- {t}" for t in topics) or "(see the unit name)")
+                else:
+                    srcs = B.sources_for(b, sec, n=30)
+                    prompt = CONCEPTS_PROMPT.format(unit=sec.name, n=MAX_CONCEPTS_PER_UNIT,
+                                                    sources=P._sources_block(srcs, 5000))
+                d = call(P.STYLE.format(name=P._name()), prompt, CONCEPTS_SCHEMA, "concepts",
+                         1200 if outline else 900, route="tutor_plan", reasoning="low", patience_s=30)
                 results[i] = d.get("concepts") or []
             except Exception as e:
                 print(f"   [coach] concepts for {sec.name}: {type(e).__name__}: {str(e)[:100]}")
@@ -177,22 +303,11 @@ def concept_map(source: str, *, book_path: str | None = None, unit: str | None =
         for t in threads:
             t.join(60)
         for i, sec in enumerate(units[:12]):
-            for c in (results.get(i) or [])[:MAX_CONCEPTS_PER_UNIT]:
+            for c in (results.get(i) or [])[:caps.get(i, MAX_CONCEPTS_PER_UNIT)]:
                 if c.get("name"):
-                    out.append(Concept(id=f"u{i}c{len(out)}", name=str(c["name"])[:48], unit=sec.name[:60],
-                                       points=[str(p)[:90] for p in (c.get("points") or [])][:3],
-                                       weight=int(c.get("weight") or 2), unit_idx=i))
+                    out.append(_concept(c, f"u{i}c{len(out)}", sec.name, i, outline))
     else:
-        d = call(P.STYLE.format(name=P._name()), TOPIC_PROMPT.format(topic=source[:200]), TOPIC_SCHEMA,
-                 "concepts", 1500, route="tutor_plan", reasoning="low", patience_s=30)
-        units: list[str] = []
-        for c in d.get("concepts") or []:
-            u = str(c.get("unit") or "Basics")[:60]
-            if u not in units:
-                units.append(u)
-            out.append(Concept(id=f"c{len(out)}", name=str(c.get("name") or "?")[:48], unit=u,
-                               points=[str(p)[:90] for p in (c.get("points") or [])][:3],
-                               weight=int(c.get("weight") or 2), unit_idx=units.index(u)))
+        out = _topic_concepts(call, P, source)
     if out:
         try:
             cache.parent.mkdir(parents=True, exist_ok=True)
@@ -202,18 +317,55 @@ def concept_map(source: str, *, book_path: str | None = None, unit: str | None =
     return out
 
 
+_RUBRIC = re.compile(r"^(?:(?:the )?(?:answer|response|reply|learner|student|they)\s+)?(?:should\s+|must\s+)?"
+                     r"(?:mentions?|identif(?:y|ies)|states?|says?|notes?|explains?|includes?|contains?|uses?|"
+                     r"names?|recogni[sz]es?|understands?|describes?|gives?|lists?|refers? to)\b[:\s]*(?:that\s+)?",
+                     re.I)
+
+
+_MANY = re.compile(r"\b(two|three|four|five|both|each|all|list|steps|order|sequence|compare|differ\w*|vs|versus)\b|"
+                   r"\band (why|how|what|when|where|which|who)\b", re.I)
+
+
+def clean_expectations(exps, k: int = 2, question: str = "") -> list[str]:
+    """Expectations are words a right SPOKEN answer contains, not a rubric: 'Mentions printing before the call' →
+    'printing before the call'. At most k (one spoken sentence rarely covers more). Free models list ways of saying
+    ONE answer as separate items (['tuberculosis', 'TB'], ['sum divided by count', 'total divided by number']), and
+    the grader needs ALL items — so unless the question asks for several things, they become one 'A or B' point."""
+    out: list[str] = []
+    for e in exps or []:
+        e = _RUBRIC.sub("", str(e).strip()).strip(" .'\"")
+        if e and e.lower() not in (x.lower() for x in out):
+            out.append(e[:120])
+    if question and len(out) > 1 and not _MANY.search(question):
+        return [" or ".join(out)[:240]]
+    return out[:k]
+
+
 def make_probes(concepts: list[Concept], n: int = PROBES, call=None) -> list[dict]:
     from . import planner as P
     call = call or P._call
     listing = "\n".join(f"{c.id}: {c.unit} · {c.name} · {'; '.join(c.points)}" for c in concepts[:40])
     try:
-        d = call(P.STYLE.format(name=P._name()), PROBES_PROMPT.format(n=n, concepts=listing), PROBES_SCHEMA,
+        d = call(P.STYLE.format(name=P._name()), PROBES_PROMPT.format(n=n + 2, concepts=listing), PROBES_SCHEMA,
                  "probes", 700, route="tutor_answer", reasoning="low", patience_s=10)
     except Exception as e:
         print(f"   [coach] probes: {type(e).__name__}: {str(e)[:100]}")
         return []
-    ids = {c.id for c in concepts}
-    return [p for p in d.get("probes") or [] if p.get("concept_id") in ids and p.get("question")][:n]
+    byid = {c.id: c for c in concepts}
+    out, seen = [], set()
+    for p in d.get("probes") or []:
+        cid = p.get("concept_id")
+        if cid not in byid or cid in seen or not p.get("question"):
+            continue
+        seen.add(cid)
+        out.append({**p, "expected": clean_expectations(p.get("expected"), question=p["question"]) or byid[cid].points[:1]})
+    firsts, rest, used = [], [], set()                # spread over the units: one per unit first
+    for p in out:
+        u = byid[p["concept_id"]].unit_idx
+        (rest if u in used else firsts).append(p)
+        used.add(u)
+    return (firsts + rest)[:n]
 
 
 # ------------------------------------------------------------------------------------------------ focus
@@ -241,22 +393,40 @@ def focus_split(text: str | None) -> list[str]:
 
 # ------------------------------------------------------------------------------------------------ the queue
 DAY_RX = re.compile(r"\b((whole|entire|full|complete|all (of )?the|all my) (syllabus|book|course|portion|portions|notes|"
-                    r"thing|subject|units?|chapters?)|in (a|one) day|today itself|by tonight|whole day|all day)\b")
-HOURS_RX = re.compile(r"\b(\d{1,2}(?:\.5)?)\s*(?:hours?|hrs?|h)\b")
+                    r"thing|subject|units?|chapters?)|everything (today|tonight)|in (a|one) day|today itself|"
+                    r"by tonight|whole day|all day)\b")
+# speech-to-text writes "4 hours" or "four hours"; "ah" / "a h" must never read as an hour (words need a space)
+_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+              "ten": 10, "eleven": 11, "twelve": 12, "an": 1, "a": 1, "a couple of": 2, "a few": 3, "some": 3}
+HOURS_RX = re.compile(r"\b(?:(\d{1,2}(?:\.\d)?)\s*|(" + "|".join(sorted(_NUM_WORDS, key=len, reverse=True))
+                      + r")\s+)(and a half\s+)?(?:hours?|hrs?|h)\b( and a half)?")
 DAY_DEFAULT_H = 6.0       # "the whole syllabus today" with no hours said
 BREAK_EVERY_MIN = 45      # day mode: a 5-minute break about this often (he says "continue" to come back)
+BREAK_MIN = 5
+DAY_RESUME_H = 14         # day mode: what he did in the last 14 h counts as "done today" when he comes back
+EXAM_RX = re.compile(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b")
+
+
+def _hours(t: str) -> float | None:
+    """'in 4 hours' → 4 · 'four and a half hours' → 4.5 · 'an hour and a half' → 1.5 · none → None (0.5–14)."""
+    m = HOURS_RX.search(t)
+    if not m:
+        return None
+    h = float(m.group(1)) if m.group(1) else float(_NUM_WORDS[m.group(2)])
+    h += 0.5 if (m.group(3) or m.group(4)) else 0
+    return min(14.0, max(0.5, h))
 
 
 def parse_goal(text: str) -> dict:
     """'exam tomorrow' → {mode: exam, days: 1}; 'just want to understand it' → {mode: learn};
-    'teach me the whole syllabus today (in 6 hours)' → {mode: day, hours: 6}."""
+    'teach me the whole syllabus today (in 6 hours)' / 'cover it in 4 hours' → {mode: day, hours: 6 / 4}."""
     t = (text or "").lower()
-    if DAY_RX.search(t):
-        m = HOURS_RX.search(t)
-        return {"mode": "day", "days": 0, "hours": float(m.group(1)) if m else DAY_DEFAULT_H}
-    exam = bool(re.search(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b", t))
+    hours = _hours(t)
+    exam = bool(EXAM_RX.search(t))
+    if DAY_RX.search(t) or (hours is not None and not exam):    # his whole syllabus, or a few hours he has today
+        return {"mode": "day", "days": 0, "hours": hours or DAY_DEFAULT_H, "hours_said": hours is not None}
     days = None
-    if re.search(r"\b(today|tonight|in (a few|some) hours)\b", t):
+    if re.search(r"\b(today|tonight)\b", t) or hours is not None:
         days = 0
     elif re.search(r"\btomorrow\b", t):
         days = 1
@@ -270,7 +440,27 @@ def parse_goal(text: str) -> dict:
             pass
     if days is not None and not exam and re.search(r"\b(on|by|before|in \d+ days?)\b", t):
         exam = True
-    return {"mode": "exam" if exam else "learn", "days": days}
+    out = {"mode": "exam" if exam else "learn", "days": days}
+    if hours is not None:                            # "exam in 3 hours": the plan must fit in them
+        out["hours"] = hours
+    return out
+
+
+def goal_from_flags(args: list[str]) -> dict | None:
+    """`--goal-mode learn|exam|day [--days N] [--hours H]` (the web Lessons page) → the same goal dict parse_goal
+    gives, so the coach skips the spoken goal question. None when no (valid) --goal-mode is given."""
+    def val(flag):
+        return args[args.index(flag) + 1] if flag in args and args.index(flag) + 1 < len(args) else None
+    mode = val("--goal-mode")
+    try:
+        if mode == "day":                            # hours_said: the plan line only says "your N hours" if he chose N
+            return {"mode": "day", "days": 0, "hours": max(1.0, min(12.0, float(val("--hours") or DAY_DEFAULT_H))),
+                    "hours_said": val("--hours") is not None}
+        if mode == "exam":
+            return {"mode": "exam", "days": max(0, min(365, int(val("--days") or 1)))}
+    except ValueError:
+        return None
+    return {"mode": "learn", "days": None} if mode == "learn" else None
 
 
 def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> list[Concept]:
@@ -301,17 +491,50 @@ def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> lis
 
 
 # ------------------------------------------------------------------------------------------------ concept → steps
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(“‘])")
+
+
+def two_sentences(items) -> list[str]:
+    """≤ 2 spoken sentences per step, even when the model packs four into one 'say' item."""
+    out: list[str] = []
+    for it in items or []:
+        if isinstance(it, str):
+            out += [x.strip() for x in _SENT_SPLIT.split(it.strip()) if x.strip()]
+    return out[:2]
+
+
+def _same_point(a: str, b: str) -> bool:
+    """'Derivative of u·v = u'v + uv'' ≈ 'Derivative of u·v equals u'v + uv'' (most content words shared)."""
+    stem = lambda x: x[:-1] if len(x) > 3 and x.endswith("s") else x  # noqa: E731
+    wa = {stem(w) for w in _words(a) if len(w) > 2 or w.isdigit()}
+    wb = {stem(w) for w in _words(b) if len(w) > 2 or w.isdigit()}
+    return bool(wa and wb) and len(wa & wb) / min(len(wa), len(wb)) >= 0.6
+
+
+def _step_board(st: dict) -> list[dict]:
+    """A step's board notes as slot items: the separate points / figure / example fields (a weak model fills a
+    named field far more reliably than 'one of the items must have slot figure'), plus any older-form board list."""
+    items = [it for it in st.get("board") or [] if isinstance(it, dict)]
+    none = {"nodes": None, "edges": None, "rows": None}
+    items += [{"slot": "point", "kind": "text", "text": str(p), **none} for p in st.get("points") or [] if p]
+    fig = st.get("figure")
+    if isinstance(fig, dict) and (fig.get("text") or fig.get("nodes") or fig.get("rows")):
+        items.append({**none, **fig, "slot": "figure"})
+    items += [{"slot": "example", "kind": "text", "text": str(x), **none} for x in (st.get("example") or [])[:6] if x]
+    return items
+
+
 def _board_ops(items: list[dict]) -> list[Op]:
     ops = []
     for it in items or []:
         slot, kind, text = it.get("slot"), it.get("kind") or "text", (it.get("text") or "").strip()
         if slot == "point" and text:
-            ops.append(Op(type="text", text=text[:80], region="points", at="start"))
+            ops.append(Op(type="text", text=_cut(text, 80), region="points", at="start"))
         elif slot == "example" and text:
-            ops.append(Op(type="text", text=text[:60], region="example", at="start"))
+            ops.append(Op(type="text", text=_cut(text, 60), region="example", at="start"))
         elif slot == "figure":
             if kind == "graph" and it.get("nodes"):
-                nodes = [{"id": str(n["id"])[:16], "text": str(n["text"])[:24], "shape": "rectangle", "style": None}
+                nodes = [{"id": str(n["id"])[:16], "text": _cut(str(n["text"]), 24), "shape": "rectangle", "style": None}
                          for n in it["nodes"][:5] if n.get("id")]
                 ids = {n["id"] for n in nodes}
                 edges = [{"from": e["from"], "to": e["to"], "text": (e.get("text") or None)}
@@ -320,12 +543,12 @@ def _board_ops(items: list[dict]) -> list[Op]:
                     ops.append(Op(type="graph", region="figure", nodes=nodes, edges=edges, direction="LR",
                                   at="start"))
             elif kind == "table" and it.get("rows"):
-                ops.append(Op(type="table", region="figure", rows=[[str(c)[:20] for c in r][:4] for r in it["rows"][:4]],
+                ops.append(Op(type="table", region="figure", rows=[[_cut(str(c), 20) for c in r][:4] for r in it["rows"][:4]],
                               at="start"))
             elif kind == "formula" and text:
                 ops.append(Op(type="formula", region="figure", text=text[:60], at="start"))
             elif text:
-                ops.append(Op(type="box", region="figure", text=text[:30], style="blue", at="start"))
+                ops.append(Op(type="box", region="figure", text=_cut(text, 30), style="blue", at="start"))
     return ops
 
 
@@ -338,8 +561,10 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
     call = call or P._call
     page = Op(type="new_page", text=(f"{c.name} — again" if again else c.name)[:48])
     if level == "known":                             # one quick check, no re-teaching (Kalyuga)
-        chk = Check(kind="recall", prompt=f"Quick one on {c.name}: {('what is ' + c.name) if not c.points else c.points[0].rstrip('.') + '. Why?'}",
-                    expectations=c.points[:2] or [c.name], hints=[], reveal=(c.points[0] if c.points else ""))
+        # ask without giving the answer away in the question (the old "<fact>. Why?" let an echo pass)
+        chk = Check(kind="recall", prompt=f"Quick one: in a sentence, what do you know about {c.name}?",
+                    expectations=c.points[:1] or [c.name], hints=c.points[1:2],
+                    reveal=(c.points[0] if c.points else ""))
         return [Segment(id=f"k{idx}s0", type="teach", title=c.name,
                         cues=[Cue(id=f"k{idx}s0c1", say=f"You seem to know {c.name}. Quick check.", ops=[page])],
                         check=chk)]
@@ -352,20 +577,32 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
     d = call(P.STYLE.format(name=P._name()),
              STEP_PROMPT.format(name=c.name, unit=c.unit, points="; ".join(c.points), level_line=level_line,
                                 mode_line=mode_line, steps=steps,
-                                sources=P._sources_block(sources, 3500) if sources else ""),
+                                sources=P._sources_block(sources, 3500) if sources else "",
+                                facts_rule=FACTS_FROM_SOURCES if sources else FACTS_GENERAL),
              STEP_SCHEMA, "concept", 1600, route="tutor_plan", reasoning="low", patience_s=30)
     segs: list[Segment] = []
-    n_points = sum(1 for st in (d.get("steps") or [])[:steps] for it in st.get("board") or []
-                   if it.get("slot") == "point" and (it.get("text") or "").strip())
-    for j, st in enumerate((d.get("steps") or [])[:steps]):
-        says = [s.strip() for s in st.get("say") or [] if isinstance(s, str) and s.strip()][:2]
+    raw = [st for st in (d.get("steps") or []) if isinstance(st, dict)][:steps]
+    boards = [_step_board(st) for st in raw]
+    if boards and not any(it.get("slot") == "figure" for it in boards[0]):
+        for b in boards[1:]:                         # step 1 always shows a figure: borrow a later step's
+            fig = next((it for it in b if it.get("slot") == "figure"), None)
+            if fig:
+                b.remove(fig)
+                boards[0].append(fig)
+                break
+    n_points = sum(1 for b in boards for it in b if it.get("slot") == "point" and (it.get("text") or "").strip())
+    for j, st in enumerate(raw):
+        says = two_sentences(st.get("say"))
         if not says:
             continue
-        ops = _board_ops(st.get("board"))
+        ops = _board_ops(boards[j])
         if j == 0 and n_points < 2:                  # too few key points from the model: the concept map has them
-            given = {(o.text or "").lower() for o in ops if o.region == "points"}
-            extra = [pt for pt in c.points if pt.lower() not in given][:3 - n_points]
-            ops = ops + [Op(type="text", text=pt[:80], region="points", at="start") for pt in extra]
+            given = [o.text or "" for o in ops if o.region == "points"]
+            extra = []
+            for pt in c.points:
+                if len(given) + len(extra) < 3 and not any(_same_point(pt, g) for g in given + extra):
+                    extra.append(pt)
+            ops = ops + [Op(type="text", text=_cut(pt, 80), region="points", at="start") for pt in extra]
         first = [page] if j == 0 else []
         pts = [o for o in ops if o.region == "points"]
         rest = [o for o in ops if o.region != "points"]
@@ -373,9 +610,11 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
         if len(says) > 1:
             cues.append(Cue(id=f"k{idx}s{j}c2", say=says[1], ops=rest))
         chk = sanitize_check(st.get("check"))
+        if chk:
+            chk.expectations = clean_expectations(chk.expectations, question=chk.prompt) or ([chk.reveal] if chk.reveal else [])
         segs.append(Segment(id=f"k{idx}s{j}", type="teach" if j == 0 else "worked_example", title=c.name,
                             cues=cues, check=chk))
-    rem = str(d.get("remember") or "").strip()[:90]
+    rem = _cut(str(d.get("remember") or ""), 90)
     if segs and rem:
         segs.append(Segment(id=f"k{idx}r", type="teach", title=c.name, cues=[
             Cue(id=f"k{idx}rc1", say=f"So, remember: {rem}",
@@ -421,6 +660,9 @@ class Coach:
         self._recapped = False
         self.returning = False
         self.notes_path: Path | None = None
+        self.t0 = time.time()
+        self.done_today: set[str] = set()            # day mode: concepts already done earlier today
+        self.pool_n = 0                              # how many concepts the queue was chosen from
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
@@ -477,13 +719,17 @@ class Coach:
         taught = [byid[c.id] for c in self.queue if c.id in byid]
         solid = [c for c in taught if self.mastery.level(c.id) == "known"]
         weak = [c for c in taught if self.mastery.level(c.id) != "known"]
-        ops = [Op(type="new_page", text="Today")]
+        day = (self.goal or {}).get("mode") == "day"
+        done = len(self._done_today()) if day else 0    # the whole day, this session and the ones before
+        ops = [Op(type="new_page", text=f"Today · {done} of {len(self.concepts)} done" if day else "Today")]
         ops += [Op(type="text", text=f"✓ {c.name}", region="points") for c in solid[:6]]
         ops += [Op(type="text", text=f"~ {c.name}", region="points") for c in weak[:6]]
         self.notes_path = self.save_notes()
         if self.notes_path:
             ops.append(Op(type="text", text=f"Notes saved: {self.notes_path.name}", region="remember"))
         line = "That's it for today."
+        if day:
+            line += f" Today so far: {done} of {len(self.concepts)} topics done."
         if solid:
             line += f" Solid now: {', '.join(c.name for c in solid[:3])}."
         if weak:
@@ -499,7 +745,7 @@ class Coach:
             lines = [f"# {self.L.title} — notes", f"_{time.strftime('%d %b %Y')} · mode: {self.goal.get('mode')}_", ""]
             cur = None
             for sg in self.L.segments:
-                if sg.id == "recap":
+                if sg.id == "recap" or sg.type == "break":  # a break page is not part of his notes
                     continue
                 if sg.title != cur:
                     cur = sg.title
@@ -543,7 +789,7 @@ class Coach:
             self._map_err = e
 
     def _concept_sources(self, c: Concept) -> list[dict] | None:
-        if not self.book_path:
+        if not self.book_path or c.general:          # a syllabus only lists topics: teach from general knowledge
             return None
         if c.unit not in self._sources:
             try:
@@ -564,9 +810,12 @@ class Coach:
             lvl = self.mastery.level(c.id)
             if self.goal["mode"] == "day" and since_break >= BREAK_EVERY_MIN and i:
                 since_break = 0.0                    # a real break: she stops and waits for "continue"
+                done, total = len(self.done_today) + i, len(self.concepts)      # progress across the day
                 self.L.segments.append(Segment(id=f"brk{i}", type="break", title="Break", cues=[Cue(
-                    id=f"brk{i}c1", say="Break time, five minutes. Stand up, drink some water, look away from the screen.",
-                    ops=[Op(type="new_page", text="Break · 5 min"),
+                    id=f"brk{i}c1", say=f"Break time, {BREAK_MIN} minutes. {done} of {total} topics done today. "
+                                        "Stand up, drink some water, look away from the screen.",
+                    ops=[Op(type="new_page", text=f"Break · {BREAK_MIN} min"),
+                         Op(type="text", text=f"✓ {done} of {total} topics done today", region="points"),
                          Op(type="text", text="Stand up · water · look far away", region="points"),
                          Op(type="text", text=f"Next: {c.name}", region="remember")])]))
             since_break += CONCEPT_MIN[lvl]
@@ -599,24 +848,32 @@ class Coach:
     def opening(self) -> bool:
         """Goal + deadline, then quick probes. False = he ended it."""
         t = self.t
+        self.t0 = time.time()
         mapper = threading.Thread(target=self._build_map, daemon=True)
         mapper.start()
+        # bias the ear to the goal words + HIS subject (his topic, or his book's title words: never compiler words
+        # for every subject)
         t.ears_on(["exam", "tomorrow", "syllabus", "unit", "chapter", "test"] + self.focus + self.subject.split()[:6])
         t.status("playing", "starting")
-        if self.goal is None:
+        asked = self.goal is None
+        if asked:
             ans = t.listen("Hi! Before I start: what do you need? Is this for an exam, and when is it?")
             if ans is None:
                 return False
             self.goal = parse_goal(ans)
-        if self.goal["mode"] == "day":
-            mins = self.goal.get("hours", DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
+        day = self.goal["mode"] == "day"
+        if day:
+            mins = (self.goal.get("hours") or DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
         else:
-            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (self.goal.get("days") or 9) <= 1 else LEARN_MINUTES
+            days = self.goal.get("days")                # 0 = today: an exam today is ≤ 1 day too
+            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (9 if days is None else days) <= 1 else LEARN_MINUTES
+            if self.goal.get("hours"):                  # "exam in 2 hours": never plan more than he has
+                mins = min(mins, self.goal["hours"] * 60 * 0.85)
         self.goal["minutes"] = mins
         mapper.join(0.1)
         if mapper.is_alive():
-            t.say("Got it. Give me a few seconds, I'm reading your notes." if self.book_path
-                  else "Got it. Give me a few seconds to plan this.", interruptible=False)
+            t.say(f"{'Got it.' if asked else 'Okay.'} Give me a few seconds, I'm reading your notes." if self.book_path
+                  else f"{'Got it.' if asked else 'Okay.'} Give me a few seconds to plan this.", interruptible=False)
             mapper.join(120)
         if not self.concepts:
             t.say("Sorry, I couldn't read that properly just now. Try again in a minute.")
@@ -633,9 +890,11 @@ class Coach:
         t.ears_on(t.extra_words)                     # his file's concept names bias the ear for the probes
         recent = [c for c in self.concepts if time.time() - self.mastery.seen.get(c.id, 0) < 21 * 86400]
         self.returning = len(recent) >= 3
+        if day:                                      # stopped and came back today: what he did BEFORE this session
+            self.done_today = self._done_today(before=self.t0)    # (not the probes about to be asked now)
         probes = [] if self.returning else make_probes(self.concepts, n=min(PROBES, max(1, len(self.concepts))),
                                                          call=self.call)
-        if self.returning:
+        if self.returning and not self.done_today:
             solid = sum(self.mastery.level(c.id) == "known" for c in self.concepts)
             t.say(f"Welcome back. You're solid on {solid} of {len(self.concepts)} topics here, so I'll pick up "
                   "from what's left.", interruptible=False)
@@ -652,7 +911,8 @@ class Coach:
                 return False
             if re.search(r"\b(skip|just (start|teach)|start (now|teaching)|no questions)\b", ans, re.I):
                 break
-            v = grade(Check(kind="recall", prompt=pr["question"], expectations=pr.get("expected") or []), ans)["verdict"]
+            v = grade(Check(kind="recall", prompt=pr["question"], expectations=pr.get("expected") or []), ans,
+                      llm=True, call=self.call)["verdict"]     # mis-heard right answers get a free-LLM second opinion
             c = byid[pr["concept_id"]]
             self.mastery.set(c.id, {"correct": 0.85, "partial": 0.55}.get(v, 0.15))
             if v == "correct":                       # what comes before it in the same unit is probably known too
@@ -663,37 +923,71 @@ class Coach:
                   interruptible=False)
         self.after_probes = dict(self.mastery.p)     # where he started (reports, tests)
         pool = self.concepts
-        if self.goal["mode"] == "day":               # stopped and came back today: carry on with what's left
-            done_today = {c.id for c in pool if time.time() - self.mastery.seen.get(c.id, 0) < 14 * 3600
-                          and self.mastery.level(c.id) != "new"}
-            if done_today and len(done_today) < len(pool):
-                pool = [c for c in pool if c.id not in done_today]
-                t.say(f"{len(done_today)} topics done today already. Let's do the other {len(pool)}.",
-                      interruptible=False)
+        if self.done_today:                          # day mode, same day: carry on with what's left
+            rest = [c for c in pool if c.id not in self.done_today]
+            n, total = len(self.done_today), len(pool)
+            if rest:
+                pool = rest
+                t.say(f"{'Welcome back. ' if self.returning else ''}{n} of {total} topic{'s' if total != 1 else ''} "
+                      f"done today already. Let's do the other {len(rest)}.", interruptible=False)
+            else:
+                t.say(f"{'Welcome back. ' if self.returning else ''}You've covered all {total} topics today "
+                      "already, so this is a quick revision round.", interruptible=False)
+        self.pool_n = len(pool)
         self.queue = order(pool, self.mastery, self.goal["mode"], mins)
         self._show_plan()
         return True
+
+    def _done_today(self, before: float | None = None) -> set[str]:
+        """Day mode: the concepts he got at least partly right in the last DAY_RESUME_H hours (before `before`)."""
+        now = before or time.time()
+        return {c.id for c in self.concepts
+                if 0 <= now - self.mastery.seen.get(c.id, 0) < DAY_RESUME_H * 3600
+                and self.mastery.level(c.id) != "new"}
 
     def _show_plan(self):
         t, q = self.t, self.queue
         if not q:
             return
-        acts = t.board.apply(Op(type="new_page", text="Your plan"))
+        exam = self.goal["mode"] == "exam"
+        day = self.goal["mode"] == "day"
+        title = "Your plan"
+        if day and self.done_today:                  # progress across the day: what's done before this session
+            title += f" · {len(self.done_today)} of {len(self.concepts)} done today"
+        acts = t.board.apply(Op(type="new_page", text=title))
         for c in q[:10]:
             mark = {"known": "✓ ", "shaky": "~ ", "new": ""}[self.mastery.level(c.id)]
             acts += t.board.apply(Op(type="text", text=f"{mark}{c.name}", region="points"))
+        if len(q) > 10:
+            acts += t.board.apply(Op(type="text", text=f"… and {len(q) - 10} more", region="points"))
         acts += t.board.apply(Op(type="text", text="✓ check only · ~ fix the gaps · others: teach",
                                  region="remember"))
         t.send({"type": "actions", "actions": [{**a, "at_ms": i * 120} for i, a in enumerate(acts)]})
         first = q[0].name
         n = len(q)
-        exam = self.goal["mode"] == "exam"
-        day = self.goal["mode"] == "day"
-        hrs = round(sum(CONCEPT_MIN[self.mastery.level(c.id)] for c in q) / 60, 1)
-        t.say(f"Here's the plan: {n} topic{'s' if n != 1 else ''}"
-              f"{', most important first for your exam' if exam else ''}"
-              f"{f', about {hrs:g} hours with short breaks' if day else ''}, starting with {first}. "
-              "Stop me any time with a doubt.", interruptible=False)
+        topics = f"{n} topic{'s' if n != 1 else ''}"
+        if day:
+            est, since, n_brk = 0.0, 0.0, 0         # the same break rule as _writer
+            for k, c in enumerate(q):
+                if since >= BREAK_EVERY_MIN and k:
+                    n_brk, since = n_brk + 1, 0.0
+                since += CONCEPT_MIN[self.mastery.level(c.id)]
+                est += CONCEPT_MIN[self.mastery.level(c.id)]
+            est += n_brk * BREAK_MIN
+            def hours(h):
+                return f"{h:g} hour{'' if h == 1 else 's'}"
+            dur = f"{max(5, round(est / 5) * 5):.0f} minutes" if est < 60 else f"{hours(round(est / 30) / 2)}"
+            dur += " with short breaks" if n_brk else ""
+            hrs = self.goal.get("hours") or DAY_DEFAULT_H
+            said = self.goal.get("hours_said", True)
+            if n < (self.pool_n or n):               # it doesn't all fit: say so, and what she chose
+                who = f"your {hours(hrs)} fit{'s' if hrs == 1 else ''}" if said else "one day fits"
+                body = f"{who} the {n} most important of {self.pool_n} topics, about {dur}"
+            else:
+                body = f"{topics}, about {dur}" + (f", inside your {hours(hrs)}" if said else "")
+        else:
+            body = topics + (", most important first for your exam" if exam else "")
+        t.say(f"Here's the plan: {body}, starting with {first}. Stop me any time with a doubt.", interruptible=False)
 
     def run(self) -> dict:
         if not self.opening():

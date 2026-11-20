@@ -1342,3 +1342,47 @@ wherever it wants." Research and plan: `docs/research/tutor_agent.md` (15 source
 **Not yet:** heard on his real voice; a mastery-gated re-teach (a concept still wrong after its steps comes back
 later in the session); notes export ("save my notes"); Smart Turn tuned for the tutor; confirm-when-unsure hearing.
 **Tests:** `tutor_coach_eval` (22, new), `tutor_teacher_eval` 112, `tutor_eval` 27, `tutor_launch_eval` 63.
+
+## D54: Fair grading of spoken answers — local first, a free-LLM second opinion on doubt (2026-11-20)
+A right spoken answer, paraphrased or mis-heard by speech-to-text ("the FA" for DFA, "see oh two" for CO2), was marked
+"not quite" by the local grader — the most frustrating tutor mistake. Research + measurements:
+`docs/research/tutor_grading.md` (13 approaches; 72 labelled spoken answers in `tests/fixtures/tutor_grade_cases.json`).
+1. **Local verdict first** (`grade.grade`, unchanged): correct / idk / predict / an MCQ option he picked / < 3 words /
+   no expectations are final and never leave the Mac.
+2. **Second opinion only on doubt** (FrugalGPT-style cascade): local wrong/partial on ≥ 3 words → one strict-JSON
+   call (`planner._call`, route `tutor_answer`, reasoning low, temperature 0; schema verdict + missing expectation
+   numbers + reason), told the text is speech recognition output and to be fair, not lenient.
+3. **Never blocks**: daemon thread + future, hard 2 s deadline (`grade.LLM_TIMEOUT_S`); down / slow / malformed →
+   the local verdict. `STITI_TUTOR_LLM_GRADE=off` switches it off.
+4. **Wired** into the player's checks and doubt checks (only with a real cloud `Planner`) and the coach's probes.
+   New result keys: `source`, `local_verdict`, `missing_text` (for a targeted hint), `llm_ms`, `reason`.
+5. Local fix on the way: "the one that builds the tree" no longer picks MCQ option one.
+**Result** (72 labelled spoken answers, real free models): accuracy 73.6 % → **93.5 %** (mean of 3 runs: 94.4 /
+91.7 / 94.4); right answers marked not-right 12 → 1–2; the LLM is asked on 32/72 answers, median 300–400 ms, p90
+≈ 700 ms, 0 timeouts when spaced like a lesson (burst: some hit the 2 s cap and kept the local verdict).
+**Not yet:** local false "correct" on topic-similar wrong answers (never reaches the LLM); targeted hints from
+`missing_text`; real-voice transcripts. **Tests:** `tutor_grade_eval` (new, offline).
+
+## D55: The coach teaches any subject, and a syllabus file (2026-11-20)
+"It should teach me ANYTHING… if I give my entire syllabus it should teach me in a day." Evaluated with the real free
+models on 6 subjects (biology, history, economics, maths, programming, language) + 3 syllabus files; evidence and
+examples in `docs/research/tutor_subjects.md`.
+1. **A syllabus is an outline, not a book** (`book.is_outline`, `unit_text`, `outline_topics`; "Module N" / "Week N"
+   headings). Each unit's LISTED TOPICS + general knowledge make its concepts (`OUTLINE_PROMPT`, every listed topic
+   covered, in order); a flat list is one grouping call. `Concept.general` → steps get no fake SOURCES and never say
+   "the book says". Before, every unit got the text-book citations as its "sources" and 6 major OS topics were lost.
+   The concept cache key includes the file's mtime + size.
+2. **Prompts for any subject:** topic maps in 2–5 real units (regrouped if a model gives one unit per concept; a lazy
+   one-concept answer is asked again); probes one per unit with ONE expected point plus spoken paraphrases ("A or
+   B"); steps fill named `points` / `figure` (required in step 1) / `example` fields — same board slots and
+   Segment/Check — with subject-neutral figures and a real case/timeline (not a made-up "what if") as the worked
+   example for non-procedural subjects. Code keeps ≤ 2 spoken sentences, borrows a missing figure, de-duplicates
+   points, clips at word boundaries, and merges alternative expectations unless the question asks for several things.
+3. **Fairer local grading** (`grade.py`): spoken ↔ written numbers and maths, numbers must match, comma lists are one
+   answer, question-echo words don't count, light stemming, both of two key words. Simulated spoken answers: right
+   graded correct 52 % → 63 %, wrong rejected 80 % → 85 %.
+**Not yet:** order/negation-aware grading (a small local NLI model), a fact check of the cached concept map.
+These local fixes run first; D54's free-LLM second opinion still judges what they leave wrong/partial. On D54's
+72 labelled answers the local grader alone scores 51/72 (D54's local: 54/72): stricter on two-word expectations and
+question echoes, so more right paraphrases are 'partial' — which the second opinion re-judges — and fewer wrong ones
+are a false 'correct' (which never reaches it).
