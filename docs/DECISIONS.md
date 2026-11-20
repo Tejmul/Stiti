@@ -1342,3 +1342,36 @@ wherever it wants." Research and plan: `docs/research/tutor_agent.md` (15 source
 **Not yet:** heard on his real voice; a mastery-gated re-teach (a concept still wrong after its steps comes back
 later in the session); notes export ("save my notes"); Smart Turn tuned for the tutor; confirm-when-unsure hearing.
 **Tests:** `tutor_coach_eval` (22, new), `tutor_teacher_eval` 112, `tutor_eval` 27, `tutor_launch_eval` 63.
+
+## D54: Reminders are said and never lost; an answered question is never asked again (2026-11-20)
+Owner: "it asks same questions again and again — I have answered something and it forgets it … and the reminders
+and all, it should remind me, it is not doing that." Read-only look at his brain + logs, then a repro with the code.
+**Reminders — root causes:** (1) after "What's it for?" his NEXT line (a new "remind me at 10 pm to …", or "do I have
+any alarms?") was swallowed as the first reminder's note, and that wait lived only in process memory (the mic
+watchdog restarts the app every few minutes); (2) delivery: after his usual "bye" the loop is `silenced` → a reminder
+was a banner only; "present" meant keyboard/mouse in the last 2 min, so talking from across the room = "away"; quiet
+hours 23–07 blocked reminders at the time HE chose; nags waited for keyboard activity and gave up silently after 3 h;
+(3) a failure after `due()` claimed rows (2026-11-18: `reminder_nags` missing before migration 010 — every tick) left
+rows `fired` forever / skipped every later scheduler step; the checker started only after all models loaded; a
+restart mid-ring left the alarm `fired` forever; (4) a banner-only or missed-while-off reminder vanished.
+Also found: "tomorrow at noon" was set for 9 AM; "…, so keep a reminder for 7 am" made D49 ask a question instead of
+booking; a request the classifier calls chat never reached the alarm code; nameless reminders rang as "You asked me
+to remind you now."
+**Fixes:** `alarms.is_label_answer` + `drop_label_wait` (a request/question is never a note), the wait kept in the row
+(`await_label`, `set_at`); a note said BEFORE "remind me" is kept; `REMIND_ASK_RX` → alarm code first look for any
+request-shaped line; noon/midnight parsed. App: `_deliver(asked=True)` speaks his reminders through "bye", idle
+keyboard and quiet hours (lesson / call / muted → banner + told later); nags defer only on a locked screen or quiet
+hours; `_fire_one` per row in try (failure → `mark_unheard` + done); `recover_stuck()` at start; scheduler started
+first in `__init__`, every step in its own try, heartbeat in health.json, watchdog in the menubar tick restarts it;
+"You missed: …" (atomic, once) in the wake greeting or while she's awake (checked every 30 s).
+**Questions — root causes:** ask-me put a skipped question into the very next round and re-asked ("Still the
+same?") answers given minutes ago; the old intro restarted on a bare "shuru karo" and re-asked what the profile
+already knew; the weather "tell me your city" hint lived in process memory (asked after every restart) and ignored a
+home city learned in chat; nothing remembered questions the LLM asked. (In main chat the D25 strategies already strip
+most LLM questions; the tutor coach's own asks are in `tutor/`, not changed here.)
+**Fixes:** `brain/asked.py` + migration 012 `asked_questions` (one row per question key: asked / answered / skipped;
+same meaning = embedding ≥ 0.90, measured paraphrases 0.95–0.97 vs different 0.70–0.84): ask-me skips wait 14 days
+(sensitive 30), refresh only answers ≥ 60 days old, skips also in the brain; intro skips known keys; city hint ≤ 1 a
+week and never after he told her; LLM questions are kept with his answer, an already-answered one is dropped from a
+non-streamed reply and listed in the briefing ("YOU ALREADY ASKED"). No table → everything behaves as before.
+**Tests:** `reminders_regress_eval` (53, new), `asked_once_eval` (31, new), `ask_me_eval` 135, `anticipate_eval` 129.
