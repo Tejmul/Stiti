@@ -11,7 +11,8 @@ written straight into the brain, deterministically:
   - a user_directive where the answer is about how to talk to him or a boundary,
 then the standing profile + USER.md are rebuilt so the very next LLM turn already knows it.
 "skip"/"pass" skips · "bas"/"later"/"stop" pauses (saying it again continues the round) · "why?" explains.
-Saying it again later → the next 10 unanswered. Bank exhausted → re-ask the oldest answers ("Still the same?").
+Saying it again later → the next 10 unanswered. A skipped one waits 14 days (D54). Bank exhausted → re-ask answers
+older than 60 days ("Still the same?") — never one he gave this week.
 Worries/fears are gentle, skippable, private (P2: never in the cloud briefing, never echoed back).
 Research basis: research_notes/Key things to know intake/intake_research.md §5, §7, §9.
 """
@@ -412,8 +413,14 @@ def _me() -> int:
     return resolve_entity(profile.name(), "self")
 
 
+SKIP_DAYS = 14             # a question he skipped comes back only after this long (2026-11-20: it was the next round)
+SKIP_DAYS_SENSITIVE = 30
+REFRESH_AFTER_DAYS = 60    # "Still the same?" only for an answer at least this old — never for one he gave this week
+
+
 def answered() -> set[str]:
-    """Keys he has ever answered (a fact or directive exists, even if later edited or superseded)."""
+    """Keys he has ever answered (a fact or directive exists, even if later edited or superseded — or the question
+    ledger says so)."""
     me = _me()
     preds = [f"about_{x.key}" for x in BANK]
     got = {r["predicate"][6:] for r in q("SELECT DISTINCT predicate FROM facts WHERE subj_id=%s AND predicate = ANY(%s)",
@@ -421,28 +428,48 @@ def answered() -> set[str]:
     keys = [f"ask_{x.key}" for x in BANK if x.directive]
     got |= {r["supersession_key"][4:] for r in q(
         "SELECT DISTINCT supersession_key FROM user_directives WHERE supersession_key = ANY(%s)", (keys,))}
+    try:
+        got |= {r["qkey"][6:] for r in q("""SELECT qkey FROM asked_questions WHERE qkey = ANY(%s)
+                                            AND answered_at IS NOT NULL""", ([f"askme:{x.key}" for x in BANK],))}
+    except Exception:
+        pass                                         # migration 012 not applied yet: facts + directives as before
     return got
+
+
+def answered_elsewhere(qn: Q) -> bool:
+    """He already answered this question in other words (the LLM asked it in chat, or another question source)."""
+    from . import asked as ledger
+    hit = ledger.answered_like(qn.ask)
+    return hit is not None and not str(hit.get("qkey", "")).startswith("askme:")
 
 
 def _oldest_answers(n: int, exclude: set[str]) -> list[str]:
     me = _me()
     rows = q("""SELECT predicate FROM facts WHERE subj_id=%s AND predicate = ANY(%s) AND upper_inf(recorded)
-                AND valid @> now() ORDER BY COALESCE((attrs->>'confirmed_at')::timestamptz, lower(valid)), id""",
-             (me, [f"about_{x.key}" for x in BANK if not x.sensitive and x.say and x.key not in exclude]))
+                AND valid @> now()
+                AND COALESCE((attrs->>'confirmed_at')::timestamptz, lower(valid)) < now() - make_interval(days => %s)
+                ORDER BY COALESCE((attrs->>'confirmed_at')::timestamptz, lower(valid)), id""",
+             (me, [f"about_{x.key}" for x in BANK if not x.sensitive and x.say and x.key not in exclude],
+              REFRESH_AFTER_DAYS))
     return [r["predicate"][6:] for r in rows][:n]
 
 
 def pick_round(st: dict, n: int = ROUND) -> tuple[list[str], list[str]]:
     """(keys to ask, keys that are refresh re-asks). Round-robin across categories from where the last round stopped."""
     done = answered()
-    skipped: dict = st.get("skipped", {})
+    skipped: dict = dict(st.get("skipped", {}))
     now = datetime.now(CFG.tz)
+    try:                                         # a skip recorded in the brain counts too (askme.json can be lost)
+        for r in q("""SELECT qkey, skipped_at FROM asked_questions WHERE qkey = ANY(%s) AND skipped_at IS NOT NULL""",
+                   ([f"askme:{x.key}" for x in BANK],)):
+            skipped.setdefault(r["qkey"][6:], r["skipped_at"].isoformat())
+    except Exception:
+        pass
 
     def later_ok(k: str) -> bool:
-        if not BY_KEY[k].sensitive:
-            return True
+        days = SKIP_DAYS_SENSITIVE if BY_KEY[k].sensitive else SKIP_DAYS
         try:
-            return now - datetime.fromisoformat(skipped[k]) > timedelta(days=30)
+            return now - datetime.fromisoformat(skipped[k]) > timedelta(days=days)
         except Exception:
             return True
 
@@ -453,8 +480,10 @@ def pick_round(st: dict, n: int = ROUND) -> tuple[list[str], list[str]]:
     while len(picked) < n and any(per_cat.values()):
         c = CAT_ORDER[(ptr + i) % len(CAT_ORDER)]
         if per_cat[c]:
-            picked.append(per_cat[c].pop(0))
-            st["cat_ptr"] = (ptr + i + 1) % len(CAT_ORDER)
+            k = per_cat[c].pop(0)
+            if not answered_elsewhere(BY_KEY[k]):     # same question, other words, already answered → not again
+                picked.append(k)
+                st["cat_ptr"] = (ptr + i + 1) % len(CAT_ORDER)
         i += 1
     for k in sorted((k for k in skipped if k in BY_KEY and k not in done and k not in picked),
                     key=lambda k: skipped[k]):
@@ -621,10 +650,12 @@ class AskMe:
         return BY_KEY[self.st["round"][self.st["pos"]]]
 
     def _ask_line(self) -> str:
+        from . import asked as ledger
         k = self.st["round"][self.st["pos"]]
+        qn = BY_KEY[k]
+        ledger.asked(f"askme:{k}", qn.ask, "askme", privacy=2 if qn.sensitive else 1)
         if k in self.st.get("refresh", []):
             return _refresh_line(k)
-        qn = BY_KEY[k]
         return ("This one's a bit personal, so skip it if you like. " if qn.sensitive else "") + qn.ask
 
     def start(self) -> tuple[str, bool]:
@@ -670,6 +701,7 @@ class AskMe:
 
     def answer(self, text: str, episode_id: int | None = None) -> tuple[str, bool]:
         """Returns (reply, finished)."""
+        from . import asked as ledger
         st = self.st
         k = st["round"][st["pos"]]
         qn = BY_KEY[k]
@@ -690,6 +722,8 @@ class AskMe:
         if refresh:
             if STILL_RX.match(a) and len(a.split()) <= 4:
                 confirm(k)
+                ledger.answered(f"askme:{k}", t, episode_id=episode_id, question=qn.ask, source="askme",
+                                private=qn.sensitive)
                 ack = "Good, still the same then."
             elif SKIP_RX.match(a) or (NOTHING_RX.match(a) and not CHANGED_RX.match(a)):
                 ack = "Okay."
@@ -700,11 +734,14 @@ class AskMe:
                     ack = "Okay, noted that's changed."
                 else:
                     said, short = store(qn, rest, episode_id)
+                    ledger.answered(f"askme:{k}", rest, episode_id=episode_id, question=qn.ask, source="askme",
+                                    private=qn.sensitive)
                     if said:
                         st.setdefault("learned", []).append(said)
                     ack = self._ack(qn, short).replace("Noted", "Updated")
         elif SKIP_RX.match(a) or NOTHING_RX.match(a) or not a:
             st.setdefault("skipped", {})[k] = datetime.now(CFG.tz).isoformat()
+            ledger.skipped(f"askme:{k}", question=qn.ask, source="askme")
             ack = "No problem."
         elif BARE_RX.match(a):
             if not st.get("nudged"):
@@ -712,9 +749,12 @@ class AskMe:
                 _save(st)
                 return f"Tell me in a few words, or say skip. {self._ask_line()}", False
             st.setdefault("skipped", {})[k] = datetime.now(CFG.tz).isoformat()
+            ledger.skipped(f"askme:{k}", question=qn.ask, source="askme")
             ack = "Okay, skipping that one."
         else:
             said, short = store(qn, t, episode_id)
+            ledger.answered(f"askme:{k}", t, episode_id=episode_id, question=qn.ask, source="askme",
+                            private=qn.sensitive)
             if said and qn.summary:
                 st.setdefault("learned", []).append(said)
             st.get("skipped", {}).pop(k, None)

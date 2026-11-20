@@ -229,15 +229,30 @@ check("round two finishes", fin and "That's the round" in r, r)
 skipped = A._state().get("skipped", {})
 check("skipped questions remembered", round2[0] in skipped and round2[1] in skipped)
 
-print("bank exhausted → refresh the oldest answers")
+print("bank exhausted → nothing he answered or just skipped comes back too soon (2026-11-20: 'asks the same again')")
+fresh_skips = {round2[0], round2[1]}
 for qn in A.BANK:
-    if qn.key not in A.answered() and not qn.sensitive:
+    if qn.key not in A.answered() and not qn.sensitive and qn.key not in fresh_skips:
         A.store(qn, canned(qn.key))
-st = A._state()
-keys, refresh = A.pick_round(st)
-check("next round re-asks skipped / oldest", len(keys) == 10, str(keys))
-a4 = A.AskMe()
-check("…the last new ones + quick checks", refresh and len(refresh) < 10 and set(keys) - set(refresh), str(refresh))
+keys, refresh = A.pick_round(A._state())
+check("a question skipped minutes ago is not asked again (14 days)", not set(keys) & fresh_skips, str(keys))
+check("answers given today are never re-checked ('Still the same?' only after 60 days)", not refresh, str(refresh))
+check("the skip is also in the brain (askme.json can be lost)",
+      len(q("SELECT 1 FROM asked_questions WHERE qkey = ANY(%s) AND skipped_at IS NOT NULL",
+            ([f"askme:{k}" for k in fresh_skips],))) == 2)
+A.STATE.unlink(missing_ok=True)                                          # the state file is gone (new Mac, crash)
+keys, refresh = A.pick_round(A._state())
+check("…still not asked again without askme.json", not set(keys) & fresh_skips, str(keys))
+q("UPDATE asked_questions SET skipped_at = now() - interval '15 days' WHERE qkey = ANY(%s)",
+  ([f"askme:{k}" for k in fresh_skips],))
+keys, refresh = A.pick_round(A._state())
+check("…after 14 days a skipped one may come back", fresh_skips <= set(keys), str(keys))
+for k in fresh_skips:
+    A.store(A.BY_KEY[k], canned(k))
+q("""UPDATE facts SET attrs = COALESCE(attrs, '{}'::jsonb) || jsonb_build_object('confirmed_at', (now() - interval '61 days')::text)
+     WHERE predicate LIKE 'about_%%' AND upper_inf(recorded)""")
+keys, refresh = A.pick_round(A._state())
+check("answers older than 60 days get a quick check", len(keys) == 10 and refresh, str(refresh))
 from datetime import datetime                                            # noqa: E402
 A._save({**A._state(), "skipped": {x.key: datetime.now(A.CFG.tz).isoformat() for x in A.BANK if x.sensitive}})
 keys, refresh = A.pick_round(A._state())
