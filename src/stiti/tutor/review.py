@@ -70,6 +70,7 @@ class Review:
                        planner=planner if planner is not None else (answerer() if persist else None), **tutor_kw)
         self.t.on_check = self._on_check
         self.t.before_end = self._before_end
+        self.t.short_ladder = True                    # a short quiz: one hint then the answer (the rung still rates)
         self.done: list[dict] = []
         self._mastery: dict[str, Mastery] = {}
         self._recapped = False
@@ -79,13 +80,11 @@ class Review:
         if not c or rec.get("verdict") not in ("correct", "partial", "wrong", "idk"):
             return                                    # skipped / ended: the card stays due, mastery unchanged
         from . import srs
-        from .pacing import mastery_verdict
-        # Feature 5: the hint-ladder rung he needed decides both the FSRS rating and the mastery evidence
+        # Feature 5: the hint-ladder rung he needed decides the FSRS rating; the mastery event keeps the verdict + hints
         rating = srs.rating_for(rec["verdict"], rec.get("hints", 0), rec.get("confidence"), rung=rec.get("rung"))
         due = srs.review(c["id"], rating)
         m = self._mastery.get(c["source"]) or self._mastery.setdefault(c["source"], Mastery(c["source"]))
-        p = m.update(c["concept_id"], mastery_verdict(rec["verdict"], rec.get("rung", 0)), origin="review",
-                     hints=rec.get("hints", 0))
+        p = m.update(c["concept_id"], rec["verdict"], origin="review", hints=rec.get("hints", 0))
         self.done.append({"card": c["id"], "concept": c.get("concept"), "verdict": rec["verdict"],
                           "hints": rec.get("hints", 0), "rating": rating.name, "due": due, "p": p})
         self.log(f"   [review] card {c['id']} {rec['verdict']} (hints {rec.get('hints', 0)}) → {rating.name}, "

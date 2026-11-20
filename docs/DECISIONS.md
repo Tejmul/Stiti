@@ -1532,7 +1532,8 @@ and "it asks the same questions again and again" — so pacing is owned by code 
    he needed is kept on the record and decides BOTH the FSRS rating (`srs.rating_for(…, rung=)`: unaided → Good/Easy,
    nudge or hint → Hard, worked example or answer → Again) and the mastery evidence (`pacing.mastery_verdict`: right
    after a nudge/hint = partial, after the worked example = wrong) — for coached checks (`Coach._on_check` → mastery
-   event origin `check` + `Coach._card`), review sessions (`Review._on_check`, origin `review`) and course quizzes.
+   event origin `check` + `Coach._card`) and course quizzes. A review session (D57) keeps its short ladder — one
+   hint, then the answer (`Tutor.short_ladder`) — the rung rates the card, the mastery event keeps verdict + hints.
 2. **Pacing:** about one check per full idea (≥ 3 spoken sentences; coach steps are 2–3 sentences now, was ≤ 2), a
    concept still gets its one check, a known concept's quick check is always asked. Fed up — "skip the questions" /
    "just teach" (`commands` kind `fewer`), curt answers, a stressed voice on a curt answer — → sparser checks for the

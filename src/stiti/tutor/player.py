@@ -120,6 +120,7 @@ class Tutor:
         self.should_check = None                        # (segment, pacing) -> bool: ask this check now?
         self.on_blurt = None                            # (segment) -> None: a "blurt" segment's free recall
         self.on_blurt_request = None                    # () -> bool: he said "test me" / "let me blurt"
+        self.short_ladder = False                       # True: one hint, then the answer (D57's ~5-min review quiz)
         # hold-to-talk (Wispr Flow: the user decides when he's talking). 2026-11-20 demo: people talking in his room
         # ("Where did you play yesterday?") were graded as his answers. On: only speech while the key is held (or
         # within PTT_TAIL_S after release, while Whisper finishes) counts; commands like "end" too.
@@ -1072,6 +1073,8 @@ class Tutor:
         return True
 
     def _next_rung(self, rung: int, verdict: str, c: Check) -> int:
+        if self.short_ladder:                          # review session: hint (if any) → the answer; rung still rates
+            return 2 if rung == 0 and c.hints else 4
         nxt = rung + 1
         if rung == 0 and verdict == "idk":
             nxt = 2                                    # "What else?" after "I don't know" is a pump into nothing
