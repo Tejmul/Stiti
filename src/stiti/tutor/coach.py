@@ -290,21 +290,25 @@ def _board_ops(items: list[dict]) -> list[Op]:
     return ops
 
 
-def concept_segments(c: Concept, idx: int, level: str, mode: str, sources: list[dict] | None,
-                     total: int, call=None) -> list[Segment]:
-    """One concept → short steps (≤ 2 sentences + his turn), on its own notes page, then the Remember box."""
+def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict] | None,
+                     total: int, call=None, again: bool = False) -> list[Segment]:
+    """One concept → short steps (≤ 2 sentences + his turn), on its own notes page, then the Remember box.
+    again=True: he still got it wrong after the first pass — a different angle and a new example (one step)."""
     from . import planner as P
     from .lesson import sanitize_check
     call = call or P._call
-    page = Op(type="new_page", text=f"{c.name}"[:48])
+    page = Op(type="new_page", text=(f"{c.name} — again" if again else c.name)[:48])
     if level == "known":                             # one quick check, no re-teaching (Kalyuga)
         chk = Check(kind="recall", prompt=f"Quick one on {c.name}: {('what is ' + c.name) if not c.points else c.points[0].rstrip('.') + '. Why?'}",
                     expectations=c.points[:2] or [c.name], hints=[], reveal=(c.points[0] if c.points else ""))
         return [Segment(id=f"k{idx}s0", type="teach", title=c.name,
                         cues=[Cue(id=f"k{idx}s0c1", say=f"You seem to know {c.name}. Quick check.", ops=[page])],
                         check=chk)]
-    steps = 1 if level == "shaky" else 2
+    steps = 1 if level == "shaky" or again else 2
     level_line = {"new": "has not learned this yet", "shaky": "knows part of it; fix the tricky part"}[level]
+    if again:
+        level_line = ("got it wrong even after one explanation: explain it from a DIFFERENT angle with a NEW, very "
+                      "concrete example; simpler words")
     mode_line = "exam soon: focus on what exams ask" if mode == "exam" else "wants real understanding"
     d = call(P.STYLE.format(name=P._name()),
              STEP_PROMPT.format(name=c.name, unit=c.unit, points="; ".join(c.points), level_line=level_line,
@@ -365,6 +369,12 @@ class Coach:
         self._sources: dict[str, list[dict]] = {}
         self.after_probes: dict[str, float] = {}
         self._future = concepts_future               # D42: the map started while her voice was still loading
+        self.t.before_end = self._before_end
+        self.revisited: set[str] = set()
+        self.checked: set[str] = set()               # concepts he answered something on this session
+        self._recapped = False
+        self.returning = False
+        self.notes_path: Path | None = None
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
@@ -372,6 +382,7 @@ class Coach:
         if not cid or rec.get("verdict") not in ("correct", "partial", "wrong", "idk"):
             return
         p = self.mastery.update(cid, rec["verdict"])
+        self.checked.add(cid)
         self.log(f"   [mastery] {cid} {rec['verdict']} → {p:.2f}")
         if rec["verdict"] == "correct" and p >= KNOWN and rec.get("attempts", 1) <= 1:
             nxt = [s.id for s in self.L.segments]
@@ -383,6 +394,98 @@ class Coach:
                 if k is not None:
                     self.t.say("You've got this one. Moving on.")
                     self.t.skip_to = k + len(rest[-1].cues)
+
+    # ---- the end of the plan: come back to what's still wrong (spacing), then a recap + his notes saved
+    def _before_end(self) -> bool:
+        byid = {c.id: c for c in self.concepts}
+        weak = [byid[cid] for cid in self.checked
+                if cid in byid and cid not in self.revisited and self.mastery.level(cid) == "new"][:2]
+        if weak and not self.t.ended:
+            names = " and ".join(c.name for c in weak)
+            self.t.say(f"Before we finish, let's come back to {names}, from another angle.", interruptible=False)
+            added = False
+            for c in weak:
+                self.revisited.add(c.id)
+                try:
+                    segs = concept_segments(c, f"{self.queue.index(c) if c in self.queue else 0}v", "shaky",
+                                            self.goal["mode"], self._concept_sources(c), len(self.queue),
+                                            call=self.call, again=True)
+                except Exception as e:
+                    self.log(f"   [coach] again {c.name}: {type(e).__name__}: {str(e)[:100]}")
+                    continue
+                for sg in segs:
+                    self.seg_concept[sg.id] = c.id
+                self.L.segments.extend(segs)
+                added = added or bool(segs)
+            if added:
+                return True
+        if self._recapped:
+            return False
+        self._recapped = True
+        self._recap()
+        return True
+
+    def _recap(self) -> None:
+        """A 'Today' page (✓ solid · ~ revise) said in one line, and his notes written to a markdown file."""
+        byid = {c.id: c for c in self.concepts}
+        taught = [byid[c.id] for c in self.queue if c.id in byid]
+        solid = [c for c in taught if self.mastery.level(c.id) == "known"]
+        weak = [c for c in taught if self.mastery.level(c.id) != "known"]
+        ops = [Op(type="new_page", text="Today")]
+        ops += [Op(type="text", text=f"✓ {c.name}", region="points") for c in solid[:6]]
+        ops += [Op(type="text", text=f"~ {c.name}", region="points") for c in weak[:6]]
+        self.notes_path = self.save_notes()
+        if self.notes_path:
+            ops.append(Op(type="text", text=f"Notes saved: {self.notes_path.name}", region="remember"))
+        line = "That's it for today."
+        if solid:
+            line += f" Solid now: {', '.join(c.name for c in solid[:3])}."
+        if weak:
+            line += f" To revise: {', '.join(c.name for c in weak[:3])}. I'll ask you those first next time."
+        self.L.segments.append(Segment(id="recap", type="teach", title="Today", cues=[Cue(id="recapc1", say=line,
+                                                                                            ops=ops)]))
+
+    def save_notes(self) -> Path | None:
+        """His notes as plain markdown (principle 7: memory he can read): per concept the key points, the example,
+        the Remember line; then his doubts. ~/.stiti/tutor/notes/<title>.md"""
+        try:
+            from ..config import CFG
+            lines = [f"# {self.L.title} — notes", f"_{time.strftime('%d %b %Y')} · mode: {self.goal.get('mode')}_", ""]
+            cur = None
+            for sg in self.L.segments:
+                if sg.id == "recap":
+                    continue
+                if sg.title != cur:
+                    cur = sg.title
+                    lv = self.mastery.level(self.seg_concept.get(sg.id, ""))
+                    lines += ["", f"## {cur}" + {"known": " ✓", "shaky": " ~", "new": ""}.get(lv, "")]
+                for cue in sg.cues:
+                    for o in cue.ops:
+                        if o.region == "points" and o.text:
+                            lines.append(f"- {o.text}")
+                        elif o.region == "example" and o.text:
+                            lines.append(f"  - e.g. {o.text}")
+                        elif o.region == "remember" and o.text:
+                            lines.append(f"> **Remember:** {o.text}")
+                        elif o.type == "graph" and o.edges:
+                            nm = {n["id"]: n["text"] for n in o.nodes or []}
+                            lines.append("  - " + "; ".join(f"{nm.get(e['from'], e['from'])} →"
+                                                             f"{(' ' + e['text'] + ' →') if e.get('text') else ''} "
+                                                             f"{nm.get(e['to'], e['to'])}" for e in o.edges))
+                        elif o.type == "table" and o.rows:
+                            lines.append("  - " + " | ".join(o.rows[0]))
+                            lines += ["    " + " | ".join(r) for r in o.rows[1:]]
+                        elif o.type == "formula" and o.text:
+                            lines.append(f"  - `{o.text}`")
+            if self.t.questions:
+                lines += ["", "## Your doubts"] + [f"- {q}" for q in dict.fromkeys(self.t.questions)]
+            path = CFG.home / "tutor" / "notes" / f"{re.sub(r'[^A-Za-z0-9]+', '-', self.L.title).strip('-')[:60]}.md"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("\n".join(lines).strip() + "\n")
+            return path
+        except Exception as e:
+            self.log(f"   [coach] notes: {type(e).__name__}: {e}")
+            return None
 
     def _build_map(self):
         try:
@@ -444,7 +547,13 @@ class Coach:
         if not self.concepts:
             t.say("Sorry, I couldn't read that properly just now. Try again in a minute.")
             return False
-        probes = make_probes(self.concepts, call=self.call)
+        recent = [c for c in self.concepts if time.time() - self.mastery.seen.get(c.id, 0) < 21 * 86400]
+        self.returning = len(recent) >= 3
+        probes = [] if self.returning else make_probes(self.concepts, call=self.call)
+        if self.returning:
+            solid = sum(self.mastery.level(c.id) == "known" for c in self.concepts)
+            t.say(f"Welcome back. You're solid on {solid} of {len(self.concepts)} topics here, so I'll pick up "
+                  "from what's left.", interruptible=False)
         if probes:
             ev = t.say(f"{'Exam mode. ' if self.goal['mode'] == 'exam' else ''}{len(probes)} quick questions first, so I "
                        "don't teach you what you already know. Short answers are fine, or say I don't know.")
