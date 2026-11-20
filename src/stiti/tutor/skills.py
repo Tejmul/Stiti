@@ -47,6 +47,7 @@ INK, INDIGO, INDIGO_BG = "#1e1e1e", "#4656d6", "#eef0fd"   # the page's own voic
 FRAME_LINE, FRAME_BG = "#ddd5c3", "#faf7ee"                # figure card: a warm hairline on slightly deeper paper
 LABEL_FONT = 6     # Nunito: small sans labels ("REMEMBER") that match the page chrome
 CH = 0.58          # average glyph width / font size for Excalifont (layout estimate only)
+CH_SANS = 0.47     # … and for Nunito (the source card's printed-looking text)
 HGAP, VGAP = 96, 70
 
 
@@ -415,9 +416,9 @@ class Board:
         keep = self.frame
         if strip:
             self.frame = (self.col, 0)
-        w = 330 if strip else REGIONS["side"][2]
-        fs, lfs, pad = (15, 12, 14) if strip else (17, 13, 18)
-        per_line = max(16, int((w - pad * 2 - 8) / (fs * CH)))
+        w = 380 if strip else REGIONS["side"][2]
+        fs, lfs, pad = (20, 14, 16) if strip else (24, 15, 20)
+        per_line = max(16, int((w - pad * 2 - 8) / (fs * CH_SANS)))
         lines = textwrap.wrap(f"“{c['quote']}”", per_line) or [""]
         cap = 2 if strip else 5
         if len(lines) > cap:
@@ -437,8 +438,8 @@ class Board:
         els = [
             _base(type="rectangle", id=iid, x=x, y=y, width=w, height=h, backgroundColor="#f3f1ff",
                   strokeColor="#c9c3f2", strokeWidth=1, roughness=0, roundness={"type": 3}, groupIds=[gid]),
-            _base(type="line", id=kids[0], x=x + 1, y=y + 12, points=[[0, 0], [0, h - 24]], strokeColor=INDIGO,
-                  strokeWidth=4, roughness=0, groupIds=[gid]),
+            _base(type="rectangle", id=kids[0], x=x, y=y + 14, width=4, height=h - 28, backgroundColor=INDIGO,
+                  strokeColor="transparent", strokeWidth=1, roughness=0, groupIds=[gid]),
             _base(type="text", id=kids[1], x=x + pad, y=y + pad, text=lab, fontSize=lfs, fontFamily=LABEL_FONT,
                   strokeColor=INDIGO, groupIds=[gid]),
             _base(type="text", id=kids[2], x=x + pad, y=y + pad + lfs * 1.3 + 8, text=qtxt, fontSize=fs,
