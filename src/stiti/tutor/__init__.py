@@ -346,6 +346,7 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
                           unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")))
             fut = None                               # a re-plan (other unit) maps again
             holder["t"] = coach.t
+            coach.t.ptt_mode = "--ptt" in args          # hold-to-talk from the start (noisy room)
             if srv:
                 srv.connected.wait(15)
                 for m in coach.t.on_connect():
