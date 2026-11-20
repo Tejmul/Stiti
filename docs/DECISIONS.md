@@ -1495,3 +1495,58 @@ examples, tests, docs and the LaunchAgent label.
   history rewrite (`git filter-repo --replace-text`) + force-push, which breaks every clone, fork and open PR.
 **Tests:** `privacy_eval` (44, new: fresh install knows nobody, the check on a fake profile + fake repo, hook, LaunchAgent
 move), `recap_eval` (own wake phrase), the rest unchanged in intent.
+## D60: Cited answers + "your notes don't cover that" (2026-11-20, feature 2)
+Research: `docs/research/teaching_apps.md` #1 and `docs/research/apps/notebooklm.md` "Techniques for Stiti" (ALCE,
+Self-RAG, RAGAS faithfulness; NotebookLM's grounded chat). Built the small free/local version:
+1. **His file → page-tagged chunks in Postgres** (migration **015** — 012 jobs, 013 mastery_events, 014 asked_questions are taken): `doc_sources`
+   (mtime + size + embedder = the cache key), `doc_chunks` (page label, page index, unit, char span, english
+   tsvector, `halfvec(768)` like every other embedding; GIN + HNSW), `doc_answers` (per-file answer bank).
+   Chunks are whole sentences, 400–800 chars, cut at a paragraph once ≥ 400 and always before a heading (one idea
+   per chunk keeps the embedding sharp: on-topic cosine went from ~0.45 to ~0.6 vs. 800-char blocks). A lesson from a
+   file indexes it in a background thread at lesson start, the lesson's own section first.
+2. **One hybrid SQL per doubt** (`cite.retrieve`): top-40 by cosine ∪ top-40 by `ts_rank_cd` over an OR-query, ranked
+   `cos + 0.25·ts_rank_cd + 0.15·keyword cover`. ~12 ms median incl. the query embedding (test book; < 100 ms target).
+3. **Score gate before any LLM call:** covered when a passage has cosine ≥ 0.50, or ≥ 0.33 AND ≥ 60 % of the
+   question's stemmed words. Calibrated on EmbeddingGemma-300M q4: 18/18 on-topic covered, 15/15 off-topic (incl.
+   same-subject "linker", "semantic analysis") not covered. Below it she says "Your notes don't cover that. Want a
+   general answer?" and calls the LLM only on a yes. A half-built index never claims "not covered".
+4. **Quotes are checked in code:** the answer schema returns `quotes [{quote, page}]`; `verify_quotes` keeps a quote
+   only if its words appear in order in a retrieved passage (case / whitespace / punctuation / line-break hyphenation
+   ignored, "…" may skip words); the page comes from that passage, never the LLM. She says "Page 42 says: <quote>"
+   only for a verified quote; relevant file but nothing quotable → "this part is general knowledge".
+5. **Answer bank:** a cited answer is saved per file (question embedding); the same doubt again (query cosine ≥ 0.93)
+   is answered from it with no LLM call. A changed file drops its chunks and bank.
+6. **Board:** a lavender source card ("P. 42 · UNIT 2" + the quote) on the doubt board while she answers and in the
+   page's doubts strip after; click → the whole passage with the quote marked (Next.js + plain board).
+A syllabus / topic list (`book.is_outline`) is not quoted; topics without a file are unchanged. Privacy as before:
+only the 3–4 passages for one doubt go to the free LLM.
+**Not yet:** a reranker, the tail-error guard for long outputs, citations in lesson segments (not only doubts),
+a real-book quote rate measurement with live free models (the "≥ 90 % carry a real quote" check).
+
+## D61: The hint ladder, check pacing and Blurt — feature 5 (2026-11-20)
+*(research: docs/research/apps/itutor.md "Techniques for Stiti" #1 + the code-owned hint ladder;
+docs/research/apps/coconote.md T4 Blurt)* The owner's two complaints pull both ways — "it keeps on saying, saying"
+and "it asks the same questions again and again" — so pacing is owned by code (`tutor/pacing.py`, no LLM):
+1. **Hint ladder** (player `_run_check`): a miss climbs nudge → hint → worked example (`Check.example`, the step's own
+   example lines) → the answer; "I don't know" skips the empty nudge; a rung with nothing to show is skipped. The rung
+   he needed is kept on the record and decides BOTH the FSRS rating (`srs.rating_for(…, rung=)`: unaided → Good/Easy,
+   nudge or hint → Hard, worked example or answer → Again) and the mastery evidence (`pacing.mastery_verdict`: right
+   after a nudge/hint = partial, after the worked example = wrong) — for coached checks (`Coach._on_check` → mastery
+   event origin `check` + `Coach._card`) and course quizzes. A review session (D57) keeps its short ladder — one
+   hint, then the answer (`Tutor.short_ladder`) — the rung rates the card, the mastery event keeps verdict + hints.
+2. **Pacing:** about one check per full idea (≥ 3 spoken sentences; coach steps are 2–3 sentences now, was ≤ 2), a
+   concept still gets its one check, a known concept's quick check is always asked. Fed up — "skip the questions" /
+   "just teach" (`commands` kind `fewer`), curt answers, a stressed voice on a curt answer — → sparser checks for the
+   rest of the session, said once ("Okay, fewer questions."). Never the same question twice in a session, nor one
+   answered right in the last 3 days (`asked` in the mastery JSON); probes and doubt checks go through the same filter.
+3. **Blurt:** `--blurt` (Lessons page toggle) → "tell me everything you remember about X" after each topic (day mode:
+   per unit), or "test me" / "let me blurt" any time (`commands` kind `blurt`); graded per key point locally
+   (recalled / partial / missed), a free-LLM second opinion only on partial points; a Blurt page on the board, mastery
+   per concept (event origin `blurt`), missed points re-taught once; a "Blurt" section in his notes.
+4. **Goal memory:** the goal is kept per file (`goal` in the mastery JSON, ≤ 14 days; an exam until its date, which
+   also fills D57's `exam` for the map) → the next lesson says "Still the exam on Friday? Carrying on." instead of
+   asking again; `parse_goal` understands "no exam, just learn it".
+5. **Listening fix:** speech that started before her question is dropped, but speech that started while she was still
+   asking is his answer (it used to be dropped, so she asked again).
+**Tests:** `tutor_coach_eval`, `tutor_teacher_eval`, `tutor_grade_eval`, `tutor_eval`, `web_lessons_eval` extended;
+`review_map_eval` unchanged in intent.

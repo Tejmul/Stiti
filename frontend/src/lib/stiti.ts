@@ -118,7 +118,7 @@ export type Lessons = {
   active: boolean; board_url: string; files: StudyFile[]; notes: LessonNote[]; progress: LessonProgress[];
   review?: { total: number };
 };
-export type LessonStart = { target: string; mode: LessonMode; hours?: number; days?: number; focus?: string; ptt?: boolean };
+export type LessonStart = { target: string; mode: LessonMode; hours?: number; days?: number; focus?: string; ptt?: boolean; blurt?: boolean };
 
 // ---- background jobs (src/stiti/jobs.py, D56): /api/jobs + live /api/events (server-sent events)
 export type JobStatus = "queued" | "running" | "done" | "failed" | "parked" | "cancelled";

@@ -69,10 +69,14 @@ class Mastery:
         self.p: dict[str, float] = {}
         self.seen: dict[str, float] = {}
         self.exam: str | None = None                 # ISO date of his exam, when a lesson's goal named one
+        self.goal: dict | None = None             # his goal for this file: {mode, days, hours, exam_date, asked_at}
+        self.asked: dict[str, dict] = {}          # normalised check question → {t, ok} (never re-ask a right one soon)
         try:
             d = json.loads(self.path.read_text())
             self.p, self.seen = d.get("p", {}), d.get("seen", {})
             self.exam = d.get("exam") if isinstance(d.get("exam"), str) else None
+            self.goal = d.get("goal") if isinstance(d.get("goal"), dict) else None
+            self.asked = d.get("asked") if isinstance(d.get("asked"), dict) else {}
         except Exception:
             pass
 
@@ -97,12 +101,37 @@ class Mastery:
         p = self.get(concept)
         return "known" if p >= KNOWN else "shaky" if p >= SHAKY else "new"
 
+    # ---- questions he already answered (pacing.Pacing's store: never the same question again too soon)
+    def get_asked(self) -> dict[str, dict]:
+        return self.asked
+
+    def note_asked(self, question: str, ok: bool) -> None:
+        if not question:
+            return
+        self.asked[question] = {"t": time.time(), "ok": bool(ok)}
+        if len(self.asked) > 400:                 # keep the newest 400
+            self.asked = dict(sorted(self.asked.items(), key=lambda kv: kv[1].get("t", 0))[-400:])
+        self.save()
+
+    # ---- his goal for this file, so the next lesson doesn't ask "is this for an exam?" again
+    def set_goal(self, goal: dict) -> None:
+        self.goal = {**{k: v for k, v in goal.items() if k in ("mode", "days", "hours", "hours_said")},
+                     "asked_at": time.time()}
+        if goal.get("mode") == "exam" and goal.get("days") is not None:   # a date, so "in 3 days" stays true
+            self.goal["exam_date"] = time.strftime("%Y-%m-%d", time.localtime(time.time() + 86400 * int(goal["days"])))
+            self.exam = self.goal["exam_date"]    # the map's "at risk on exam day" (D57) reads the same date
+        self.save()
+
     def save(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             d: dict = {"source": self.source, "p": self.p, "seen": self.seen}
             if self.exam:
                 d["exam"] = self.exam
+            if self.goal:
+                d["goal"] = self.goal
+            if self.asked:
+                d["asked"] = self.asked
             self.path.write_text(json.dumps(d, indent=1))
         except Exception:
             pass

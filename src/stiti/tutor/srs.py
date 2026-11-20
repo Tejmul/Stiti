@@ -17,7 +17,12 @@ SCHED = Scheduler(desired_retention=0.9, learning_steps=(timedelta(minutes=10), 
                   enable_fuzzing=True)
 
 
-def rating_for(verdict: str | None, hints: int = 0, confidence: int | None = None) -> Rating:
+def rating_for(verdict: str | None, hints: int = 0, confidence: int | None = None, rung: int | None = None) -> Rating:
+    """rung (Feature 5 hint ladder: 0 none · 1 nudge · 2 hint · 3 worked example · 4 answer) wins when given."""
+    if rung is not None:
+        from .pacing import rung_rating
+        return {"again": Rating.Again, "hard": Rating.Hard, "good": Rating.Good,
+                "easy": Rating.Easy}[rung_rating(verdict, rung, confidence)]
     if verdict not in ("correct", "partial"):
         return Rating.Again
     if verdict == "partial" or hints or (confidence is not None and confidence <= 2):
@@ -83,7 +88,7 @@ def card_back(check: dict) -> str:
 
 def concept_card(source: str, source_key: str, concept_id: str, concept: str, check: dict) -> int:
     """Create or update the concept's card; a new card starts due now (the first rating schedules it)."""
-    spec = {k: check.get(k) for k in ("kind", "prompt", "options", "expectations", "hints", "reveal")}
+    spec = {k: check.get(k) for k in ("kind", "prompt", "options", "expectations", "hints", "reveal", "example")}
     row = one("""INSERT INTO study_cards(front, back, kind, source_key, source, concept_id, concept, check_spec, due)
                  VALUES (%s,%s,'concept',%s,%s,%s,%s,%s, now())
                  ON CONFLICT (source_key, concept_id) WHERE source_key IS NOT NULL

@@ -33,7 +33,8 @@ def card_check(c: dict) -> Check:
     if kind == "mcq" and not opts:
         kind = "recall"
     return Check(kind=kind, prompt=str(c.get("front") or spec.get("prompt") or ""), options=opts, expectations=exps,
-                 hints=hints, reveal=str(spec.get("reveal") or c.get("back") or ""), on_correct="Yes, that's it.")
+                 hints=hints, reveal=str(spec.get("reveal") or c.get("back") or ""), on_correct="Yes, that's it.",
+                 example=[str(x) for x in spec.get("example") or [] if x][:4])   # the ladder's worked-example rung
 
 
 def build(cards: list[dict]) -> Lesson:
@@ -69,6 +70,7 @@ class Review:
                        planner=planner if planner is not None else (answerer() if persist else None), **tutor_kw)
         self.t.on_check = self._on_check
         self.t.before_end = self._before_end
+        self.t.short_ladder = True                    # a short quiz: one hint then the answer (the rung still rates)
         self.done: list[dict] = []
         self._mastery: dict[str, Mastery] = {}
         self._recapped = False
@@ -78,7 +80,8 @@ class Review:
         if not c or rec.get("verdict") not in ("correct", "partial", "wrong", "idk"):
             return                                    # skipped / ended: the card stays due, mastery unchanged
         from . import srs
-        rating = srs.rating_for(rec["verdict"], rec.get("hints", 0), rec.get("confidence"))
+        # Feature 5: the hint-ladder rung he needed decides the FSRS rating; the mastery event keeps the verdict + hints
+        rating = srs.rating_for(rec["verdict"], rec.get("hints", 0), rec.get("confidence"), rung=rec.get("rung"))
         due = srs.review(c["id"], rating)
         m = self._mastery.get(c["source"]) or self._mastery.setdefault(c["source"], Mastery(c["source"]))
         p = m.update(c["concept_id"], rec["verdict"], origin="review", hints=rec.get("hints", 0))

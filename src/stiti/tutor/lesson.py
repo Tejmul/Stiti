@@ -63,6 +63,7 @@ class Check:
     reveal: str = ""
     on_correct: str = ""
     confidence: bool = False                    # quiz: ask "1–5, kitna sure?"
+    example: list[str] = field(default_factory=list)   # worked-example lines: the ladder's third rung (Feature 5)
 
 
 @dataclass
@@ -289,7 +290,7 @@ SEGMENT_SCHEMA = {
 }
 ANSWER_SCHEMA = {   # live Q&A turn: decide first, then words + board ops (Tutor CoPilot ordering)
     "type": "object", "additionalProperties": False,
-    "required": ["intent", "stuck_at", "error_type", "strategy", "say", "ops", "pages", "check"],
+    "required": ["intent", "stuck_at", "error_type", "strategy", "say", "ops", "pages", "check", "quotes"],
     "properties": {
         # D53 (Bridge, NAACL 2024): an expert tutor first decides WHERE he is stuck and WHY, then the move
         "stuck_at": _S,
@@ -304,5 +305,10 @@ ANSWER_SCHEMA = {   # live Q&A turn: decide first, then words + board ops (Tutor
         "say": {"type": "array", "items": _S},
         "ops": {"type": "array", "items": OP_SCHEMA},
         "pages": _nullable({"type": "array", "items": _S}),
+        # feature 2: one verbatim quote per claim taken from the numbered SOURCES (checked in code: tutor/cite.py
+        # verify_quotes drops any quote not found word for word in a retrieved passage). null without SOURCES.
+        "quotes": _nullable({"type": "array", "items": {
+            "type": "object", "additionalProperties": False, "required": ["quote", "page"],
+            "properties": {"quote": _S, "page": _S}}}),
     },
 }

@@ -97,9 +97,10 @@ def drive(make, answers: list[str], wait: float = 120):
 
     def feed():
         seen = 0
-        while not stop.is_set():                     # his turn: a question asked, or a hint given (same check)
-            waits = [m for m in list(sv.sent) if m.get("type") == "status" and (
-                m.get("mode") == "waiting" or (m.get("mode") == "playing" and " Hint: " in (m.get("caption") or "")))]
+        while not stop.is_set():                     # his turn: a question asked, or a hint given (same check) —
+            # D61: after every hint-ladder rung the player says "your turn" (status waiting) again, so that one status
+            # marks each turn; counting the hint's caption too would answer twice
+            waits = [m for m in list(sv.sent) if m.get("type") == "status" and m.get("mode") == "waiting"]
             if len(waits) > seen and answers:
                 seen = len(waits)
                 time.sleep(0.05)
