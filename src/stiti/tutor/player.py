@@ -40,6 +40,7 @@ SEGMENT_GAP_S = 0.6         # a breath between ideas (end of a section)
 CHECKIN_MIN_GAP_S = 120.0   # "any doubt so far?" only at a section end, and at most this often
 CHECKIN_WAIT_S = 3.0        # … then this long for a doubt before she carries on
 LONG_PAUSE_S = 90.0         # paused and silent this long → one gentle "whenever you're ready"
+BREAK_NUDGE_S = 6 * 60.0    # a day-mode break (5 min): the gentle nudge only after the break is over
 # ---- his whole sentence before she acts (D52). The mic cuts his speech at every breath: 2026-11-20 "Tomorrow." was
 # dropped as too short, then "I meant to say, tomorrow I have exam…" came as its own turn and she answered half of it.
 GATHER_IDLE_S = 2.2         # no new words from him for this long (Whisper ~0.5 s + a breath) = he has finished
@@ -380,8 +381,11 @@ class Tutor:
                 if seg.type == "summary" and ci == 0 and self.predict and not self._hook_done:
                     self._revisit_hook()
                 ev = self._play_cue(self.k)
-                if ev is None and seg.type == "break" and not self.ended:   # day mode: wait for him to come back
-                    self._pause("Say continue when you're back.")
+                if seg.type == "break" and not self.ended:  # day mode: a real break — wait for him to come back
+                    if ev is None:
+                        self._pause("Say continue when you're back.", brk=True)
+                    elif self._kind(ev)[0] in ("resume", "next", "back"):
+                        ev = None                     # "no, carry on" said over her: skip the break, don't replay it
                 self.cue_open = ev is not None        # she was cut mid-sentence: a doubt now resumes THIS cue
                 if ev is not None:
                     self._handle(ev)
@@ -594,7 +598,9 @@ class Tutor:
         nxt = next((i for i, (s, _) in enumerate(flat) if s > si), len(flat))
         self.k = nxt
 
-    def _pause(self, line: str) -> None:
+    def _pause(self, line: str, *, brk: bool = False) -> None:
+        """Wait for "continue". brk=True (a day-mode break): no nudge before the break is over, and "back" /
+        "I'm back" / "next" end the break instead of replaying the previous step."""
         self.audio.stop()
         self.send({"type": "pause"})
         self.status("paused", "paused")
@@ -604,13 +610,14 @@ class Tutor:
         while not self.ended:
             ev = ev or self._next_event(0.5 if self.pace >= 1 else 0.05)
             if ev is None:
-                if not nudged and time.time() - since > LONG_PAUSE_S * self.pace:
+                if not nudged and time.time() - since > (BREAK_NUDGE_S if brk else LONG_PAUSE_S) * self.pace:
                     nudged = True
-                    ev = self.say("Whenever you're ready, say continue. Or ask me anything.")
+                    ev = self.say("Break's over whenever you're ready. Say continue." if brk
+                                  else "Whenever you're ready, say continue. Or ask me anything.")
                 continue
             kind, text = self._kind(ev)
             ev = None
-            if kind in ("resume", "repeat"):
+            if kind in ("resume", "repeat") or (brk and kind in ("back", "next")):
                 return
             if kind in ("pause", "hand", "other"):
                 continue
