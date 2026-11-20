@@ -41,7 +41,9 @@ from .speaker import ACKS, FILLER_AFTER_S, FILLERS, Speaker
 from .tts import TTS, ClauseChunker, chime_audio, sentences, speakable
 from .vad import FRAME, SR, VAD
 
-AWAKE_TIMEOUT_S = float(os.getenv("STITI_AWAKE_TIMEOUT", "20"))
+AWAKE_TIMEOUT_S = float(os.getenv("STITI_AWAKE_TIMEOUT", "45"))    # of real silence (D47: was 20, counted from her last reply)
+CAPTIONS = os.getenv("STITI_CAPTIONS", "on") != "off"             # live words next to the orb: what she hears, what she says
+INTERIM_EVERY_S, INTERIM_MIN_MS, INTERIM_WINDOW_S = 1.6, 1500, 6.0   # a rough transcript while he is still talking
 WORK_JOIN_S = 8.0                    # wait at most this long for the previous engine call before the next one
 REPROMPT = "Mm-hm?"                  # a fragment that timed out (Unmute: prompt him to continue, never guess)
 CLARIFY = ["Sorry, say that again?", "Sorry, I didn't catch that.", "Hmm, say that once more?"]
@@ -109,6 +111,35 @@ class VoiceLoop:
                 playing = d is not None and d.playing
                 for ev in self.tt.feed(f, p, time.monotonic(), playing, getattr(d, "started_at", None)):
                     self._on_event(ev)
+                if CAPTIONS:
+                    self._interim()
+
+    def _interim(self) -> None:
+        """While he is still talking (≥ 1.5 s in, not in a pause): every 1.6 s a rough transcript of the last 6 s goes
+        next to the orb, so he can SEE she is hearing him. Runs on the STT thread only when it is free; never while he
+        pauses (that is when the real transcript is made), never asleep, never while she speaks."""
+        tt, now = self.tt, time.monotonic()
+        if (not getattr(self, "awake", False) or not tt.cur or tt.speech_ms < INTERIM_MIN_MS or tt.silence_ms > 150
+                or now - getattr(self, "_interim_t", 0.0) < INTERIM_EVERY_S
+                or (self.duplex is not None and self.duplex.playing)):
+            return
+        f = getattr(self, "_interim_f", None)
+        if f is not None and not f.done():
+            return
+        self._interim_t = now
+        audio = tt._audio()[-int(INTERIM_WINDOW_S * SR):]
+        prefix = getattr(tt, "prefix", "") or ""
+
+        def job():
+            try:
+                loc, _ = stt._local(np.asarray(audio, dtype=np.float32), os.getenv("STITI_WHISPER", stt.WHISPER_MAIN),
+                                    stt.build_prompt("en", ""))
+                text = (loc.text or "").strip()
+                if text and loc.no_speech_prob < 0.6 and not stt.prompt_copy(text, stt.build_prompt("en", "")):
+                    overlay.caption("you", f"{prefix} {text}".strip(), live=True)
+            except Exception as e:
+                self._dbg(f"interim caption: {type(e).__name__}: {e}")
+        self._interim_f = self._stt.submit(job)
 
     def _on_event(self, ev: tuple) -> None:
         if self.rt is not None and self.rt.on_event(ev):
@@ -379,8 +410,11 @@ class VoiceLoop:
                           flush=True)
                     os._exit(75)                         # Stiti.app's launcher restarts on a non-zero exit
                 now = time.time()
-                if (self.awake and now - self.last_activity > AWAKE_TIMEOUT_S and not d.playing
-                        and not self.tt.busy):           # never fall asleep while he's mid-sentence
+                if self.awake and (self.tt.busy or c is not None):
+                    self.last_activity = max(self.last_activity, now - AWAKE_TIMEOUT_S + 8)   # he is talking: stay
+                # D47: only an IDLE moment can end the session. Before, the check also ran on the tick that delivered
+                # his words: he spoke for 25 s, paused, and she fell asleep before reading what he had just said.
+                if should_sleep(self.awake, c is not None, now - self.last_activity, d.playing, self.tt.busy):
                     self.awake = False
                     overlay.set_state("hidden")
                     self._chime(up=False)
@@ -396,6 +430,8 @@ class VoiceLoop:
                 text = c.text or ""
                 if not text:
                     continue
+                if CAPTIONS and self.awake:
+                    overlay.caption("you", text)         # what she heard, next to the orb
                 if self.ring_control is not None and (said := self.ring_control(text)):
                     print(f"You: {text}")
                     self.duplex.stop_playback()
@@ -526,6 +562,12 @@ def _safe(fn, text: str):
     except Exception as e:
         print(f"[voice] hook failed: {e}", flush=True)
         return None
+
+
+def should_sleep(awake: bool, got_segment: bool, since_activity_s: float, playing: bool, busy: bool) -> bool:
+    """End the session? Only on an idle tick: never on the tick that delivers his words (got_segment), never while he
+    is mid-sentence (busy) or she is speaking."""
+    return bool(awake and not got_segment and since_activity_s > AWAKE_TIMEOUT_S and not playing and not busy)
 
 
 def _greeting_line() -> str:

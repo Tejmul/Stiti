@@ -96,6 +96,12 @@ SWITCH_RX = re.compile(rf"\b(talk|speak|reply|answer|respond|switch|change)\b[^.
                        r"\b(hindi|hinglish)\s+(mein|me)\s+(bolo|baat\s*karo)\b", re.I)
 
 
+NOT_RX = re.compile(rf"\b(?:don'?t|do not|shouldn'?t|should not|stop|never|no need to|not|mat|nahi)\b[^.?!]{{0,24}}?"
+                    rf"\b(?:talk(?:ing)?|speak(?:ing)?|reply(?:ing)?|answer(?:ing)?|respond(?:ing)?|bolo|baat)\b"
+                    rf"[^.?!]{{0,14}}?\b(?:in\s+)?{_L}\b|"
+                    rf"\bno\s+(?:more\s+)?{_L}\b|\b{_L}\s+(?:mein|me)\s+(?:mat|nahi)\b", re.I)
+
+
 def _lang_in(m: re.Match) -> str | None:
     for g in m.groups():
         if g and g.lower() in LANGS:
@@ -110,6 +116,10 @@ def command(text: str) -> tuple[str, str | None] | None:
         return None
     if UNLOCK_RX.search(t):
         return "unlock", None
+    if (m := NOT_RX.search(t)) and (lg := _lang_in(m)):
+        # "You shouldn't talk in Hindi" once switched her INTO Hindi (2026-11-18). Not-X means the language he is
+        # speaking this sentence in: English, unless English is the one he rules out.
+        return ("switch", "english") if lg != "english" else None
     if (m := LOCK_RX.search(t)) and (lg := _lang_in(m)):
         return "lock", lg
     if (m := SWITCH_RX.search(t)) and (lg := _lang_in(m)):

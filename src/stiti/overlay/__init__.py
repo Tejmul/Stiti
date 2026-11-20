@@ -74,6 +74,12 @@ def show_card(card: dict | None, speaking: bool = True) -> None:
         _call("show_card", card, speaking)
 
 
+def caption(who: str, text: str, live: bool = False) -> None:
+    """Live words next to the orb: who = "you" (what she hears) or "stiti" (what she is saying). Any thread."""
+    if text:
+        _call("caption", who, text, live)
+
+
 def note(text: str, secs: float = 3.6) -> None:
     """A short line next to the orb for a few seconds (the wake greeting)."""
     if text:

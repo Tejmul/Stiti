@@ -496,5 +496,15 @@ os.environ.pop("STITI_ORB")
 check("the wake greeting uses what she calls him", M.greeting("Sam") == "Hey Sam, what's on your mind?"
       and M.greeting(None) == M.greeting("you") == "Hey, what's on your mind?")
 
+print("live captions (D47)")
+long_you = "so currently I will talk about my goals and what I want to do in the next few months of this year"
+cy, cs = M.caption_text("you", long_you), M.caption_text("stiti", "Understood. " + long_you)
+check("his caption keeps the newest words", cy.startswith("…") and cy.endswith("of this year") and len(cy) <= M.CAPTION_CHARS + 1, cy)
+check("her caption keeps the start", cs.startswith("Understood.") and cs.endswith("…") and len(cs) <= M.CAPTION_CHARS + 1, cs)
+check("a short line is shown whole", M.caption_text("you", "  hello   Stiti ") == "hello Stiti")
+check("a caption may be wider than a label, never wider than its cap",
+      M.capsule_width(900, max_w=M.CAPTION_MAX_W) == M.CAPTION_MAX_W > M.ORB_MAX_W == M.capsule_width(900))
+check("captions leave after a few seconds (no history on screen)", 2.0 <= M.CAPTION_S <= 6.0)
+
 print(f"overlay: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

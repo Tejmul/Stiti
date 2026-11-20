@@ -109,6 +109,15 @@ check("plain English later → English voice", v == "af_jessica")
 a, sr = t.synth("రేపు morning six కి alarm set చేశాను.")
 check("Telugu line synthesizes", len(a) > sr * 0.8)
 
+print("'you shouldn't talk in Hindi' is not 'talk in Hindi' (2026-11-18: it switched her INTO Hindi)")
+for t in ("You shouldn't talk in Hindi bina.", "don't talk in Hindi", "stop talking in Telugu", "never reply in Hinglish",
+          "Hindi mein mat bolo", "no more Hindi"):
+    check(f"{t!r} → English", lang.command(t) == ("switch", "english"), str(lang.command(t)))
+check("'talk in Hindi' still switches to Hindi", lang.command("talk in Hindi") == ("switch", "hindi"))
+check("'don't talk in English' alone names no language to use", lang.command("don't talk in English") is None)
+check("'I do not speak Hindi at home' is a fact, not a command", lang.command("I do not speak Hindi at home") is None)
+check("the English lock still parses", lang.command("talk in English, don't use any other language") == ("lock", "english"))
+
 print("hearing Telugu (STT)")
 from stiti.voice import lid, stt, stt_cloud                             # noqa: E402
 
