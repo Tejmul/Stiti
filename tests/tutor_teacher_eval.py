@@ -469,5 +469,55 @@ for t, want in (("stop", "pause"), ("the end of the array", "question"), ("finis
                 ("end index is what", "question")):
     check(f"{t!r} is not 'end'", CM.classify(t) == want, CM.classify(t))
 
+# ------------------------------------------------------------------ D52: his whole sentence, and he can change the plan
+print("\nshe waits for his whole sentence and changes the plan when he asks (D52)")
+
+
+class SteerPlanner(FakePlanner):
+    def __init__(self, decision):
+        super().__init__()
+        self.decision, self.steers = decision, []
+
+    def steer(self, text, ctx):
+        self.steers.append((text, ctx))
+        return dict(self.decision)
+
+
+pl = FakePlanner()
+r = run({"The lexer reads": [voice("What happens to"), voice("the spaces between tokens?")]}, planner=pl, pace=0.3)
+check("two pieces of his speech → ONE doubt with his whole sentence",
+      [c[0] for c in pl.calls] == ["What happens to the spaces between tokens?"], str([c[0] for c in pl.calls]))
+check("…she stopped talking while he spoke (no overlap)", r["audio"].overlaps == 0 and r["audio"].stops, "")
+
+pl = SteerPlanner({"action": "skip_to", "part": 3, "target": None, "say": "Okay, straight to why tokens."})
+r = run({"Think of reading": [voice("I already know this part, go to why tokens")]}, planner=pl, pace=0.1)
+said = r["said"]
+check("'I already know this, go to…' → she jumps to that part (not a doubt, not parked)",
+      pl.steers and "Okay, straight to why tokens." in said and not pl.calls
+      and not any(s.startswith("The lexer reads") for s in said)
+      and any(s.startswith("The parser then reads") for s in said), str(said[:8]))
+check("…the planner saw the parts of the lesson", pl.steers and pl.steers[0][1]["parts"][2] == "Why tokens",
+      str(pl.steers[0][1] if pl.steers else None))
+
+pl = SteerPlanner({"action": "crash", "part": None, "target": None, "say": "Got it, exam tomorrow. Whole thing, fast."})
+r = run({"The lexer reads": [voice("Tomorrow."), voice("I have an exam so cover the whole thing quickly")]}, planner=pl,
+        pace=0.3)
+sw = r["t"].switch
+check("'Tomorrow.' + 'I have an exam…' → one request, kept whole (the short first word isn't lost)",
+      sw is not None and sw["request"].startswith("Tomorrow") and "exam" in sw["request"], str(sw))
+check("…exam → a crash course is planned and this lesson ends (never 'let's park this')",
+      sw is not None and sw["mode"] == "crash" and r["t"].ended
+      and "Got it, exam tomorrow. Whole thing, fast." in r["said"]
+      and not any("park" in s.lower() for s in r["said"]), str(r["said"][-3:]))
+
+r = run({"The lexer reads": [voice("I have an exam tomorrow, I want the whole syllabus")]}, planner=None, pace=0.1)
+check("no cloud brain: 'exam tomorrow' still becomes a crash course", (r["t"].switch or {}).get("mode") == "crash",
+      str(r["t"].switch))
+for t, want in (("Bro, I don't need to go from all start bro.", "steer"),
+                ("bro i have a exam tomorrow i want to study a differnet syllabus", "steer"),
+                ("what is a token?", "question"), ("it produces tokens", "answer")):
+    check(f"{t[:40]!r} → {want}", CM.classify(t, answering=want == "answer" or t.startswith("Bro")) == want,
+          CM.classify(t, answering=True))
+
 print(f"tutor teacher: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

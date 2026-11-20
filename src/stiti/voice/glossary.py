@@ -254,8 +254,26 @@ def _refresh() -> None:
         pass
 
 
+_session: list[Term] = []          # words of what he's doing right now (a lesson's terms), first in the prompt
+SESSION_MAX = 20
+
+
+def set_session(words: list[str] | None) -> None:
+    """D52: the tutor's lesson words ("DFA", "lexer", "token") bias Whisper for the whole lesson — he said it
+    mis-heard him and then answered something else. None / [] clears them."""
+    global _session
+    seen, out = set(), []
+    for w in words or []:
+        w = " ".join(str(w).split())[:40]
+        if w and w.lower() not in seen and len(w.split()) <= 3:
+            seen.add(w.lower())
+            out.append(Term(w))
+    _session = out[:SESSION_MAX]
+
+
 def terms(block: bool = False) -> list[Term]:
-    """Cached terms; a stale cache is refreshed in a background thread (never blocks a transcription)."""
+    """Cached terms (+ this lesson's words first); a stale cache is refreshed in a background thread (never blocks
+    a transcription)."""
     global _at
     if time.time() - _at > REFRESH_S:
         with _lock:
@@ -265,6 +283,9 @@ def terms(block: bool = False) -> list[Term]:
                     _refresh()
                 else:
                     threading.Thread(target=_refresh, daemon=True).start()
+    if _session:
+        have = {t.text.lower() for t in _session}
+        return _session + [t for t in _terms if t.text.lower() not in have]
     return _terms
 
 

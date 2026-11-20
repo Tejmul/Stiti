@@ -20,6 +20,7 @@ from __future__ import annotations
 import queue
 import re
 import time
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 
 from . import commands, grade
@@ -39,6 +40,16 @@ SEGMENT_GAP_S = 0.6         # a breath between ideas (end of a section)
 CHECKIN_MIN_GAP_S = 120.0   # "any doubt so far?" only at a section end, and at most this often
 CHECKIN_WAIT_S = 3.0        # … then this long for a doubt before she carries on
 LONG_PAUSE_S = 90.0         # paused and silent this long → one gentle "whenever you're ready"
+# ---- his whole sentence before she acts (D52). The mic cuts his speech at every breath: 2026-11-20 "Tomorrow." was
+# dropped as too short, then "I meant to say, tomorrow I have exam…" came as its own turn and she answered half of it.
+GATHER_IDLE_S = 2.2         # no new words from him for this long (Whisper ~0.5 s + a breath) = he has finished
+GATHER_MAX_S = 30.0         # a long explanation still gets heard to the end, up to this long
+FRAG_S = 6.0                # a fragment dropped as "too short to interrupt" this recently starts his next sentence
+GATHER_UNFINISHED_S = 4.5   # his words end mid-thought ("…so", "…I want you to") → wait this long for the rest
+UNFINISHED_RX = re.compile(r"\b(so|and|but|or|because|to|the|a|an|of|in|on|with|for|is|are|was|like|that|which|"
+                           r"if|then|i|my|you|want|mean|about|um+|uh+|actually|basically)\W*$", re.I)
+STEER_LINES = {"skip_to": "Okay, let's jump ahead.", "restart": "Okay, let's go again from the start, slowly.",
+               "switch": "Okay, let's switch to that.", "crash": "Got it. Let's cover the whole thing quickly for your exam."}
 
 ACKS = ["Good question.", "Okay, good doubt.", "Hmm, nice one."]
 FILLERS = ["Let me draw it out.", "One sec, let me sketch this.", "Let me show you on the board."]
@@ -81,6 +92,9 @@ class Tutor:
         self.futs: dict[tuple[int, float], object] = {}
         self._cue_vecs = None
         self.lesson_id = self.session_id = None
+        self._frag: tuple[float, str] | None = None   # (when, text) of a too-short piece of his speech
+        self._held: deque = deque()                     # events that arrived while she waited for his whole sentence
+        self.switch: dict | None = None                 # {"mode": switch|crash, "target", "say"} → __init__ plans it
         if start:                                    # resuming: rebuild the board silently up to `start`
             flat = lesson.cue_list()
             for kk in range(min(start, len(flat))):
@@ -112,7 +126,7 @@ class Tutor:
 
     def _next_event(self, timeout: float) -> dict | None:
         try:
-            ev = self.events.get(timeout=timeout)
+            ev = self._held.popleft() if self._held else self.events.get(timeout=timeout)
         except queue.Empty:
             return None
         if ev.get("type") == "error":
@@ -127,13 +141,52 @@ class Tutor:
                 keep, why = self.guard.check(ev["text"], at=ev.get("at"), no_speech=float(ev.get("no_speech") or 0),
                                              logprob=float(ev.get("logprob") or 0), barged=bool(ev.get("barged")))
                 if not keep:                          # her own voice / a phantom / noise: never the learner
+                    if why == "too short to interrupt":
+                        self._frag = (time.time(), ev["text"])     # maybe the first word of a longer sentence
                     self.log(f"   (ignored, {why}: {ev['text']!r})")
                     return None
+                ev["text"] = self._whole(ev["text"])
             if ev["type"] == "text" and ev["text"]:
                 self.log(f"You: {ev['text']}")
             elif ev["type"] == "voice" and ev["text"]:
                 self.log(f"You (voice): {ev['text']}")
         return ev
+
+    def _whole(self, text: str) -> str:
+        """Wait for his WHOLE sentence before acting on it (D52): she stops talking, shows what she's hearing, and
+        joins every piece that follows within GATHER_IDLE_S. A lesson command ("wait", "skip") or a bare "hmm" acts
+        at once, as before."""
+        if self._frag and time.time() - self._frag[0] < FRAG_S:
+            text = f"{self._frag[1].strip().rstrip('.')} {text}"      # "Tomorrow." + "I have an exam…"
+        self._frag = None
+        kind = commands.classify(text)
+        if kind not in ("question", "steer", "answer", "other", "confused") or (kind == "other" and len(text.split()) < 3):
+            return text
+        if self.audio.playing:
+            self.audio.stop()                         # he is talking: she stops and listens
+        self.status("waiting", "listening…", caption=f"You: {text}")
+        last, hard = time.time(), time.time() + GATHER_MAX_S * self.pace
+
+        def idle() -> float:                          # "…so I want you to" isn't finished: give him longer
+            return (GATHER_UNFINISHED_S if UNFINISHED_RX.search(text) else GATHER_IDLE_S) * self.pace
+        while time.time() - last < idle() and time.time() < hard:
+            try:
+                nx = self.events.get(timeout=0.05)
+            except queue.Empty:
+                continue
+            piece = (nx.get("text") or "").strip()
+            if nx.get("type") == "voice" and piece:
+                keep, why = self.guard.check(piece, at=nx.get("at"), no_speech=float(nx.get("no_speech") or 0),
+                                             logprob=float(nx.get("logprob") or 0), barged=True)
+                if not keep:
+                    self.log(f"   (ignored, {why}: {piece!r})")
+                    continue
+                text = f"{text} {piece}"
+                last = time.time()
+                self.status("waiting", "listening…", caption=f"You: {text}")
+                continue
+            self._held.append(nx)                     # a click / typed line while he talks: right after this
+        return text
 
     @staticmethod
     def _kind(ev: dict, answering: bool = False) -> tuple[str, str]:
@@ -237,8 +290,24 @@ class Tutor:
         return acts
 
     # ------------------------------------------------------------ main loop
+    def lesson_words(self) -> list[str]:
+        """Short labels she will draw and say (segment titles, box / formula labels): what he'll say back to her."""
+        words = [self.L.title] + [s.title for s in self.L.segments]
+        for s in self.L.segments:
+            for c in s.cues:
+                for op in c.ops:
+                    if op.type in ("box", "formula", "text", "bullet") and op.text and len(op.text.split()) <= 3:
+                        words.append(op.text)
+        return [w for w in words if w and not w.lower().startswith(("warm", "summary", "recap"))]
+
     def run(self) -> dict:
         self._persist_start()
+        try:
+            from ..voice import glossary, stt
+            glossary.set_session(self.lesson_words())  # D52: Whisper expects HIS lesson's words ("DFA", not "the FA")
+            stt.prefer_cloud(hasattr(self.audio, "vl"))   # voice lessons only: the big cloud ear for his sentences
+        except Exception:
+            pass
         try:
             while not self.ended:
                 flat = self._flat()
@@ -266,6 +335,13 @@ class Tutor:
                         self._handle(ev, mid_cue=False)
         except KeyboardInterrupt:
             self.ended = True
+        finally:
+            try:
+                from ..voice import glossary, stt
+                glossary.set_session(None)
+                stt.prefer_cloud(False)
+            except Exception:
+                pass
         return self._finish()
 
     def _play_cue(self, k: int) -> dict | None:
@@ -324,6 +400,70 @@ class Tutor:
             self._explain_element(text)
         elif kind == "question":
             self._answer(text, resume_cue=mid_cue)
+        elif kind == "steer":
+            self._steer(text, mid_cue=mid_cue)
+
+    # ------------------------------------------------------------ he changes the plan (D52)
+    def _units(self) -> tuple[str, list[str]]:
+        """(file title, unit names) when the lesson comes from his book / notebook, else ("", [])."""
+        src = self.L.source or {}
+        if src.get("kind") != "book" or not src.get("path"):
+            return "", []
+        if not hasattr(self, "_units_cache"):
+            try:
+                from . import book
+                b = book.load(src["path"])
+                self._units_cache = (b.title, [s.name for s in (b.chapters() or b.sections)][:40])
+            except Exception:
+                self._units_cache = ("", [])
+        return self._units_cache
+
+    def _seg_start(self, si: int) -> int:
+        return next((i for i, (s, _) in enumerate(self._flat()) if s == si), self.k)
+
+    def _steer(self, text: str, mid_cue: bool = True) -> str:
+        """He wants something else than the plan: "I know this", "start from unit 3", "exam tomorrow, cover it all".
+        A teacher changes course — never "let's park this". -> answered | moved | switch | stay."""
+        self.audio.stop()
+        self.send({"type": "pause"})
+        self.status("thinking", "thinking…", caption=f"You: {text}")
+        si = self._flat()[min(self.k, len(self._flat()) - 1)][0]
+        title, units = self._units()
+        ctx = {"lesson": self.L.title, "segment": self.L.segments[si].title, "pos": si + 1,
+               "parts": [s.title for s in self.L.segments], "book": title, "units": units}
+        d = None
+        if self.planner is not None and hasattr(self.planner, "steer"):
+            fut = self.answer_pool.submit(self.planner.steer, text, ctx)
+            try:
+                d = fut.result(timeout=FILLER_AFTER_S * self.pace)
+            except Exception:
+                if not fut.done():
+                    self.say("Okay, let me think about that.", interruptible=False)
+                try:
+                    d = fut.result(timeout=ANSWER_TIMEOUT_S * self.pace)
+                except Exception as e:
+                    self.log(f"   [planner] steer {type(e).__name__}: {str(e)[:120]}")
+        if d is None:                                 # no cloud: the clear cases still work locally
+            exam = re.search(r"\b(exams?|tests?|viva)\b", text, re.I)
+            d = {"action": "crash" if exam else "answer", "part": None, "target": None, "say": ""}
+        act = d["action"]
+        self.log(f"   [steer] {act} part={d.get('part')} target={d.get('target')!r}")
+        if act in ("skip_to", "restart"):
+            p = 1 if act == "restart" else int(d.get("part") or 0)
+            if 1 <= p <= len(self.L.segments):
+                self.say(d.get("say") or STEER_LINES[act], interruptible=False)
+                self.k = self._seg_start(p - 1)
+                self.cue_open = False
+                return "moved"
+            act = "answer"
+        if act in ("switch", "crash"):
+            self.switch = {"mode": act, "target": d.get("target"), "say": d.get("say") or STEER_LINES[act],
+                           "request": text}
+            self.say(self.switch["say"], interruptible=False)
+            self.ended = True
+            return "switch"
+        self._answer(text, resume_cue=mid_cue)
+        return "answered"
 
     def _skip_segment(self) -> None:
         flat = self._flat()
@@ -644,6 +784,14 @@ class Tutor:
                 break
             if kind in ("slower", "faster"):
                 self._handle({"type": "control", "cmd": kind})
+                continue
+            if kind == "steer":                       # "I don't need the basics" is a request, not his guess (D52)
+                r = self._steer(text, mid_cue=False)
+                if r in ("moved", "switch"):
+                    rec["verdict"] = "skipped"
+                    outcome = "end" if r == "switch" else "moved"
+                    break
+                ev = self.say(self._check_prompt(c))
                 continue
             if kind in ("question", "click"):
                 self._answer(text, resume_cue=False, answering=True) if kind == "question" \

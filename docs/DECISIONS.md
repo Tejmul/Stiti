@@ -1278,3 +1278,41 @@ start-up instead of 5: the first of each kind first, as before) and the new conf
 `examples_eval` (35). The 12 whole tasks on the real free models: 8 answered from real sources, 4 honest "can't yet",
 as before. Note for whoever runs the suite twice in one home: `learning_eval` teaches "add todo buy eggs" = chat into
 `exemplars.jsonl`; after two runs that line flips and the eval fails — use a fresh home per run (`run_all.sh` does).
+
+## D51: English only — she understands Hindi / Telugu words but always replies in English (2026-11-20)
+He, testing the tutor: "remove this Hindi, Telugu… just make it talk in English only, because suddenly it is shifting,
+and I don't even understand what it is talking about." The reply language was mirrored from what the STT *thought* it
+heard (D34), the tutor's style prompt asked for "a light touch of Hinglish", fixed lines said Chalo / Achha / Aur? /
+Uth jao / pata nahi, and an old active rule "[D6] Switch to Hindi" (a one-off command saved as a forever rule) was still
+in his profile.
+- `lang.english_only()` (default on): `decide()` returns English always. `STITI_LANGS=mirror` brings back D34.
+- "talk in Telugu" / "any language" → "I'll keep talking in English." (nothing saved); an English lock still saves.
+- Tutor style, acks, bridges, hints, help text, night course, demo lesson, goodbyes, ask-me intro, alarm nags → English.
+- His `~/.stiti/SOUL.md` language lines and rule D6 retired (superseded) on his instruction.
+- Understanding is unchanged: "ruko", "phir se", "ho gaya", Hinglish intents all still work.
+Tests: mirror-mode tests run with `STITI_LANGS=mirror`; new English-only checks in `lang_switch_eval` (107); persona
+(63) updated.
+
+## D52: The tutor listens — whole sentence, the big ear, and he can change the plan (2026-11-20)
+His first real lesson from "The Compiler Notebook.html" (log `~/.stiti/logs/lesson-compiler.log`): "It keeps on
+saying, saying… not taking my doubts… does not give me time to complete my question… hearing wrong and then answering
+me anything." What the log shows: "Tomorrow." dropped as too short, the rest of his sentence answered as a separate
+half; "Bro, I don't need to go from all start" graded as his guess ("Hold that thought"); "exam tomorrow… explain me
+that [HTML]" answered as a doubt about HTML; typed "I want to study a different syllabus" parked. Research:
+`docs/research/tutor_agent.md` (12 sources: structure, doubts, open-source tutors) and `re_wispr_flow.md`.
+1. **His whole sentence first** (`player._whole`): on a real sentence she stops, shows "You: …" live on the board, and
+   joins every piece that follows within 2.2 s (4.5 s if it ends mid-thought: "…so", "…I want you to"); a word just
+   dropped as "too short" becomes the start of the sentence. Commands ("wait", "skip") still act at once.
+2. **Steer** (`commands.STEER` + `player._steer` + `Planner.steer`): "I know this", "start from unit 3", "exam
+   tomorrow, cover it all" is a request, never a guess or a parked doubt — also during a check. One LLM call with the
+   lesson's parts and the file's units picks answer / skip_to / restart / switch / crash; switch and crash plan the new
+   lesson or the night course on the SAME board and voice (`_switch_lesson`, `_course_session(close=False)`). No cloud:
+   "exam" still → crash course.
+3. **The big ear in lessons** (Wispr Flow §3): the cloud lane was never open in a lesson — only the engine called
+   `stt.mark_active` — so every doubt went through local whisper-small alone. Now `stt.prefer_cloud(True)` for a voice
+   lesson: a sentence ≥ 0.9 s goes to Groq whisper-large-v3 in parallel with local (cap 1.8 s), local is the fallback.
+4. **His lesson's words bias the ear** (`glossary.set_session`): segment titles and board labels ("DFA", "lexer",
+   "longest match") lead the Whisper prompt for the lesson.
+**Not yet:** measured WER on his voice (needs the recorder), the teaching-structure rebuild from the research
+(diagnose first, concept map with mastery, ≤ 2 sentences before his turn, board as notes) — see the plan in
+`tutor_agent.md`.

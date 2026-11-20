@@ -266,20 +266,70 @@ def _teach(args: list[str]) -> dict:
     print("Talk any time: wait / continue / repeat / go back / skip / slower / faster / end — or just ask.\n"
           if mode == "voice" else "Type answers or questions here or on the board. Commands: pause, continue, "
                                   "repeat, back, skip, slower, faster, end.\n")
+    course_res = None
     try:
         result = tutor.run()
+        while tutor.switch:                         # D52: he asked for another unit / an exam crash course
+            sw = tutor.switch
+            if sw["mode"] == "crash":
+                course_res = _course_session(["--night", _switch_target(sw, target, lesson), "--goal", sw["request"][:120]],
+                                             _switch_target(sw, target, lesson), audio, events, srv, close=False)
+                break
+            nxt = _switch_lesson(sw, target, lesson, args, srv)
+            if nxt is None:
+                break
+            lesson, planner, start = nxt
+            tutor = Tutor(lesson, audio=audio, events=events, server=srv, planner=answerer(planner, lesson), start=start)
+            holder["t"] = tutor
+            if srv:
+                for m in tutor.on_connect():
+                    srv.send(m)
+            result = tutor.run()
     finally:
         stop.set()
         audio.close()
         if srv:
             srv.stop()
+    if course_res is not None:
+        return course_res
     right, graded = result["checks_right"], result["checks_graded"]
     print(f"\n✅ {'Finished' if result['finished'] else 'Stopped'} '{lesson.title}': checks {right}/{graded}, "
           f"{result['questions']} question(s), {result['cards_saved']} revision card(s) saved.")
     return result
 
 
+def _switch_target(sw: dict, target: str | None, lesson) -> str:
+    """His file when the lesson came from one (a crash course over the WHOLE notebook), else the topic he named."""
+    src = getattr(lesson, "source", None) or {}
+    if src.get("kind") == "book" and src.get("path"):
+        return src["path"]
+    return sw.get("target") or target or lesson.topic
+
+
+def _switch_lesson(sw: dict, target: str | None, lesson, args: list[str], srv):
+    """Plan the unit / topic he asked for, on the same board and voice. -> (lesson, planner, start) or None."""
+    src = getattr(lesson, "source", None) or {}
+    want = (sw.get("target") or "").strip()
+    if not want:
+        return None
+    if srv:
+        srv.send({"type": "status", "mode": "thinking", "text": "planning", "caption": f"Planning: {want}…"})
+    book = src.get("path") if src.get("kind") == "book" else None
+    try:
+        return make_lesson(book, [book, "--chapter", want]) if book else make_lesson(want, [want])
+    except BaseException as e:                     # not in the book / LLM down: say so on the board, end cleanly
+        msg = str(e) if isinstance(e, SystemExit) else f"{type(e).__name__}: {str(e)[:120]}"
+        print(f"Couldn't plan {want!r}: {msg}")
+        if srv:
+            srv.send({"type": "status", "mode": "offline", "text": "couldn't plan that",
+                      "caption": f"I couldn't find {want} — ask me again with the unit name."})
+        return None
+
+
 def _open_board(srv, args) -> None:
+    if srv and srv.server is not None:              # already open (a crash course he asked for mid-lesson, D52)
+        srv.send({"type": "reset", "actions": []})
+        return
     if srv:
         srv.start()
         print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
@@ -288,7 +338,8 @@ def _open_board(srv, args) -> None:
         srv.connected.wait(15)
 
 
-def _course_session(args: list[str], target: str | None, audio, events, srv, stop_args=None) -> dict:
+def _course_session(args: list[str], target: str | None, audio, events, srv, stop_args=None,
+                    close: bool = True) -> dict:
     """`teach --night <book|subject> [--hours 3] [--goal …]` · `teach --resume-course` · `teach --revise`."""
     from . import course
     from .player import Tutor
@@ -334,9 +385,10 @@ def _course_session(args: list[str], target: str | None, audio, events, srv, sto
         print(f"Couldn't run the crash course ({type(e).__name__}: {str(e)[:200]}).")
         return {"finished": False}
     finally:
-        audio.close()
-        if srv:
-            srv.stop()
+        if close:                                   # mid-lesson switch: the caller owns the voice and the board
+            audio.close()
+            if srv:
+                srv.stop()
 
 
 TEACH_RX = __import__("re").compile(
