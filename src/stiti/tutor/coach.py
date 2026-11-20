@@ -241,22 +241,40 @@ def focus_split(text: str | None) -> list[str]:
 
 # ------------------------------------------------------------------------------------------------ the queue
 DAY_RX = re.compile(r"\b((whole|entire|full|complete|all (of )?the|all my) (syllabus|book|course|portion|portions|notes|"
-                    r"thing|subject|units?|chapters?)|in (a|one) day|today itself|by tonight|whole day|all day)\b")
-HOURS_RX = re.compile(r"\b(\d{1,2}(?:\.5)?)\s*(?:hours?|hrs?|h)\b")
+                    r"thing|subject|units?|chapters?)|everything (today|tonight)|in (a|one) day|today itself|"
+                    r"by tonight|whole day|all day)\b")
+# speech-to-text writes "4 hours" or "four hours"; "ah" / "a h" must never read as an hour (words need a space)
+_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+              "ten": 10, "eleven": 11, "twelve": 12, "an": 1, "a": 1, "a couple of": 2, "a few": 3, "some": 3}
+HOURS_RX = re.compile(r"\b(?:(\d{1,2}(?:\.\d)?)\s*|(" + "|".join(sorted(_NUM_WORDS, key=len, reverse=True))
+                      + r")\s+)(and a half\s+)?(?:hours?|hrs?|h)\b( and a half)?")
 DAY_DEFAULT_H = 6.0       # "the whole syllabus today" with no hours said
 BREAK_EVERY_MIN = 45      # day mode: a 5-minute break about this often (he says "continue" to come back)
+BREAK_MIN = 5
+DAY_RESUME_H = 14         # day mode: what he did in the last 14 h counts as "done today" when he comes back
+EXAM_RX = re.compile(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b")
+
+
+def _hours(t: str) -> float | None:
+    """'in 4 hours' → 4 · 'four and a half hours' → 4.5 · 'an hour and a half' → 1.5 · none → None (0.5–14)."""
+    m = HOURS_RX.search(t)
+    if not m:
+        return None
+    h = float(m.group(1)) if m.group(1) else float(_NUM_WORDS[m.group(2)])
+    h += 0.5 if (m.group(3) or m.group(4)) else 0
+    return min(14.0, max(0.5, h))
 
 
 def parse_goal(text: str) -> dict:
     """'exam tomorrow' → {mode: exam, days: 1}; 'just want to understand it' → {mode: learn};
-    'teach me the whole syllabus today (in 6 hours)' → {mode: day, hours: 6}."""
+    'teach me the whole syllabus today (in 6 hours)' / 'cover it in 4 hours' → {mode: day, hours: 6 / 4}."""
     t = (text or "").lower()
-    if DAY_RX.search(t):
-        m = HOURS_RX.search(t)
-        return {"mode": "day", "days": 0, "hours": float(m.group(1)) if m else DAY_DEFAULT_H}
-    exam = bool(re.search(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b", t))
+    hours = _hours(t)
+    exam = bool(EXAM_RX.search(t))
+    if DAY_RX.search(t) or (hours is not None and not exam):    # his whole syllabus, or a few hours he has today
+        return {"mode": "day", "days": 0, "hours": hours or DAY_DEFAULT_H, "hours_said": hours is not None}
     days = None
-    if re.search(r"\b(today|tonight|in (a few|some) hours)\b", t):
+    if re.search(r"\b(today|tonight)\b", t) or hours is not None:
         days = 0
     elif re.search(r"\btomorrow\b", t):
         days = 1
@@ -270,7 +288,10 @@ def parse_goal(text: str) -> dict:
             pass
     if days is not None and not exam and re.search(r"\b(on|by|before|in \d+ days?)\b", t):
         exam = True
-    return {"mode": "exam" if exam else "learn", "days": days}
+    out = {"mode": "exam" if exam else "learn", "days": days}
+    if hours is not None:                            # "exam in 3 hours": the plan must fit in them
+        out["hours"] = hours
+    return out
 
 
 def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> list[Concept]:
@@ -421,6 +442,9 @@ class Coach:
         self._recapped = False
         self.returning = False
         self.notes_path: Path | None = None
+        self.t0 = time.time()
+        self.done_today: set[str] = set()            # day mode: concepts already done earlier today
+        self.pool_n = 0                              # how many concepts the queue was chosen from
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
@@ -477,13 +501,17 @@ class Coach:
         taught = [byid[c.id] for c in self.queue if c.id in byid]
         solid = [c for c in taught if self.mastery.level(c.id) == "known"]
         weak = [c for c in taught if self.mastery.level(c.id) != "known"]
-        ops = [Op(type="new_page", text="Today")]
+        day = (self.goal or {}).get("mode") == "day"
+        done = len(self._done_today()) if day else 0    # the whole day, this session and the ones before
+        ops = [Op(type="new_page", text=f"Today · {done} of {len(self.concepts)} done" if day else "Today")]
         ops += [Op(type="text", text=f"✓ {c.name}", region="points") for c in solid[:6]]
         ops += [Op(type="text", text=f"~ {c.name}", region="points") for c in weak[:6]]
         self.notes_path = self.save_notes()
         if self.notes_path:
             ops.append(Op(type="text", text=f"Notes saved: {self.notes_path.name}", region="remember"))
         line = "That's it for today."
+        if day:
+            line += f" Today so far: {done} of {len(self.concepts)} topics done."
         if solid:
             line += f" Solid now: {', '.join(c.name for c in solid[:3])}."
         if weak:
@@ -499,7 +527,7 @@ class Coach:
             lines = [f"# {self.L.title} — notes", f"_{time.strftime('%d %b %Y')} · mode: {self.goal.get('mode')}_", ""]
             cur = None
             for sg in self.L.segments:
-                if sg.id == "recap":
+                if sg.id == "recap" or sg.type == "break":  # a break page is not part of his notes
                     continue
                 if sg.title != cur:
                     cur = sg.title
@@ -564,9 +592,12 @@ class Coach:
             lvl = self.mastery.level(c.id)
             if self.goal["mode"] == "day" and since_break >= BREAK_EVERY_MIN and i:
                 since_break = 0.0                    # a real break: she stops and waits for "continue"
+                done, total = len(self.done_today) + i, len(self.concepts)      # progress across the day
                 self.L.segments.append(Segment(id=f"brk{i}", type="break", title="Break", cues=[Cue(
-                    id=f"brk{i}c1", say="Break time, five minutes. Stand up, drink some water, look away from the screen.",
-                    ops=[Op(type="new_page", text="Break · 5 min"),
+                    id=f"brk{i}c1", say=f"Break time, {BREAK_MIN} minutes. {done} of {total} topics done today. "
+                                        "Stand up, drink some water, look away from the screen.",
+                    ops=[Op(type="new_page", text=f"Break · {BREAK_MIN} min"),
+                         Op(type="text", text=f"✓ {done} of {total} topics done today", region="points"),
                          Op(type="text", text="Stand up · water · look far away", region="points"),
                          Op(type="text", text=f"Next: {c.name}", region="remember")])]))
             since_break += CONCEPT_MIN[lvl]
@@ -599,6 +630,7 @@ class Coach:
     def opening(self) -> bool:
         """Goal + deadline, then quick probes. False = he ended it."""
         t = self.t
+        self.t0 = time.time()
         mapper = threading.Thread(target=self._build_map, daemon=True)
         mapper.start()
         t.ears_on(["exam", "tomorrow", "syllabus", "unit", "chapter", "test"] + self.focus + self.subject.split()[:6])
@@ -608,10 +640,14 @@ class Coach:
             if ans is None:
                 return False
             self.goal = parse_goal(ans)
-        if self.goal["mode"] == "day":
-            mins = self.goal.get("hours", DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
+        day = self.goal["mode"] == "day"
+        if day:
+            mins = (self.goal.get("hours") or DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
         else:
-            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (self.goal.get("days") or 9) <= 1 else LEARN_MINUTES
+            days = self.goal.get("days")                # 0 = today: an exam today is ≤ 1 day too
+            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (9 if days is None else days) <= 1 else LEARN_MINUTES
+            if self.goal.get("hours"):                  # "exam in 2 hours": never plan more than he has
+                mins = min(mins, self.goal["hours"] * 60 * 0.85)
         self.goal["minutes"] = mins
         mapper.join(0.1)
         if mapper.is_alive():
@@ -633,9 +669,11 @@ class Coach:
         t.ears_on(t.extra_words)                     # his file's concept names bias the ear for the probes
         recent = [c for c in self.concepts if time.time() - self.mastery.seen.get(c.id, 0) < 21 * 86400]
         self.returning = len(recent) >= 3
+        if day:                                      # stopped and came back today: what he did BEFORE this session
+            self.done_today = self._done_today(before=self.t0)    # (not the probes about to be asked now)
         probes = [] if self.returning else make_probes(self.concepts, n=min(PROBES, max(1, len(self.concepts))),
                                                          call=self.call)
-        if self.returning:
+        if self.returning and not self.done_today:
             solid = sum(self.mastery.level(c.id) == "known" for c in self.concepts)
             t.say(f"Welcome back. You're solid on {solid} of {len(self.concepts)} topics here, so I'll pick up "
                   "from what's left.", interruptible=False)
@@ -663,37 +701,71 @@ class Coach:
                   interruptible=False)
         self.after_probes = dict(self.mastery.p)     # where he started (reports, tests)
         pool = self.concepts
-        if self.goal["mode"] == "day":               # stopped and came back today: carry on with what's left
-            done_today = {c.id for c in pool if time.time() - self.mastery.seen.get(c.id, 0) < 14 * 3600
-                          and self.mastery.level(c.id) != "new"}
-            if done_today and len(done_today) < len(pool):
-                pool = [c for c in pool if c.id not in done_today]
-                t.say(f"{len(done_today)} topics done today already. Let's do the other {len(pool)}.",
-                      interruptible=False)
+        if self.done_today:                          # day mode, same day: carry on with what's left
+            rest = [c for c in pool if c.id not in self.done_today]
+            n, total = len(self.done_today), len(pool)
+            if rest:
+                pool = rest
+                t.say(f"{'Welcome back. ' if self.returning else ''}{n} of {total} topic{'s' if total != 1 else ''} "
+                      f"done today already. Let's do the other {len(rest)}.", interruptible=False)
+            else:
+                t.say(f"{'Welcome back. ' if self.returning else ''}You've covered all {total} topics today "
+                      "already, so this is a quick revision round.", interruptible=False)
+        self.pool_n = len(pool)
         self.queue = order(pool, self.mastery, self.goal["mode"], mins)
         self._show_plan()
         return True
+
+    def _done_today(self, before: float | None = None) -> set[str]:
+        """Day mode: the concepts he got at least partly right in the last DAY_RESUME_H hours (before `before`)."""
+        now = before or time.time()
+        return {c.id for c in self.concepts
+                if 0 <= now - self.mastery.seen.get(c.id, 0) < DAY_RESUME_H * 3600
+                and self.mastery.level(c.id) != "new"}
 
     def _show_plan(self):
         t, q = self.t, self.queue
         if not q:
             return
-        acts = t.board.apply(Op(type="new_page", text="Your plan"))
+        exam = self.goal["mode"] == "exam"
+        day = self.goal["mode"] == "day"
+        title = "Your plan"
+        if day and self.done_today:                  # progress across the day: what's done before this session
+            title += f" · {len(self.done_today)} of {len(self.concepts)} done today"
+        acts = t.board.apply(Op(type="new_page", text=title))
         for c in q[:10]:
             mark = {"known": "✓ ", "shaky": "~ ", "new": ""}[self.mastery.level(c.id)]
             acts += t.board.apply(Op(type="text", text=f"{mark}{c.name}", region="points"))
+        if len(q) > 10:
+            acts += t.board.apply(Op(type="text", text=f"… and {len(q) - 10} more", region="points"))
         acts += t.board.apply(Op(type="text", text="✓ check only · ~ fix the gaps · others: teach",
                                  region="remember"))
         t.send({"type": "actions", "actions": [{**a, "at_ms": i * 120} for i, a in enumerate(acts)]})
         first = q[0].name
         n = len(q)
-        exam = self.goal["mode"] == "exam"
-        day = self.goal["mode"] == "day"
-        hrs = round(sum(CONCEPT_MIN[self.mastery.level(c.id)] for c in q) / 60, 1)
-        t.say(f"Here's the plan: {n} topic{'s' if n != 1 else ''}"
-              f"{', most important first for your exam' if exam else ''}"
-              f"{f', about {hrs:g} hours with short breaks' if day else ''}, starting with {first}. "
-              "Stop me any time with a doubt.", interruptible=False)
+        topics = f"{n} topic{'s' if n != 1 else ''}"
+        if day:
+            est, since, n_brk = 0.0, 0.0, 0         # the same break rule as _writer
+            for k, c in enumerate(q):
+                if since >= BREAK_EVERY_MIN and k:
+                    n_brk, since = n_brk + 1, 0.0
+                since += CONCEPT_MIN[self.mastery.level(c.id)]
+                est += CONCEPT_MIN[self.mastery.level(c.id)]
+            est += n_brk * BREAK_MIN
+            def hours(h):
+                return f"{h:g} hour{'' if h == 1 else 's'}"
+            dur = f"{max(5, round(est / 5) * 5):.0f} minutes" if est < 60 else f"{hours(round(est / 30) / 2)}"
+            dur += " with short breaks" if n_brk else ""
+            hrs = self.goal.get("hours") or DAY_DEFAULT_H
+            said = self.goal.get("hours_said", True)
+            if n < (self.pool_n or n):               # it doesn't all fit: say so, and what she chose
+                who = f"your {hours(hrs)} fit{'s' if hrs == 1 else ''}" if said else "one day fits"
+                body = f"{who} the {n} most important of {self.pool_n} topics, about {dur}"
+            else:
+                body = f"{topics}, about {dur}" + (f", inside your {hours(hrs)}" if said else "")
+        else:
+            body = topics + (", most important first for your exam" if exam else "")
+        t.say(f"Here's the plan: {body}, starting with {first}. Stop me any time with a doubt.", interruptible=False)
 
     def run(self) -> dict:
         if not self.opening():

@@ -69,6 +69,20 @@ check("'I have an exam tomorrow' → exam, 1 day", C.parse_goal("I have an exam 
 check("'just want to understand it properly' → learn", C.parse_goal("just want to understand it properly")["mode"]
       == "learn")
 check("'exam is today' → exam, 0 days", C.parse_goal("my exam is today evening") == {"mode": "exam", "days": 0})
+# day mode: "if I give my entire syllabus it should be able to teach me in a day"
+for said, hours in (("teach me the whole syllabus today", 6.0), ("I want to finish everything in 4 hours", 4.0),
+                    ("cover all the units by tonight", 6.0), ("whole syllabus today, I have four hours", 4.0),
+                    ("the entire portion in one day, two and a half hours", 2.5)):
+    g = C.parse_goal(said)
+    check(f"day mode: {said!r} → day, {hours:g} h", g["mode"] == "day" and g["hours"] == hours and g["days"] == 0, str(g))
+check("day mode: hours he never said are marked as a default",
+      C.parse_goal("teach me the whole syllabus today")["hours_said"] is False
+      and C.parse_goal("everything in 4 hours")["hours_said"] is True)
+check("…exam phrases stay exam ('ah' is not an hour): 'ah okay, exam tomorrow' → exam, 1 day",
+      C.parse_goal("ah okay, I have an exam tomorrow") == {"mode": "exam", "days": 1})
+check("…'my exam is in 3 hours' → exam today, the plan fits in 3 hours",
+      C.parse_goal("my exam is in 3 hours") == {"mode": "exam", "days": 0, "hours": 3.0})
+check("…'I need a hand' is not an hour", C.parse_goal("I need a hand to understand it")["mode"] == "learn")
 p = 0.25
 seq = [p := bkt(p, v) for v in ("correct", "correct", "wrong")]
 check("BKT: right answers raise mastery, a wrong one lowers it", seq[0] > 0.25 and seq[1] > seq[0] and seq[2] < seq[1],
@@ -84,6 +98,14 @@ check("learn mode: what he knows goes last (one quick check), new ones in book o
 q = C.order(cs, m, "exam", 7)
 check("exam mode with 7 minutes: the nearly-known one makes the cut, the budget holds",
       "c1" in [c.id for c in q] and sum(C.CONCEPT_MIN[m.level(c.id)] for c in q) <= 7, str([c.id for c in q]))
+q = C.order(cs, m, "day", 6 * 60 * 0.85)
+check("day mode, 6 hours: every concept he doesn't know is taught, the known one as a quick check, in book order",
+      [c.id for c in q] == ["c0", "c1", "c2", "c3"], str([c.id for c in q]))
+q = C.order(cs, m, "day", 11)
+check("day mode, too little time: the heaviest concepts first (DFA w3 in, Longest match w2 out), budget holds, "
+      "known one still checked",
+      [c.id for c in q] == ["c0", "c1", "c2"] and sum(C.CONCEPT_MIN[m.level(c.id)] for c in q) <= 11,
+      str([c.id for c in q]))
 
 # ------------------------------------------------------------------ concept map + steps
 print("\nconcept map and steps")
@@ -174,23 +196,41 @@ check("board: nothing on a page overlaps anything else", over == 0, f"{over} ove
 print("\nhe keeps getting it wrong → she comes back to it; recap; notes saved; next time: welcome back")
 
 
-def session(source, answers):
+def session(source, answers, hold_s=0.4):
+    """A whole coached session: every 'your turn' (status waiting) gets the next scripted answer; every pause
+    ('paused — say continue', e.g. a day-mode break) is held hold_s, then answered "continue". co.pauses records,
+    per pause: the cue it came after, cues sent when it began and after holding (equal = she really waited)."""
     ev: queue.Queue = queue.Queue()
     sv = FakeSrv()
     lg: list[str] = []
     stop = threading.Event()
+    pauses: list[dict] = []
+
+    def cues():
+        return [m for m in list(sv.sent) if m.get("type") == "cue"]
 
     def feed():
-        seen = 0
+        seen = held = 0
         while not stop.is_set():
-            waits = [m for m in list(sv.sent) if m.get("type") == "status" and m.get("mode") == "waiting"]
-            if len(waits) > seen and answers:
+            sent = list(sv.sent)
+            waits = [m for m in sent if m.get("type") == "status" and m.get("mode") == "waiting"]
+            paused = [m for m in sent if m.get("type") == "status" and m.get("mode") == "paused"
+                      and m.get("text") == "paused — say continue"]
+            if len(paused) > held:
+                held = len(paused)
+                before = cues()
+                time.sleep(hold_s)
+                pauses.append({"after": before[-1]["cue_id"] if before else None, "cues_at": len(before),
+                               "cues_held": len(cues())})
+                ev.put({"type": "text", "text": "continue"})
+            elif len(waits) > seen and answers:
                 seen = len(waits)
                 time.sleep(0.05)
                 ev.put({"type": "text", "text": answers.pop(0)})
             time.sleep(0.02)
     co = C.Coach(source, audio=SilentAudio(scale=0.01), events=ev, server=sv, log=lg.append, call=fake_call,
                  persist=False, planner=None, pace=0.02, idle_resume_s=0.2, check_timeout_s=2)
+    co.pauses, co.sent = pauses, sv.sent
     threading.Thread(target=feed, daemon=True).start()
     res = {}
     th = threading.Thread(target=lambda: res.setdefault("r", co.run()), daemon=True)
@@ -218,6 +258,95 @@ check("next session on the same file: 'Welcome back', no probe questions again",
       any(s.startswith("Welcome back") for s in said3) and co3.returning
       and not any("quick questions first" in s for s in said3), str(said3[:4]))
 
+# ------------------------------------------------------------------ day mode: the whole syllabus in a day
+print("\nday mode: the whole syllabus today — breaks she waits at, progress across the day, same-day resume")
+real_break = C.BREAK_EVERY_MIN
+C.BREAK_EVERY_MIN = 5                                 # a break after every ~5 estimated minutes (not 45)
+try:
+    cod, saidd, rd = session("compilers day test", ["teach me the whole syllabus today in 4 hours", "tokens",
+                                                    "I don't know", "the shortest one"] + ["tokens"] * 120)
+finally:
+    C.BREAK_EVERY_MIN = real_break
+check("day goal heard: day mode, 4 hours", cod.goal and cod.goal["mode"] == "day" and cod.goal["hours"] == 4.0,
+      str(cod.goal))
+check("first session of the day: nothing is 'done today already' (his probe answers don't count)",
+      not cod.done_today and not any("done today already" in s for s in saidd), str(saidd[:8]))
+plan = next((s for s in saidd if s.startswith("Here's the plan")), "")
+check("the plan line says the time it takes and his 4 hours", "4 hours" in plan and "breaks" in plan
+      and "minutes" in plan, plan)
+check("the whole syllabus is in the queue (all 4 concepts)", [c.id for c in cod.queue] == ["c0", "c1", "c2", "c3"],
+      str([c.id for c in cod.queue]))
+brks = [sg for sg in cod.L.segments if sg.type == "break"]
+check("breaks are put between concepts (never first)", len(brks) >= 2 and cod.L.segments[0].type != "break",
+      str([sg.id for sg in cod.L.segments]))
+check("a break page shows progress across the day ('N of 4 topics done today')",
+      all(any("of 4 topics done today" in (o.text or "") for o in sg.cues[0].ops) for sg in brks)
+      and any(s.startswith("Break time") for s in saidd), str([o.text for o in brks[0].cues[0].ops] if brks else ""))
+check("at a break she really stops and waits (no next step) until he says continue",
+      len(cod.pauses) >= len(brks) >= 2
+      and all(p["after"] and p["after"].startswith("brk") and p["cues_at"] == p["cues_held"] for p in cod.pauses),
+      str(cod.pauses))
+n_cues = len([m for m in cod.sent if m.get("type") == "cue"])
+check("…and after 'continue' the lesson goes on to the next concept", cod.pauses and n_cues > cod.pauses[-1]["cues_at"]
+      and any(m.get("type") == "cue" and m.get("cue_id", "").startswith("k3") for m in cod.sent), str(n_cues))
+check("the day session runs to the end with a recap: 'That's it for today. Today so far: N of 4'",
+      rd is not None and rd.get("finished")
+      and any(s.startswith("That's it for today.") and "Today so far:" in s and "of 4 topics" in s for s in saidd),
+      str(saidd[-3:]))
+dnotes = cod.notes_path.read_text() if cod.notes_path else ""
+check("his notes have the concepts but no break pages", "## Tokens" in dnotes and "Break" not in dnotes
+      and "Stand up" not in dnotes, dnotes[:400])
+
+# same day, later: c0–c2 done earlier today (≥ 3 seen → no probes), c3 still to do
+md = Mastery("compilers resume test")
+for cid, p in (("c0", 0.9), ("c1", 0.6), ("c2", 0.85)):
+    md.set(cid, p)
+time.sleep(0.05)
+cor, saidr, rr = session("compilers resume test", ["whole syllabus today, I have four hours"] + ["tokens"] * 120)
+check("same day again: 'Welcome back. 3 of 4 topics done today already', no probes",
+      any(s.startswith("Welcome back. 3 of 4 topics done today already") for s in saidr)
+      and not any("quick questions first" in s for s in saidr) and not any("You're solid on" in s for s in saidr),
+      str(saidr[:4]))
+check("…it skips what's done today: only the rest is taught", [c.id for c in cor.queue] == ["c3"],
+      str([c.id for c in cor.queue]))
+check("…the plan page shows the day's progress ('Your plan · 3 of 4 done today')",
+      any(m.get("type") == "actions" and any("3 of 4 done today" in str(a) for a in m["actions"]) for m in cor.sent),
+      "")
+check("…and the recap counts the whole day", rr is not None and rr.get("finished")
+      and any("Today so far: 4 of 4 topics done." in s for s in saidr), str(saidr[-3:]))
+cof, saidf, _ = session("compilers resume test", ["whole syllabus today"] + ["tokens"] * 120)
+check("all done today → a quick revision round, said so", any("covered all 4 topics today already" in s for s in saidf)
+      and len(cof.queue) == 4, str(saidf[:4]))
+check("one topic left: no 'short breaks' promised when there won't be one",
+      any(s.startswith("Here's the plan: 1 topic, about 5 minutes, inside your 4 hours") for s in saidr),
+      str([s for s in saidr if s.startswith("Here's the plan")]))
+
+
+def plan_line(goal, n_concepts):
+    """The plan she says for a fresh syllabus of n new concepts (no session, no sound)."""
+    lg: list[str] = []
+    cp = C.Coach(f"plan line test {n_concepts} {goal}", audio=SilentAudio(scale=0.01), events=queue.Queue(),
+                 server=FakeSrv(), log=lg.append, call=fake_call, persist=False, planner=None, pace=0.02)
+    cp.goal = dict(goal)
+    cp.concepts = [C.Concept(id=f"p{i}", name=f"Topic {i}", unit="U", weight=1 + i % 3) for i in range(n_concepts)]
+    cp.pool_n = n_concepts
+    cp.queue = C.order(cp.concepts, cp.mastery, "day", (goal.get("hours") or C.DAY_DEFAULT_H) * 60 * 0.85)
+    cp._show_plan()
+    return cp, next((x for x in lg if x.startswith("Stiti: Here's the plan")), "")
+
+
+cp, line = plan_line({"mode": "day", "days": 0, "hours": 1.0, "hours_said": True}, 20)
+check("syllabus too big for his time: she says so ('your 1 hour fits the 8 most important of 20 topics')",
+      "your 1 hour fits the 8 most important of 20 topics" in line and "1 hours" not in line, line)
+check("…and the most important go first (every weight-3 concept is in)",
+      all(c in cp.queue for c in cp.concepts if c.weight == 3), str([c.weight for c in cp.queue]))
+cp, line = plan_line({"mode": "day", "days": 0, "hours": 6.0, "hours_said": False}, 12)
+check("a whole syllabus with no hours said: real time in hours, breaks, no made-up 'your 6 hours'",
+      "12 topics, about 1.5 hours with short breaks" in line and "your" not in line, line)
+from stiti.tutor import commands as CMD  # noqa: E402
+check("'I'm back' / 'back now' mean continue (a break ends)",
+      CMD.classify("I'm back") == "resume" and CMD.classify("back now") == "resume" and CMD.classify("back") == "back")
+
 # ------------------------------------------------------------------ D42 for the coach: board first, voice ∥ reading
 print("\nopens fast: board first, her voice and reading his file at the same time")
 import stiti.tutor as T  # noqa: E402
@@ -238,19 +367,22 @@ class _A:
         pass
 
 
-real = (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_if_no_tab, SV.BoardServer.stop)
+real = (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_if_no_tab, SV.BoardServer.stop,
+        T._coach_target)
+T._coach_target = lambda target, args: True         # the coach path, with or without a cloud key in this checkout
 AU.make = lambda mode, events, debug=False, scale=1.0: (mark("voice loading", 0.5), _A())[1]
 C.concept_map = lambda *a, **k: (mark("reading file", 0.5), [])[1]
 C.Coach.run = lambda self: (self._future.result(), mark("session running"),
                             {"finished": True, "checks_right": 0, "checks_graded": 0, "questions": 0})[2]
 SV.BoardServer.start = lambda self: (self.connected.set(), mark("board started"), self)[2]
-SV.BoardServer.open_if_no_tab = lambda self: mark("browser opened")      # the board tab is shown (new or reused)
+SV.BoardServer.open_if_no_tab = lambda self: (mark("browser opened"), True)[1]   # the board tab goes up here
 SV.BoardServer.stop = lambda self: None
 try:
     t0 = time.time()
     T._teach(["compilers", "--silent"])
 finally:
-    AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_if_no_tab, SV.BoardServer.stop = real
+    (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_if_no_tab, SV.BoardServer.stop,
+     T._coach_target) = real
 at = dict(marks)
 check("the board is on screen before anything slow starts", at.get("browser opened", 9) < 0.3
       and at["browser opened"] <= min(at.get("voice loading", 9), at.get("reading file", 9)), str(marks))
