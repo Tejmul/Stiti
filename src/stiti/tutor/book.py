@@ -226,13 +226,27 @@ def _core(title: str) -> str:
     return re.sub(r"[^a-z ]", "", t.lower()).strip()
 
 
+def _is_heading(para: str) -> bool:
+    s = para.strip()
+    return bool(s) and "\n" not in s and len(s) <= 100 and bool(re.match(r"#{1,6}\s", s) or KW_HEAD.match(s)
+                                                                or RN_HEAD.match(s))
+
+
 def _text_pages(text: str) -> tuple[list[str], list[int]]:
     """Cut at paragraph breaks into ~TEXT_PAGE_CHARS pages; returns (pages, char offset where each page starts)."""
     pages, starts, buf, start, pos = [], [], [], 0, 0
     for para in re.split(r"(\n\s*\n)", text):
         if buf and sum(map(len, buf)) + len(para) > TEXT_PAGE_CHARS and para.strip():
+            # a heading never ends a page: it moves to the page its text starts on (else "Unit 2" sat at the bottom
+            # of Unit 1's last page, and the unit's sources / citations came from the wrong page)
+            carry: list[str] = []
+            while len(buf) > 1 and (not buf[-1].strip() or _is_heading(buf[-1])):
+                carry.insert(0, buf.pop())
+            if not any(c.strip() for c in carry):
+                buf, carry = buf + carry, []
             pages.append("".join(buf)); starts.append(start)
-            buf, start = [], pos
+            start = start + sum(map(len, buf))
+            buf = carry
         buf.append(para)
         pos += len(para)
     if buf:
