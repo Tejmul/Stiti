@@ -373,6 +373,8 @@ class Tutor:
                 if self.k >= len(flat):
                     if not getattr(self.L, "complete", True) and self._wait_for_more():
                         continue
+                    if self.k < len(self._flat()):
+                        continue                    # the writer finished between our two looks: not the end yet
                     if (getattr(self.L, "complete", True) and self.before_end is not None and not self.ended
                             and self.before_end()):
                         continue                    # D53 coach: come back to what's still wrong, then the recap
