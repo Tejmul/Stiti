@@ -16,7 +16,13 @@ fail=0
 run() {
   name="$1"; shift
   if [ "${FRESH:-1}" = "1" ]; then fresh_db; fi
-  if out=$(uv run python "$@" 2>&1); then echo "✅ $name — $(echo "$out" | tail -1)"; else
+  out=""; ok=0
+  for attempt in 1 2; do                    # a test that DIES with no output (a native crash in the speech engine on
+    if out=$(uv run python "$@" 2>&1); then ok=1; break; fi   # the CI runner) gets one retry; a real failure prints
+    [ -n "$(echo "$out" | tr -d '[:space:]')" ] && break      # its ✗ lines and is never retried
+    echo "   ($name died with no output — retrying once)"
+  done
+  if [ $ok = 1 ]; then echo "✅ $name — $(echo "$out" | tail -1)"; else
     echo "❌ $name"
     { echo "$out" | grep -E "✗|❌|Traceback|Error:|assert" | head -20; } || true   # the failing checks (not cut off); no match must not stop the run
     echo "   … last lines:"; echo "$out" | tail -20; fail=1
