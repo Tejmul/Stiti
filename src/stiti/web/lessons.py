@@ -3,7 +3,8 @@
 Read-only except `start()`, which goes through the tutor's own argv spawn (never a shell string) under the same
 one-lesson lock as voice launches. A start target is either one of the files this module lists (exact path match)
 or a plain topic — never an arbitrary path, so the page can't make the tutor read a file he didn't pick.
-Notes are only read from ~/.stiti/tutor/notes (path-safe). Nothing here touches the database.
+Notes are only read from ~/.stiti/tutor/notes (path-safe). `prepare()` (D56) queues a background job that builds the
+concept map of one listed file before a lesson — same exact-path rule; the only database write here.
 """
 from __future__ import annotations
 
@@ -62,7 +63,9 @@ def files() -> list[dict]:
             if st.st_size > MIN_BYTES:
                 found[str(f)] = (f, st.st_mtime, st.st_size)
     rows = sorted(found.values(), key=lambda x: -x[1])[:MAX_FILES]
-    return [{"path": str(f), "name": f.name, "ext": f.suffix.lower().lstrip("."), "size": size, "modified": _iso(mt)}
+    from ..tutor.prepare import prepared
+    return [{"path": str(f), "name": f.name, "ext": f.suffix.lower().lstrip("."), "size": size, "modified": _iso(mt),
+             "prepared": prepared(str(f))}
             for f, mt, size in rows]
 
 
@@ -254,3 +257,24 @@ def start(body: dict) -> dict:
                 "message": "A lesson is already open on the whiteboard. Finish it first (say “end” on the board)."}
     return {"ok": True, "active": True, "message": f"Opening the whiteboard with {label[:60]}.",
             "started_at": time.time()}
+
+
+# ------------------------------------------------------------------------------------------------ prepare (D56)
+def prepare(body: dict) -> dict:
+    """Queue "build the concept map" for one of his listed files, so a lesson on it starts at once. Idempotent: a
+    second click returns the same live job. Needs a free cloud key (the map is written by the free LLM)."""
+    if not isinstance(body, dict):
+        return {"ok": False, "status": 400, "message": "Bad request."}
+    target = body.get("target")
+    listed = {f["path"]: f for f in files()}
+    if not isinstance(target, str) or target not in listed:
+        return {"ok": False, "status": 400, "message": "Pick one of your files to prepare."}
+    from .. import jobs
+    from ..tutor import prepare as PR
+    if listed[target]["prepared"]:
+        return {"ok": True, "status": 200, "prepared": True, "job": None,
+                "message": f"{listed[target]['name']} is already prepared."}
+    row = PR.enqueue(target, listed[target]["name"])
+    return {"ok": True, "status": 200, "prepared": False, "job": jobs.public(row),
+            "message": (f"Preparing {listed[target]['name']} in the background." if row.get("new")
+                        else f"{listed[target]['name']} is already being prepared.")}
