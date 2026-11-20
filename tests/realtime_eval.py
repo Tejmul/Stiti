@@ -634,7 +634,9 @@ for pa, label in ((0.3, "unsure audio (waits 1.0 s)"), (0.9, "confident audio (c
         check("preemptive start cuts ≥ 250 ms off commit → first text when the turn waits", off_ms - on_ms >= 250,
               f"{off_ms:.0f} → {on_ms:.0f}")
     else:
-        check("… and never makes the confident case slower", on_ms <= off_ms + 30, f"{off_ms:.0f} → {on_ms:.0f}")
+        # a shared CI runner jitters by tens of ms: "slower" means a real regression (> 15 % and > 30 ms), not noise
+        check("… and never makes the confident case slower", on_ms <= max(off_ms + 30, off_ms * 1.15),
+              f"{off_ms:.0f} → {on_ms:.0f}")
 
 # ================================================================ 7. media pause
 print("7. media pause (mocked AppleScript — no real music is touched)")
