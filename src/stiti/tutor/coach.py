@@ -250,6 +250,7 @@ HOURS_RX = re.compile(r"\b(?:(\d{1,2}(?:\.\d)?)\s*|(" + "|".join(sorted(_NUM_WOR
                       + r")\s+)(and a half\s+)?(?:hours?|hrs?|h)\b( and a half)?")
 DAY_DEFAULT_H = 6.0       # "the whole syllabus today" with no hours said
 BREAK_EVERY_MIN = 45      # day mode: a 5-minute break about this often (he says "continue" to come back)
+DAY_RESUME_H = 14         # day mode: what he did in the last 14 h counts as "done today" when he comes back
 EXAM_RX = re.compile(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b")
 
 
@@ -440,6 +441,9 @@ class Coach:
         self._recapped = False
         self.returning = False
         self.notes_path: Path | None = None
+        self.t0 = time.time()
+        self.done_today: set[str] = set()            # day mode: concepts already done earlier today
+        self.pool_n = 0                              # how many concepts the queue was chosen from
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
@@ -618,6 +622,7 @@ class Coach:
     def opening(self) -> bool:
         """Goal + deadline, then quick probes. False = he ended it."""
         t = self.t
+        self.t0 = time.time()
         mapper = threading.Thread(target=self._build_map, daemon=True)
         mapper.start()
         t.ears_on(["exam", "tomorrow", "syllabus", "unit", "chapter", "test"] + self.focus + self.subject.split()[:6])
@@ -656,9 +661,11 @@ class Coach:
         t.ears_on(t.extra_words)                     # his file's concept names bias the ear for the probes
         recent = [c for c in self.concepts if time.time() - self.mastery.seen.get(c.id, 0) < 21 * 86400]
         self.returning = len(recent) >= 3
+        if day:                                      # stopped and came back today: what he did BEFORE this session
+            self.done_today = self._done_today(before=self.t0)    # (not the probes about to be asked now)
         probes = [] if self.returning else make_probes(self.concepts, n=min(PROBES, max(1, len(self.concepts))),
                                                          call=self.call)
-        if self.returning:
+        if self.returning and not self.done_today:
             solid = sum(self.mastery.level(c.id) == "known" for c in self.concepts)
             t.say(f"Welcome back. You're solid on {solid} of {len(self.concepts)} topics here, so I'll pick up "
                   "from what's left.", interruptible=False)
@@ -686,16 +693,27 @@ class Coach:
                   interruptible=False)
         self.after_probes = dict(self.mastery.p)     # where he started (reports, tests)
         pool = self.concepts
-        if self.goal["mode"] == "day":               # stopped and came back today: carry on with what's left
-            done_today = {c.id for c in pool if time.time() - self.mastery.seen.get(c.id, 0) < 14 * 3600
-                          and self.mastery.level(c.id) != "new"}
-            if done_today and len(done_today) < len(pool):
-                pool = [c for c in pool if c.id not in done_today]
-                t.say(f"{len(done_today)} topics done today already. Let's do the other {len(pool)}.",
-                      interruptible=False)
+        if self.done_today:                          # day mode, same day: carry on with what's left
+            rest = [c for c in pool if c.id not in self.done_today]
+            n, total = len(self.done_today), len(pool)
+            if rest:
+                pool = rest
+                t.say(f"{'Welcome back. ' if self.returning else ''}{n} of {total} topic{'s' if total != 1 else ''} "
+                      f"done today already. Let's do the other {len(rest)}.", interruptible=False)
+            else:
+                t.say(f"{'Welcome back. ' if self.returning else ''}You've covered all {total} topics today "
+                      "already, so this is a quick revision round.", interruptible=False)
+        self.pool_n = len(pool)
         self.queue = order(pool, self.mastery, self.goal["mode"], mins)
         self._show_plan()
         return True
+
+    def _done_today(self, before: float | None = None) -> set[str]:
+        """Day mode: the concepts he got at least partly right in the last DAY_RESUME_H hours (before `before`)."""
+        now = before or time.time()
+        return {c.id for c in self.concepts
+                if 0 <= now - self.mastery.seen.get(c.id, 0) < DAY_RESUME_H * 3600
+                and self.mastery.level(c.id) != "new"}
 
     def _show_plan(self):
         t, q = self.t, self.queue
