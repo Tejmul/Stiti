@@ -49,7 +49,12 @@ for t in ["bye", "bye stiti", "chalo bye", "good night", "okay bye", "Bye, Stiti
 for t in ["shut up", "stop", "chup", "bas karo"]:
     check(f"hush → silent stop: {t!r}", is_stop(t) and not is_goodbye(t))
 f1, f2 = farewell("chalo bye"), farewell("chalo bye")
-check("farewell is Hinglish when he spoke Hinglish, and not repeated back to back",
+check("D51: farewell to a Hinglish bye is English, and not repeated back to back",
+      f1 != f2 and not any(w in (f1 + f2).lower() for w in ("chalo", "milte", "bula", "baad")), f"{f1} | {f2}")
+os.environ["STITI_LANGS"] = "mirror"                      # D34 mirroring, still available behind the switch
+f1, f2 = farewell("chalo bye"), farewell("chalo bye")
+os.environ.pop("STITI_LANGS")
+check("mirror mode: farewell is Hinglish when he spoke Hinglish, and not repeated back to back",
       f1 != f2 and any(w in (f1 + f2).lower() for w in ("chalo", "milte", "bula", "baad")), f"{f1} | {f2}")
 
 check("zero-cost guard: OpenRouter non-:free blocked", not router.is_free("openrouter", "openai/gpt-5"))
