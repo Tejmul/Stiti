@@ -15,6 +15,8 @@ const X = await import(EXC + "index.js?external=react,react-dom");
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let selectedId = null;
+const sources = new Map();     // feature 2: element id (card, bar, label, quote) → its cited source
+let sourceSel = null;
 const api = await new Promise((res) => createRoot($("board")).render(
   React.createElement(X.Excalidraw, {
     excalidrawAPI: res, zenModeEnabled: true, theme: "light",
@@ -247,6 +249,7 @@ function run(a, instant = false) {
     if (a.do === "style") return mutate(new Set(a.ids), () => a.props);
     if (a.do === "erase") { const ids = new Set(a.ids); return put(scene().filter((e) => !ids.has(e.id) && !ids.has(e.containerId))); }
     if (a.do === "camera") return camera(a, instant);
+    if (a.do === "source") { for (const id of a.ids || [a.id]) sources.set(id, a); return; }   // feature 2
   } catch (err) { send({ type: "error", msg: String(err).slice(0, 300), action: a.do }); }
 }
 function clearPending() { pending.forEach(clearTimeout); pending = []; }
@@ -301,8 +304,31 @@ function hideCheck() {
   $("check").hidden = true; $("q").placeholder = "Type a doubt or an answer";
   if (was) refit();
 }
+function showPassage(s) {
+  $("passage-ref").textContent = `Page ${s.page}${s.unit ? ` · ${s.unit}` : ""}`;
+  const t = $("passage-text"); t.textContent = "";
+  if (s.q_end > s.q_start) {
+    const mark = document.createElement("mark");
+    mark.textContent = s.passage.slice(s.q_start, s.q_end);
+    t.append(s.passage.slice(0, s.q_start), mark, s.passage.slice(s.q_end));
+  } else t.textContent = s.passage;
+  $("passage").hidden = false;
+  $("ask-chip").hidden = true;
+}
+function hidePassage() {
+  $("passage").hidden = true; sourceSel = null;
+  try { api.updateScene({ appState: { selectedElementIds: {} } }); } catch {}
+}
+$("passage-close").onclick = hidePassage;
+addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("passage").hidden) hidePassage(); });
 function onSelection(st) {
   const ids = Object.keys(st.selectedElementIds || {}).filter((k) => st.selectedElementIds[k]);
+  const src = ids.map((k) => sources.get(k)).find(Boolean) || null;    // a source card: its whole passage
+  if ((src?.id ?? null) !== sourceSel) {
+    sourceSel = src?.id ?? null;
+    if (src) { selectedId = null; return showPassage(src); }
+  }
+  if (src) return;
   const id = ids.length === 1 ? ids[0] : null;
   if (id === selectedId) return;
   selectedId = id;
@@ -409,7 +435,7 @@ async function handle(m) {
     if (m.progress || m.lesson) setProgress(m.progress, m.lesson);
     for (const a of m.actions || []) pending.push(setTimeout(() => run(a), a.at_ms || 0));
   } else if (m.type === "reset") {
-    clearPending(); finishAll(); put([]);
+    clearPending(); finishAll(); put([]); sources.clear();
     for (const a of m.actions || []) await run(a, true);
   } else if (m.type === "actions") {             // live answers / parking lot: run now, in order
     for (const a of m.actions || []) pending.push(setTimeout(() => run(a), a.at_ms || 0));

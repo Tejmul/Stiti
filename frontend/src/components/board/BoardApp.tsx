@@ -5,6 +5,7 @@
 // captions + status, and sends back controls, typed answers, "explain this" clicks and hold-to-talk.
 // WebSocket protocol (same as the plain-JS fallback board):
 //   in:  cue · reset · actions · status · check · check_done · speed · end · pause
+//        (an "actions" list may carry {do: "source"}: a cited answer's source card — click it → the whole passage)
 //   out: ready{w,h} · control{cmd} · text{text} · hand · click{id} · ptt{down} · ptt_mode{on} · error
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -38,6 +39,8 @@ const PH_IDLE = "Type a doubt or an answer";
 type Status = { mode: string; text: string };
 type Check = { kind: string; prompt: string; options: string[] };
 type Progress = { lesson: string; segment: string; part: string; pct: number | null };
+type Source = { id: string; ids: string[]; page: string; unit: string; quote: string; passage: string;
+                q_start: number; q_end: number };
 
 function readToken(): string {
   let t = new URLSearchParams(location.hash.slice(1)).get("t");
@@ -59,6 +62,7 @@ export default function BoardApp() {
   const [pttMode, setPttModeState] = useState(false);
   const [talking, setTalking] = useState(false);
   const [placeholder, setPlaceholder] = useState(PH_IDLE);
+  const [passage, setPassage] = useState<Source | null>(null);   // the source card he clicked (feature 2)
 
   const rootRef = useRef<HTMLDivElement>(null);
   const boardRef = useRef<HTMLDivElement>(null);
@@ -69,8 +73,11 @@ export default function BoardApp() {
   const rt = useRef<Runtime | null>(null);
   const ws = useRef<WebSocket | null>(null);
   const queue = useRef<any[]>([]);                      // messages that arrive before the canvas is ready
+  const sources = useRef(new Map<string, Source>());   // element id (card, bar, label, quote) → its source
+  const apiRef = useRef<any>(null);
   const st = useRef({ clean: true, presenting: false, pttMode: false, talking: false, paused: false, selected: null as string | null,
-                      autoFocus: false, beforeTalk: null as Status | null, status: { mode: "", text: "connecting" } as Status });
+                      autoFocus: false, beforeTalk: null as Status | null, status: { mode: "", text: "connecting" } as Status,
+                      source: null as string | null });
 
   const send = useCallback((m: object) => { if (ws.current?.readyState === 1) ws.current.send(JSON.stringify(m)); }, []);
 
@@ -104,6 +111,7 @@ export default function BoardApp() {
       r.schedule(m.actions as Action[]);
     } else if (m.type === "reset") {
       r.clearPending(); r.finishAll(); r.reset();
+      sources.current.clear();                          // the replay below registers the cards again
       await r.replay(m.actions as Action[]);
     } else if (m.type === "actions") {                  // live answers / parking lot: run now, in order
       r.schedule(m.actions as Action[]);
@@ -154,8 +162,10 @@ export default function BoardApp() {
       new Promise((r) => setTimeout(r, 4000)),
     ]);
     const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+    apiRef.current = api;
     const r = createRuntime({
       api, lib, send,
+      source: (a) => { const s = a as unknown as Source; for (const id of s.ids || [s.id]) sources.current.set(id, s); },
       board: () => boardRef.current, check: () => checkRef.current, pen: () => penRef.current,
       toolbarShown: () => !st.current.clean && !st.current.presenting,
       reduced: () => reduced.matches,
@@ -173,6 +183,13 @@ export default function BoardApp() {
     if (!r) return;
     const sel = appState.selectedElementIds || {};
     const ids = Object.keys(sel).filter((k) => sel[k]);
+    // a source card (any of its parts): open its whole passage instead of the "Explain …" chip
+    const src = ids.map((k) => sources.current.get(k)).find(Boolean) || null;
+    if ((src?.id ?? null) !== st.current.source) {
+      st.current.source = src?.id ?? null;
+      if (src) { setPassage(src); setChip(null); st.current.selected = null; return; }
+    }
+    if (src) return;
     const id = ids.length === 1 ? ids[0] : null;
     if (id === st.current.selected) return;
     st.current.selected = id;
@@ -300,6 +317,18 @@ export default function BoardApp() {
   };
   const micClick = () => { if (mic.current.eatClick) { mic.current.eatClick = false; return; } setPttMode(!st.current.pttMode); };
 
+  const closePassage = useCallback(() => {
+    setPassage(null);
+    st.current.source = null;
+    try { apiRef.current?.updateScene({ appState: { selectedElementIds: {} } }); } catch {}
+  }, []);
+  useEffect(() => {
+    if (!passage) return;
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") closePassage(); };
+    addEventListener("keydown", esc);
+    return () => removeEventListener("keydown", esc);
+  }, [passage, closePassage]);
+
   const onAsk = (e: React.FormEvent) => {
     e.preventDefault();
     const t = qRef.current?.value.trim();
@@ -337,6 +366,21 @@ export default function BoardApp() {
           ))}
         </div>
       </div>
+      <aside id="passage" hidden={!passage} role="dialog" aria-label="Where this answer comes from">
+        <div id="passage-head">
+          <div>
+            <div id="passage-kind">From your notes</div>
+            <div id="passage-ref">{passage ? `Page ${passage.page}${passage.unit ? ` · ${passage.unit}` : ""}` : ""}</div>
+          </div>
+          <button type="button" onClick={closePassage} aria-label="Close" title="Close (Esc)"><Icon name="close" /></button>
+        </div>
+        <p id="passage-text">
+          {passage && passage.q_end > passage.q_start ? (<>
+            {passage.passage.slice(0, passage.q_start)}<mark>{passage.passage.slice(passage.q_start, passage.q_end)}</mark>
+            {passage.passage.slice(passage.q_end)}
+          </>) : passage?.passage}
+        </p>
+      </aside>
       <button id="ask-chip" type="button" hidden={!chip}
         onClick={() => st.current.selected && send({ type: "click", id: st.current.selected })}>{chip}</button>
 
