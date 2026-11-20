@@ -318,7 +318,8 @@ def cfeed(stop):
         time.sleep(0.02)
 
 
-co = CO.Coach("compilers for an exam", audio=SilentAudio(scale=0.01), events=cev, server=csrv, log=lambda *_: None,
+co = CO.Coach("lexing basics for an exam (grading test)",   # own topic: its cache/mastery never touch other evals
+              audio=SilentAudio(scale=0.01), events=cev, server=csrv, log=lambda *_: None,
               call=coach_call, persist=False, planner=None, pace=0.02, idle_resume_s=0.2, check_timeout_s=2)
 stop = threading.Event()
 threading.Thread(target=cfeed, args=(stop,), daemon=True).start()
