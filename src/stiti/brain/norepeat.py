@@ -182,7 +182,7 @@ def fresh(lines: list[str], ledger: Ledger | None) -> list[str]:
 
 
 def collapse_fragments(recent: list[dict]) -> list[dict]:
-    """A cut-off half sentence that he then said in full ("I left MVRX Labs change it down." → "I left MVRX Labs
+    """A cut-off half sentence that he then said in full ("I left Orbitly Labs change it down." → "I left Orbitly Labs
     change it down. It's been around in September…") shows up twice in RECENT: keep only the full one."""
     out: list[dict] = []
     for r in recent:

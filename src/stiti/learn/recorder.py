@@ -1,6 +1,6 @@
 """Opt-in LOCAL conversation recorder (D28). Default OFF.
 
-When Tejmul turns it on (menubar "Record our chats (local)", or `stiti recordings on`), every committed voice turn
+When the owner turns it on (menubar "Record our chats (local)", or `stiti recordings on`), every committed voice turn
 is kept so Stiti can learn HIS voice:
   ~/.stiti/recordings/YYYY-MM-DD/HHMMSS-<id>.flac   16 kHz mono, ~20 KB per second of speech
   voice_turns row: transcript, timings (speech, pause before commit, turn state), STT confidence, prosody, the voice /

@@ -1,4 +1,4 @@
-"""Voice emotion v1: prosody vs. Tejmul's own baseline (loudness, pitch, pace). numpy only, ~1 ms.
+"""Voice emotion v1: prosody vs. the owner's own baseline (loudness, pitch, pace). numpy only, ~1 ms.
 
 Research: naturalistic SER is ~41% accurate generic, much better speaker-adapted -> so we compare
 him to HIM. Output is a soft hint (conf ≤0.6 until 20 utterances of baseline). emotion2vec+ base

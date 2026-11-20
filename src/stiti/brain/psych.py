@@ -88,7 +88,7 @@ OPEN_CLAIM_RX = re.compile(r"^\W*(?:(?:got it|okay|ok|sure|alright|done)\W+)?(?:
                            r"pull up|bring up|opening|launching)\b[^.!?]{0,25}\b(?:white ?board|board|app|lesson|tutor)\b|"
                            r"\bopening (?:the|your) (?:white ?board|board)\b|"
                            r"\bi (?:can'?t|cannot|can not|don'?t have)\b[^.!?]{0,30}\b(?:white ?board|board)\b", re.I)
-# "Noted. I will mark that down." — said on 2026-11-14 to "I left MVRX Labs", and nothing was written (D38). A memory
+# "Noted. I will mark that down." — said on 2026-11-14 to "I left <my old company>", and nothing was written (D38). A memory
 # claim is only allowed when this turn really saved something (Strategy.allow_memory_claim).
 MEMORY_CLAIM_RX = re.compile(r"\b(noted|i'?ll (remember|keep (that|it|this) in mind|note (that|it|this)|make a note|"
                              r"mark (that|it|this) down|update (that|it|my|your))|i will (remember|note|mark|keep (that|it) in "

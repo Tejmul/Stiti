@@ -174,7 +174,7 @@ class Overlay:
             self.orb.collapse()
 
     def note(self, text: str, secs: float = 3.6) -> None:
-        """A short line next to the orb ("Hey Tejmul, what's on your mind?"). A ✓ confirmation or a "Checking …"
+        """A short line next to the orb ("Hey Ravi, what's on your mind?"). A ✓ confirmation or a "Checking …"
         label takes the capsule over; a state change (he starts talking) clears it."""
         if not self.enabled or not text or self.state.state == "hidden" or self.confirm is not None:
             return

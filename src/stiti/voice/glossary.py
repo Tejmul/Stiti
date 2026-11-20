@@ -1,13 +1,13 @@
 """The owner's own words, for the ears: a glossary built by the brain, and a "snap to glossary" post-fix (D27).
 
-Whisper writes "Tejmal" and "Newton's Club" because it has never seen those words. Names are a biasing problem, not
+Whisper writes "Tanvick" and "Darwin's Club" because it has never seen those words. Names are a biasing problem, not
 a model-size problem (docs/research/stt_tts_indian_english.md): a short glossary in the prompt took whisper-small
 from 12.4 → 9.7% WER, and snapping near-misses to the glossary afterwards took it to 9.1% (owner terms 64 → 80/90).
 
 Terms come from Stiti's own store, never hard-coded: the owner profile (name, call_me), USER.md (proper nouns in his
 facts, by frequency), the most-connected graph entities, the titles of ingested documents, and a few fixed words
 every user of Stiti says (Stiti, todos, resume…). Near-duplicates of a better-ranked term are dropped, so a misheard
-fact ("Tejmal is a final year undergrad at Newton's Club…") can't teach the ears the wrong spelling.
+fact ("Tanvick is a final year undergrad at Darwin's Club…") can't teach the ears the wrong spelling.
 
 The snap is deliberately strict (research: wider spans ate neighbouring Hindi words): a span is rewritten only when
 its consonant skeleton (with simple phonetic folding) is ≥ 0.8 similar to a term, starts with the same sound, and
@@ -93,7 +93,7 @@ _FOLD = [("sch", "sk"), ("ph", "f"), ("ck", "k"), ("q", "k"), ("x", "ks"), ("z",
 
 
 def skeleton(s: str) -> str:
-    """First letter + consonants, phonetically folded, repeats collapsed: Tejmal/Tajmal/Tejmul → 'tjml'."""
+    """First letter + consonants, phonetically folded, repeats collapsed: Tanvick/Tanwik/Tanvik → 'tnwk'."""
     s = re.sub(r"[^a-z]", "", s.lower())
     if not s:
         return ""
@@ -118,7 +118,7 @@ def _ok(name: str) -> bool:
 
 
 _PROPER = re.compile(r"\b[a-z]?[A-Z][\w'+.-]*(?:\s+(?:of|the|de)\s+[A-Z][\w'+-]*|\s+[a-z]?[A-Z][\w'+.-]*)*")
-# a name made only of ordinary words counts when it ends like an organisation or place ("Newton School of Technology")
+# a name made only of ordinary words counts when it ends like an organisation or place ("Darwin School of Technology")
 _ORG_HEADS = {"school", "university", "college", "institute", "technology", "labs", "lab", "academy", "foundation",
               "club", "team", "company", "hospital", "bank", "park", "street", "road", "nagar", "society", "group"}
 _CALENDAR = {"jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec", "mon", "tue", "wed",
@@ -126,8 +126,8 @@ _CALENDAR = {"jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oc
 
 
 def user_md_terms(text: str) -> list[str]:
-    """Proper nouns in USER.md facts, most frequent first: multi-word names ("Rishihood University") and rare
-    single words (not in the dictionary: "Zonuly", "Codeforces"). Common capitalised words are left to Whisper."""
+    """Proper nouns in USER.md facts, most frequent first: multi-word names ("Lakeview University") and rare
+    single words (not in the dictionary: "Tilecraft", "Parkly"). Common capitalised words are left to Whisper."""
     counts: Counter[str] = Counter()
     first_seen: dict[str, int] = {}
     heading = ""
@@ -188,7 +188,7 @@ def build() -> list[Term]:
                 if t.private and not have.private:
                     ranked[i] = Term(have.text, True)
                 return
-            if _near(have.text, t.text):              # "Tejmal" after "Tejmul": the better-ranked spelling wins
+            if _near(have.text, t.text):              # "Tanvick" after "Tanvik": the better-ranked spelling wins
                 return
         ranked.append(t)
 
@@ -226,7 +226,7 @@ def build() -> list[Term]:
 
 
 def _near(a: str, b: str) -> bool:
-    """Two spellings of the same thing (Tejmul/Tejmal, Newton School of Technology/Newton's Club of Technology)."""
+    """Two spellings of the same thing (Tanvik/Tanvick, Darwin School of Technology/Darwin's Club of Technology)."""
     if len(a.split()) != len(b.split()):
         return False
     sa, sb = skeleton(a), skeleton(b)
@@ -309,7 +309,7 @@ def prompt_text(cloud: bool = False) -> str:
 
 # ---------------------------------------------------------------- snap to glossary
 def _variants(ts: list[str]) -> list[str]:
-    """Terms + the first two words of long names ('Newton School' of 'Newton School of Technology'), longest first."""
+    """Terms + the first two words of long names ('Darwin School' of 'Darwin School of Technology'), longest first."""
     out = list(ts)
     for t in ts:
         w = t.split()
@@ -328,7 +328,7 @@ def _match(span_words: list[str], term: str, glossary_words: set[str]) -> bool:
         if _is_ordinary(w) or re.sub(r"[^\w]", "", w).lower() in glossary_words:
             return False
     else:
-        # a multi-word name needs one anchor word heard right ("Newton's" ~ "Newton"), or no ordinary word at all
+        # a multi-word name needs one anchor word heard right ("Darwin's" ~ "Darwin"), or no ordinary word at all
         anchor = any(re.sub(r"'s?$", "", re.sub(r"[^\w']", "", a).lower()) == b.lower()
                      for a, b in zip(span_words, tw) if b.lower() not in _STOP)
         if not anchor and any(_is_ordinary(w) for w in span_words):
@@ -342,12 +342,12 @@ def _match(span_words: list[str], term: str, glossary_words: set[str]) -> bool:
 
 
 def snap(text: str, glossary: list[str] | None = None) -> str:
-    """Rewrite near-misses of glossary terms ("Tejmal" → "Tejmul"); ordinary words are never touched."""
+    """Rewrite near-misses of glossary terms ("Tanvick" → "Tanvik"); ordinary words are never touched."""
     if not text:
         return text
     try:
         from . import vocab
-        text = vocab.rewrite(text)                    # his own corrections first: "Tejmal" → "Tejmul", exactly
+        text = vocab.rewrite(text)                    # his own corrections first: "Tanvick" → "Tanvik", exactly
     except Exception:
         pass
     ts = glossary if glossary is not None else [t.text for t in terms()]

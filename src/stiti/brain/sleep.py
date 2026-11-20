@@ -74,7 +74,7 @@ Return JSON:
   "{owner} left Ledgerly in September 2026.", "{owner} stopped playing hockey."
 - ends: {owner} says a KNOWN FACT is no longer true ("I left X", "I don't play football anymore") → its fact_id,
   valid_to (YYYY-MM-DD or null = today), wrong=false. A known fact that was never true (he corrects a mistake) → wrong=true.
-- directives: lasting rules for how Stiti should behave ("keep replies short in the morning", "never call me Tej");
+- directives: lasting rules for how Stiti should behave ("keep replies short in the morning", "never call me bro");
   standing=false for one-off commands ("switch to Hindi", "open the whiteboard", "shut up", "bye").
 SKIP: questions, commands to Stiti (todos, alarms, reminders, open/teach/switch/stop), greetings, small talk, jokes and
 teasing, anything Stiti said, lines that make no sense. Empty lists are fine — never invent. Today is {today}.

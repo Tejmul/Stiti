@@ -1,4 +1,4 @@
-"""Onboarding interview: Stiti gets to know Tejmul in ~3 minutes — no LLM needed.
+"""Onboarding interview: Stiti gets to know her owner in ~3 minutes — no LLM needed.
 
 10 short questions (voice or text). Each answer is stored verbatim as a high-importance episode
 (the night job can extract more later) AND written straight into the brain deterministically:
