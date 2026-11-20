@@ -27,6 +27,7 @@ if not db.rstrip("/").split("/")[-1].startswith("stiti_test"):
     sys.exit(f"refusing to run against {db!r}: use a stiti_test* database")
 os.environ.setdefault("STITI_LIVE_WARM", "0")
 os.environ.setdefault("STITI_EVENTKIT", "off")
+os.environ.pop("CI", None)        # GitHub sets CI=true; the checks below need the scanner ON (one check sets CI itself)
 ROOT = Path(__file__).resolve().parent.parent
 
 # a brand-new home: only the shared models folder is linked in (models are not personal)
