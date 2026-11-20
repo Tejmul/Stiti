@@ -23,8 +23,11 @@ import time
 from pathlib import Path
 from typing import Callable
 
-WEB = Path(__file__).parent / "web"
+WEB = Path(__file__).parent / "web"                                        # plain-JS fallback board
+OUT = Path(__file__).resolve().parents[3] / "frontend" / "out"             # the Next.js board (frontend: pnpm build)
 CDN = "https://esm.sh"
+STATIC_PREFIXES = ("_next/", "excalidraw/")                                 # what the Next board page loads
+STATIC_FILES = ("favicon.svg", "apple-touch-icon.png")
 
 
 BOARD_PORT = 7318          # ONE fixed address for every lesson (he: "creating tabs on tabs"); free_port() if busy
@@ -88,6 +91,18 @@ class BoardServer:
         return f"http://127.0.0.1:{self.port}/#t={self.token}"
 
     # ------------------------------------------------------------ app
+    def _csp_next(self, html: str) -> str:
+        """CSP for the Next.js static export: its inline bootstrap scripts are allowed by their sha256 (computed from
+        this exact build at startup), everything else loads from this server — Excalidraw's fonts included."""
+        hashes = " ".join(
+            f"'sha256-{base64.b64encode(hashlib.sha256(body.encode()).digest()).decode()}'"
+            for attrs, body in re.findall(r"<script([^>]*)>(.*?)</script>", html, re.S)
+            if body and "src=" not in attrs)
+        ws = " ".join(f"ws://{x}" for x in self.hosts)
+        return (f"default-src 'self'; script-src 'self' {hashes}; style-src 'self' 'unsafe-inline'; "
+                f"font-src 'self' data:; img-src 'self' data: blob:; connect-src 'self' {ws}; worker-src 'self' blob:; "
+                f"frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'")
+
     def _csp(self, html: str) -> str:
         m = re.search(r'<script type="importmap">(.*?)</script>', html, re.S)
         h = base64.b64encode(hashlib.sha256(m.group(1).encode()).digest()).decode() if m else ""
@@ -102,8 +117,18 @@ class BoardServer:
         from starlette.routing import Route, WebSocketRoute
         from starlette.websockets import WebSocketDisconnect
 
-        html = (WEB / "index.html").read_text()
-        csp = self._csp(html)
+        import mimetypes
+        for ext, typ in ((".woff2", "font/woff2"), (".woff", "font/woff"), (".ttf", "font/ttf"), (".js", "text/javascript"),
+                         (".css", "text/css"), (".svg", "image/svg+xml"), (".txt", "text/plain")):
+            mimetypes.add_type(typ, ext)
+        nextjs = (OUT / "board.html").is_file()           # built Next.js board, else the plain-JS fallback
+        if nextjs:
+            html = (OUT / "board.html").read_text()
+            csp = self._csp_next(html)
+        else:
+            html = (WEB / "index.html").read_text()
+            csp = self._csp(html)
+        out_root = OUT.resolve()
         nostore = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 
         def host_ok(headers) -> bool:
@@ -122,6 +147,21 @@ class BoardServer:
             if name not in ("board.js", "board.css"):
                 return PlainTextResponse("not found", 404)
             return FileResponse(WEB / name, headers=nostore)
+
+        async def asset(req):                             # the Next board's files: /_next/…, /excalidraw/fonts/…
+            if not host_ok(req.headers):
+                return PlainTextResponse("bad host", 400)
+            rel = req.path_params["path"]
+            if not nextjs or not (rel.startswith(STATIC_PREFIXES) or rel in STATIC_FILES) or "\\" in rel or "\0" in rel:
+                return PlainTextResponse("not found", 404)
+            f = (out_root / rel).resolve()
+            if (".." in rel.split("/") or not f.is_relative_to(out_root) or not f.is_file()    # no path traversal
+                    or not (f.relative_to(out_root).as_posix().startswith(STATIC_PREFIXES)
+                            or f.relative_to(out_root).as_posix() in STATIC_FILES)):
+                return PlainTextResponse("not found", 404)
+            hashed = rel.startswith("_next/static/")      # content-hashed names never change
+            cache = "public, max-age=31536000, immutable" if hashed else "no-cache"
+            return FileResponse(f, headers={"Cache-Control": cache, "X-Content-Type-Options": "nosniff"})
 
         async def ws_ep(ws):
             ok = (host_ok(ws.headers) and ws.headers.get("origin") in self.origins
@@ -145,7 +185,8 @@ class BoardServer:
             finally:
                 self.clients.discard(ws)
 
-        return Starlette(routes=[Route("/", page), Route("/static/{name}", static), WebSocketRoute("/ws", ws_ep)])
+        return Starlette(routes=[Route("/", page), Route("/static/{name}", static), WebSocketRoute("/ws", ws_ep),
+                                 Route("/{path:path}", asset)])
 
     # ------------------------------------------------------------ lifecycle
     def start(self) -> "BoardServer":

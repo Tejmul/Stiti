@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Excalidraw fonts copied at build time (scripts/excalidraw-assets.mjs)
+/public/excalidraw/

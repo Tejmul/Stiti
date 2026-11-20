@@ -28,7 +28,8 @@
     <symbol id="i-fast" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
     <symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
     <symbol id="i-full" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
-    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+    <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
   </defs>
 </svg>
 <div id="shell">
@@ -56,19 +57,22 @@
       <div id="caption" aria-live="polite"></div>
     </div>
     <div id="controls">
-      <div class="group" role="group" aria-label="Lesson">
+      <div class="group transport" role="group" aria-label="Lesson">
         <button data-cmd="back" title="Go back (←)" aria-label="Go back"><svg><use href="#i-back"/></svg></button>
         <button id="pp" class="main" data-cmd="pause" title="Pause / play (space)" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
         <button data-cmd="next" title="Skip to next part (→)" aria-label="Skip to next part"><svg><use href="#i-next"/></svg></button>
         <button data-cmd="repeat" title="Say that again (R)" aria-label="Say that again"><svg><use href="#i-repeat"/></svg></button>
       </div>
-      <div class="group speed" role="group" aria-label="Speed">
+      <div class="group talk" role="group" aria-label="Talk">
+        <button id="mic" title="Hold to talk (or hold Space) · click: only listen while held" aria-label="Hold-to-talk mode" aria-pressed="false"><svg><use href="#i-mic"/></svg></button>
+      </div>
+      <form id="ask"><input id="q" autocomplete="off" placeholder="Type a doubt or an answer" aria-label="Ask a doubt or type your answer"><kbd aria-hidden="true">H</kbd><button aria-label="Send"><svg><use href="#i-send"/></svg></button></form>
+      <div class="group speed" role="group" aria-label="Talking speed">
         <button data-cmd="slower" title="Talk slower" aria-label="Talk slower"><svg><use href="#i-slow"/></svg></button>
-        <span class="lbl">speed</span>
+        <span class="lbl" id="speed" title="Her talking speed" aria-live="polite">1.0×</span>
         <button data-cmd="faster" title="Talk faster" aria-label="Talk faster"><svg><use href="#i-fast"/></svg></button>
       </div>
-      <form id="ask"><input id="q" autocomplete="off" placeholder="Ask a doubt or type your answer  (H)" aria-label="Ask a doubt or type your answer"><button aria-label="Send"><svg><use href="#i-send"/></svg></button></form>
-      <div class="group" role="group" aria-label="View">
+      <div class="group view" role="group" aria-label="View">
         <button id="draw" title="Show drawing tools (D)" aria-label="Show drawing tools" aria-pressed="false"><svg><use href="#i-pen"/></svg></button>
         <button id="fs" title="Presenter mode for a big screen (F)" aria-label="Presenter mode"><svg><use href="#i-full"/></svg></button>
       </div>

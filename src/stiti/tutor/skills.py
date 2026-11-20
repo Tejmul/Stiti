@@ -16,6 +16,7 @@ Board geometry: each lesson segment gets its own page (1600×900) laid left→ri
 from __future__ import annotations
 
 import copy
+import hashlib
 import math
 import re
 import textwrap
@@ -35,12 +36,16 @@ REGIONS = {  # relative to the page origin: x, y, w, h
 }
 FLOW_V = ("points", "figure")      # top → bottom inside the slot
 FLOW_H = ("example", "doubts")     # left → right, wrapping to a new row
-PALETTE = {  # stroke, background (Excalidraw's own palette)
-    "plain": ("#1e1e1e", "#f8f9fa"), "warm": ("#e8590c", "#ffec99"), "green": ("#2f9e44", "#b2f2bb"),
-    "blue": ("#1971c2", "#a5d8ff"), "red": ("#e03131", "#ffc9c9"), "violet": ("#6741d9", "#d0bfff"),
-    "muted": ("#868e96", "#e9ecef"),
+FLOW_GAP = {"example": 64, "doubts": 28}   # example steps leave room for the → between them
+PALETTE = {  # stroke, background — Excalidraw hues with light fills, so a page reads like inked notes on paper
+    "plain": ("#1e1e1e", "#f8f9fa"), "warm": ("#e8590c", "#fff0c2"), "green": ("#2f9e44", "#d3f9d8"),
+    "blue": ("#3b5bdb", "#dfe6ff"), "red": ("#e03131", "#ffe3e3"), "violet": ("#6741d9", "#ebe4ff"),
+    "muted": ("#868e96", "#f1f3f5"),
 }
-ACCENT, OK_GREEN = "#e03131", "#2f9e44"
+ACCENT, OK_GREEN = "#e03131", "#2f9e44"     # the teacher's red pen (highlights, strikes) and the green tick
+INK, INDIGO, INDIGO_BG = "#1e1e1e", "#4656d6", "#eef0fd"   # the page's own voice: the Stiti mark's indigo
+FRAME_LINE, FRAME_BG = "#ddd5c3", "#faf7ee"                # figure card: a warm hairline on slightly deeper paper
+LABEL_FONT = 6     # Nunito: small sans labels ("REMEMBER") that match the page chrome
 CH = 0.58          # average glyph width / font size for Excalifont (layout estimate only)
 HGAP, VGAP = 96, 70
 
@@ -277,7 +282,7 @@ class Board:
             x, y = fs.get(region + "_x") or rx, fs.get(region + "_row") or ry
             if x > rx and x + w > rx + rw:              # next row
                 x, y = rx, y + fs.get(region + "_h", h) + 14
-            fs[region + "_x"], fs[region + "_row"] = x + w + 28, y
+            fs[region + "_x"], fs[region + "_row"] = x + w + FLOW_GAP[region], y
             fs[region + "_h"] = max(h, fs.get(region + "_h", 0) if x > rx else h)
             return x, y, region
         if region == "remember":
@@ -355,6 +360,8 @@ class Board:
         if fn is None:
             return []
         acts = fn(op) or []
+        if op.region == "figure" and acts:
+            acts += self._figure_card()
         if op.type not in ("focus", "new_page"):
             acts += self._camera()
         self.log.extend(acts)
@@ -438,39 +445,110 @@ class Board:
         stroke = PALETTE.get(op.style or "plain", PALETTE["plain"])[0]
         line_id = iid + ".ul"
         self._register(iid, "title", x, y, w, h, region="title", label=op.text, children=[line_id])
+        # a short indigo bar under the start of the title (a full underline would trust the width *estimate*)
+        accent = INDIGO if (op.style or "plain") == "plain" else stroke
         return acts + [{"do": "add", "anim": "type", "els": [_base(type="text", id=iid, x=x, y=y, text=op.text,
                                                                      fontSize=fs, strokeColor=stroke)]},
                 {"do": "add", "anim": "grow", "dt": 350, "els": [_base(
-                    type="line", id=line_id, x=x, y=y + h + 8, points=[[0, 0], [min(w, 900), 0]],
-                    strokeColor=ACCENT, strokeWidth=3, roughness=2)]}]
+                    type="line", id=line_id, x=x + 2, y=y + h + 10, points=[[0, 0], [min(w, 120), 0]],
+                    strokeColor=accent, strokeWidth=5, roughness=1)]}]
 
     def _op_text(self, op: Op) -> list[dict]:
         region = op.region or "main"
         small = region in ("parking", "goal", "notes")
         # notes pages are read from across a room: big type by role (title 40 · points 30 · remember 26 · example 24)
         fs = 16 if small else {"points": 30, "remember": 26, "example": 24, "doubts": 20}.get(region, 20)
-        text = op.text
-        if region == "points":                           # numbered key points: the page reads like notes
-            st = self._fs()
-            st["points_n"] = st.get("points_n", 0) + 1
-            text = f"{st['points_n']}. {text}"
-        width = {"side": 34, "parking": 34, "goal": 34, "points": 46, "example": 22, "doubts": 40,
-                 "remember": 30}.get(region, 52)
-        txt = wrap(text, width)
+        if region in ("points", "example", "remember"):
+            return self._notes_text(op, region, fs)
+        width = {"side": 34, "parking": 34, "goal": 34, "doubts": 40}.get(region, 52)
+        txt = wrap(op.text, width)
         w, h = text_size(txt, fs)
         x, y, reg = self._place(w, h, op.place, op.ref, region)
         iid = self._new_id(op.id, "t")
-        stroke = PALETTE.get(op.style or {"example": "green", "remember": "violet"}.get(region, "plain"),
-                             PALETTE["plain"])[0]
+        stroke = PALETTE.get(op.style or "plain", PALETTE["plain"])[0]
         self._register(iid, "text", x, y, w, h, reg, label=op.text)
-        if region == "remember":                         # the page's takeaway, boxed
-            return [{"do": "add", "anim": "fade", "els": [_base(
-                type="rectangle", id=iid + ".box", x=x - 14, y=y - 12, width=w + 28, height=h + 24,
-                strokeColor=PALETTE["violet"][0], backgroundColor="#f3f0ff", strokeWidth=2, roundness={"type": 3})]},
+        return [{"do": "add", "anim": "type" if len(txt) < 200 else "fade",
+                 "els": [_base(type="text", id=iid, x=x, y=y, text=txt, fontSize=fs, strokeColor=stroke)]}]
+
+    def _notes_text(self, op: Op, region: str, fs: int) -> list[dict]:
+        """D53 notes-page text, drawn by role: numbered key points (indigo numerals, ink text), worked-example
+        steps (indigo step badges joined by arrows, so they read as a sequence) and the Remember card."""
+        st = self._fs()
+        stroke = PALETTE[op.style][0] if op.style in PALETTE and op.style != "plain" else INK
+        if region == "points":
+            st["points_n"] = st.get("points_n", 0) + 1
+            num, indent = f"{st['points_n']}.", 46
+            txt = wrap(op.text, 44)
+            tw, th = text_size(txt, fs)
+            x, y, reg = self._place(tw + indent, th, op.place, op.ref, region)
+            iid = self._new_id(op.id, "t")
+            self._register(iid, "text", x, y, tw + indent, th, reg, label=op.text, children=[iid + ".n"])
+            return [{"do": "add", "anim": "fade", "els": [_base(type="text", id=iid + ".n", x=x, y=y, text=num,
+                                                                  fontSize=fs, strokeColor=INDIGO)]},
+                    {"do": "add", "anim": "type" if len(txt) < 200 else "fade", "dt": 120,
+                     "els": [_base(type="text", id=iid, x=x + indent, y=y, text=txt, fontSize=fs, strokeColor=stroke)]}]
+        if region == "example":
+            st["example_n"] = st.get("example_n", 0) + 1
+            n, badge, indent = st["example_n"], 36, 50
+            txt = wrap(op.text, 22)
+            tw, th = text_size(txt, fs)
+            prev_x, prev_row = st.get("example_x"), st.get("example_row")
+            x, y, reg = self._place(tw + indent, max(th, badge), op.place, op.ref, region)
+            iid = self._new_id(op.id, "t")
+            kids = [iid + ".n"]
+            acts: list[dict] = []
+            if n > 1 and prev_x is not None and y == prev_row:     # same row: an arrow from the last step to this
+                ax0, ax1 = prev_x - FLOW_GAP["example"] + 12, x - 12
+                kids.append(iid + ".to")
+                acts.append({"do": "add", "anim": "grow", "els": [_base(
+                    type="arrow", id=iid + ".to", x=ax0, y=y + badge / 2, width=ax1 - ax0, height=0,
+                    points=[[0, 0], [ax1 - ax0, 0]], strokeColor="#9a96b0", strokeWidth=2, endArrowhead="arrow")]})
+            self._register(iid, "text", x, y, tw + indent, max(th, badge), reg, label=op.text, children=kids)
+            return acts + [
+                {"do": "add", "anim": "fade", "els": [_base(
+                    type="ellipse", id=iid + ".n", x=x, y=y, width=badge, height=badge, strokeColor=INDIGO,
+                    backgroundColor=INDIGO, roughness=0, label={"text": str(n), "fontSize": 18, "strokeColor": "#ffffff",
+                                                                 "fontFamily": LABEL_FONT})]},
+                {"do": "add", "anim": "type" if len(txt) < 200 else "fade", "dt": 120,
+                 "els": [_base(type="text", id=iid, x=x + indent, y=y + max(0.0, (badge - fs * 1.25) / 2), text=txt,
+                               fontSize=fs, strokeColor=stroke)]}]
+        # remember: the page's takeaway on an indigo-tinted card with a small REMEMBER label
+        txt = wrap(op.text, 30)
+        tw, th = text_size(txt, fs)
+        lab_h = 24
+        x, y, reg = self._place(tw, th + lab_h, op.place, op.ref, region)
+        iid = self._new_id(op.id, "t")
+        self._register(iid, "text", x, y, tw, th + lab_h, reg, label=op.text, children=[iid + ".box", iid + ".lab"])
+        return [{"do": "add", "anim": "fade", "els": [
+                    _base(type="rectangle", id=iid + ".box", x=x - 18, y=y - 14, width=tw + 36, height=th + lab_h + 28,
+                          strokeColor=INDIGO, backgroundColor=INDIGO_BG, strokeWidth=2, roundness={"type": 3}),
+                    _base(type="text", id=iid + ".lab", x=x, y=y - 2, text="REMEMBER", fontSize=16,
+                          fontFamily=LABEL_FONT, strokeColor=INDIGO)]},
                 {"do": "add", "anim": "type", "dt": 150,
-                 "els": [_base(type="text", id=iid, x=x, y=y, text=txt, fontSize=fs, strokeColor=stroke)]}]
-        return [{"do": "add", "anim": "type" if len(txt) < 80 else "fade",
-                 "els": [_base(type="text", id=iid, x=x, y=y, text=txt, fontSize=fs, strokeColor=stroke)]}]
+                 "els": [_base(type="text", id=iid, x=x, y=y + lab_h, text=txt, fontSize=fs, strokeColor=stroke)]}]
+
+    def _figure_card(self) -> list[dict]:
+        """A soft card behind the page's figure, refitted to whatever the figure slot holds so far."""
+        figs = [e for e in self.els.values() if e.frame == self.frame and e.region == "figure" and e.kind != "deco"]
+        if not figs:
+            return []
+        rx, ry, rw, rh = self.region("figure")
+        pad = 22
+        # the card spans the whole figure column (a steady right-hand panel) and grows down with its content
+        x0, y0 = min(min(e.x for e in figs), rx) - pad, min(e.y for e in figs) - pad
+        x1, y1 = max(max(e.right for e in figs), rx + rw) + pad, max(e.bottom for e in figs) + pad
+        cid = f"figcard.{self.frame[0]}.{self.frame[1]}"
+        geom = {"x": x0, "y": y0, "width": x1 - x0, "height": y1 - y0}
+        if cid in self.els:
+            card = self.els[cid]
+            if (card.x, card.y, card.w, card.h) == (x0, y0, x1 - x0, y1 - y0):
+                return []
+            card.x, card.y, card.w, card.h = x0, y0, x1 - x0, y1 - y0
+            return [{"do": "style", "ids": [cid], "props": geom}]
+        self.els[cid] = El(cid, "deco", x0, y0, x1 - x0, y1 - y0, self.frame, region="figure")
+        return [{"do": "add", "anim": "fade", "z": "back", "els": [_base(
+            type="rectangle", id=cid, **geom, strokeColor=FRAME_LINE, backgroundColor=FRAME_BG, strokeWidth=1,
+            roundness={"type": 3})]}]
 
     def _op_bullet(self, op: Op) -> list[dict]:
         return self._op_text(Op(type="text", id=op.id, text="• " + op.text, region=op.region or "side",
@@ -499,13 +577,18 @@ class Board:
             el["roundness"] = {"type": 3}
         return [{"do": "add", "anim": "sketch", "els": [el]}]
 
-    def _arrow_el(self, a: El, b: El, iid: str, label: str | None, color="#1e1e1e") -> tuple[dict, El]:
+    def _arrow_el(self, a: El, b: El, iid: str, label: str | None, color="#1e1e1e", lfs: int = 16,
+                  off: float = 0) -> tuple[dict, El]:
         sx, sy = border_point(a, b.cx, b.cy)
         ex, ey = border_point(b, a.cx, a.cy)
+        if off:                                  # a ⇄ b pair: each arrow keeps to its own side, labels apart
+            L = math.hypot(ex - sx, ey - sy) or 1
+            nx, ny = -(ey - sy) / L * off, (ex - sx) / L * off
+            sx, sy, ex, ey = sx + nx, sy + ny, ex + nx, ey + ny
         el = _base(type="arrow", id=iid, x=sx, y=sy, width=abs(ex - sx), height=abs(ey - sy),
                    points=[[0, 0], [ex - sx, ey - sy]], strokeColor=color, endArrowhead="arrow")
         if label:
-            el["label"] = {"text": label, "fontSize": 16}
+            el["label"] = {"text": label, "fontSize": lfs}
         e = El(iid, "arrow", min(sx, ex), min(sy, ey), abs(ex - sx), abs(ey - sy), self.frame)
         e.label = label or ""  # type: ignore[attr-defined]
         return el, e
@@ -540,6 +623,10 @@ class Board:
                                    ry + rh - top if mains else rh)
         gw = max(pos[i][0] + sizes[i][0] for i in pos)
         x0 = rx + max(0, (rw - gw) / 2) if gw <= rw else rx
+        loops = {e["from"] for e in op.edges or [] if e["from"] == e["to"]}
+        top_ids = {i for i in pos if pos[i][1] == min(p[1] for p in pos.values())}
+        if loops & top_ids:                         # a self-loop on a top-row state needs headroom above it
+            top += 56
         acts, t = [], 0
         for n in nodes:
             nid = self._new_id(n["id"], "n")
@@ -553,15 +640,32 @@ class Board:
             if shape == "rectangle":
                 el["roundness"] = {"type": 3}
             acts.append({"do": "add", "anim": "sketch", "dt": t, "els": [el]})
-            t += 450
+            t += 650                                # one node after another at the pen's pace (~0.8 s per outline)
+        pairs = {(e["from"], e["to"]) for e in op.edges or []}
         for k, e in enumerate(op.edges or []):
             a, b = self.ref(e["from"]), self.ref(e["to"])
-            if a and b:
+            if a is not None and a is b:            # self-loop (a DFA staple): a small arc over the top of the node
                 aid = self._new_id(f"{gid}.e{k}", "a")
-                el, ae = self._arrow_el(a, b, aid, e.get("text"))
+                el = _base(type="arrow", id=aid, x=a.cx - 20, y=a.y + 2, width=40, height=50,
+                           points=[[0, 0], [-10, -40], [20, -52], [50, -40], [40, 0]], strokeColor="#343a40",
+                           endArrowhead="arrow", roundness={"type": 2})
+                if e.get("text"):
+                    el["label"] = {"text": e["text"], "fontSize": 20 if reg == "figure" else 16}
+                ae = El(aid, "arrow", a.cx - 30, a.y - 54, 60, 56, self.frame, region=reg)
+                ae.label = e.get("text") or ""  # type: ignore[attr-defined]
                 self.els[aid] = ae
                 acts.append({"do": "add", "anim": "grow", "dt": t, "els": [el]})
-                t += 250
+                t += 320
+                continue
+            if a and b:
+                aid = self._new_id(f"{gid}.e{k}", "a")
+                two_way = e["from"] != e["to"] and (e["to"], e["from"]) in pairs
+                el, ae = self._arrow_el(a, b, aid, e.get("text"), "#343a40", 20 if reg == "figure" else 16,
+                                        off=14 if two_way else 0)
+                ae.region = reg
+                self.els[aid] = ae
+                acts.append({"do": "add", "anim": "grow", "dt": t, "els": [el]})
+                t += 320
         self.alias[gid] = self.alias.get(nodes[0]["id"], nodes[0]["id"]) if nodes else gid
         return acts
 
@@ -583,9 +687,10 @@ class Board:
                 kids.append(cid)
                 head = i == 0
                 el = _base(type="rectangle", id=cid, x=x, y=y0 + i * rowh, width=colw[c], height=rowh,
-                           backgroundColor="#d0ebff" if head else "#ffffff", strokeColor="#495057")
+                           backgroundColor=INDIGO_BG if head else "#ffffff", strokeColor="#868e96", roughness=0,
+                           strokeWidth=1)
                 if cell:
-                    el["label"] = {"text": cell, "fontSize": fs}
+                    el["label"] = {"text": cell, "fontSize": fs, "strokeColor": INDIGO if head else INK}
                 els.append(el)
                 self.alias[f"{op.id or tid}.r{i}c{c}"] = cid
                 ce = El(cid, "deco", x, y0 + i * rowh, colw[c], rowh, self.frame)
@@ -605,22 +710,58 @@ class Board:
         iid = self._new_id(op.id, "f")
         self._register(iid, "formula", x, y, w, h, reg, label=op.text, children=[iid + ".t"])
         return [{"do": "add", "anim": "fade", "els": [_base(type="rectangle", id=iid, x=x, y=y, width=w, height=h,
-                                                              backgroundColor="#f1f3f5", strokeColor="#868e96",
+                                                              backgroundColor="#f6f3ea", strokeColor="#c9c0ab",
                                                               roundness={"type": 3})]},
                 {"do": "add", "anim": "type", "dt": 200, "els": [_base(type="text", id=iid + ".t", x=x + 30,
                                                                         y=y + 18, text=op.text, fontSize=fs,
                                                                         fontFamily=8)]}]
 
     def _op_sticky(self, op: Op) -> list[dict]:
-        txt = wrap(op.text, 22)
-        tw, th = text_size(txt, 18)
-        w, h = max(180, tw + 40), th + 40
+        txt = wrap(op.text, 24)
+        tw, th = text_size(txt, 20)
+        w, h = max(200, tw + 40), th + 36
         x, y, reg = self._place(w, h, op.place, op.ref, op.region or "side")
         iid = self._new_id(op.id, "note")
         self._register(iid, "sticky", x, y, w, h, reg, label=op.text)
+        tilt = (-0.025, 0.018, -0.012)[self.n % 3]          # a little hand-placed, never in lockstep
         return [{"do": "add", "anim": "fade", "els": [_base(
-            type="rectangle", id=iid, x=x, y=y, width=w, height=h, backgroundColor="#fff3bf",
-            strokeColor="#f08c00", angle=-0.03, label={"text": txt, "fontSize": 18})]}]
+            type="rectangle", id=iid, x=x, y=y, width=w, height=h, backgroundColor="#fff3bf", strokeWidth=1,
+            strokeColor="#e0a526", angle=tilt, roundness={"type": 3},
+            label={"text": txt, "fontSize": 20, "strokeColor": "#5f4b0b"})]}]
+
+    def _op_image(self, op: Op) -> list[dict]:
+        """A real picture (data: URL fetched + downscaled by the engine) in the figure slot, caption underneath.
+        Action: {"do": "add", "anim": "fade", "els": [image, caption], "files": [{id, dataURL, mimeType}]}."""
+        src = getattr(op, "src", None)
+        if not src or not str(src).startswith("data:image/"):
+            return []
+        pw, ph = (getattr(op, "size", None) or (800, 600))[:2]
+        pw, ph = max(1.0, float(pw)), max(1.0, float(ph))
+        region = op.region if op.region in ("figure", "main", "side") else "figure"
+        slot_w = self.region(region)[2]
+        # ≤ 190 px tall so the slot's drawn diagram still fits underneath it (the engine puts the picture first)
+        k = min(slot_w / pw, 190 / ph, 1.6)
+        w, h = round(pw * k), round(ph * k)
+        cap, room = " ".join((op.text or "").split()), max(20, int(slot_w / (14 * CH)))
+        if len(cap) > room:                         # one line: credit lines get trimmed, never wrapped
+            cap = cap[:room - 1].rstrip() + "…"
+        cw, ch = text_size(cap, 14) if cap else (0.0, 0.0)
+        box_w, box_h = min(slot_w, max(w, cw)), h + (8 + ch if cap else 0)
+        x, y, reg = self._place(box_w, box_h, op.place, op.ref, region)
+        iid = self._new_id(op.id, "img")
+        file_id = "f" + hashlib.sha1(src.encode()).hexdigest()[:20]     # same picture → same file, replays dedupe
+        mime = src[5:src.index(";")] if ";" in src[:40] else "image/png"
+        ix = x + (box_w - w) / 2
+        els = [_base(type="image", id=iid, x=ix, y=y, width=w, height=h, fileId=file_id, strokeColor="transparent",
+                     roughness=0)]
+        kids = []
+        if cap:
+            kids.append(iid + ".cap")
+            els.append(_base(type="text", id=iid + ".cap", x=x + max(0.0, (box_w - cw) / 2), y=y + h + 8, text=cap,
+                             fontSize=14,
+                             fontFamily=LABEL_FONT, strokeColor="#868e96"))
+        self._register(iid, "image", x, y, box_w, box_h, reg, label=op.text or "picture", children=kids)
+        return [{"do": "add", "anim": "fade", "els": els, "files": [{"id": file_id, "dataURL": src, "mimeType": mime}]}]
 
     def _op_image_hint(self, op: Op) -> list[dict]:   # placeholder sketch: dashed box with "[ picture: … ]"
         return self._op_box(Op(type="box", id=op.id, text=f"[ {op.text} ]", place=op.place, ref=op.ref,
