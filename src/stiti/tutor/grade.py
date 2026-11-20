@@ -23,24 +23,72 @@ NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "ek": 1, "do"
              "chaar": 4, "paanch": 5, "panch": 5}
 
 
+_UNITS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve",
+          "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen", "nineteen"]
+_TENS = {"twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90}
+# "one" stays a word ("one intermediate code", "the second one"); every other number word becomes digits
+_NUM_RX = re.compile(rf"\b(?:({'|'.join(_TENS)})(?:[\s-]({'|'.join(_UNITS[1:10])}))?|"
+                     rf"({'|'.join(u for u in _UNITS if u != 'one')}))\b")
+
+
+def _norm(s: str) -> str:
+    """Spoken and written forms meet: 'thirty' → 30, 'twenty-five' → 25, 'x^2' → 'x squared', 'a – b' → 'a minus b'."""
+    s = (s or "").lower().replace("²", " squared").replace("³", " cubed")
+    s = re.sub(r"\^\s*2\b", " squared", s)
+    s = re.sub(r"\^\s*3\b", " cubed", s)
+    s = re.sub(r"\s\+\s", " plus ", s)
+    s = re.sub(r"\s[-–−]\s", " minus ", s)
+    s = _NUM_RX.sub(lambda m: str(_TENS[m.group(1)] + (_UNITS.index(m.group(2)) if m.group(2) else 0))
+                    if m.group(1) else str(_UNITS.index(m.group(3))), s)
+    return re.sub(r"\b(\d+) point (\d+)\b", r"\1.\2", s)                # "eight point four" → 8.4
+
+
+_ALT = re.compile(r"\bor\b|(?<=[a-z ])/(?=[a-z ])")    # "A or B", "lexer/scanner" — but not a fraction "1/2"
+
+
+def _numbers(s: str) -> set[str]:
+    return set(re.findall(r"(?<![\w.])\d+(?:\.\d+)?(?!\w|\.\d)", _norm(s)))   # "…in 1914." counts too
+
+
 def _words(s: str) -> list[str]:
-    return [w for w in re.findall(r"[a-z0-9]+", s.lower()) if w not in STOP and len(w) > 1]
+    return [w for w in re.findall(r"[a-z0-9]+", _norm(s)) if w not in STOP and len(w) > 1]
 
 
 def _stem(w: str) -> str:
+    """Light stemming: 'saves' / 'saving' → sav(e), 'management' / 'manages' → mana."""
+    if w.endswith("s") and not w.endswith("ss") and len(w) > 3:
+        w = w[:-1]
+    for suf in ("ing", "ion", "ment", "ed", "er", "ly"):
+        if w.endswith(suf) and len(w) - len(suf) >= 3:
+            w = w[:-len(suf)]
+            break
     return w[:4] if len(w) >= 5 else w
 
 
-def _keyword_score(expectation: str, answer: str) -> float:
-    """Best share of an expectation's key words (any 'or' alternative) found in the answer."""
+def _has(kw: str, ans: set[str]) -> bool:
+    """kw said? ('sav' ↔ 'save', 'wat' ↔ 'wate'): equal, or one a prefix of the other with ≥ 3 letters."""
+    return kw in ans or (len(kw) >= 3 and any(len(a) >= 3 and (a.startswith(kw) or kw.startswith(a)) for a in ans))
+
+
+def _keyword_score(expectation: str, answer: str, echo: set[str] | None = None) -> float:
+    """Best share of an expectation's key words (any 'or' alternative) found in the answer. Words the question
+    itself says (echo) don't count — repeating the question isn't knowing the answer."""
     ans = {_stem(w) for w in _words(answer)}
     best = 0.0
-    for alt in re.split(r"\bor\b|/|,", expectation.lower()):
+    # alternatives are "A or B" / "A/B"; a comma list ("Germany, Austria-Hungary, Italy") is ONE answer, not three
+    for alt in _ALT.split(expectation.lower()):
         kws = {_stem(w) for w in _words(alt)}
+        if echo and kws - echo:
+            kws -= echo
         if kws:
-            sc = len(kws & ans) / len(kws)
+            sc = sum(_has(k, ans) for k in kws) / len(kws)
+            if len(kws) >= 4:                     # a long expectation gets paraphrased: half its words is enough
+                sc = min(1.0, sc * 1.2)
             best = max(best, sc if len(kws) > 1 or sc == 1 else 0)
     return best
+
+
+COVER = 0.6         # share of an expectation's key words that must be said: both of two, 2 of 3, 3 of 5
 
 
 def _semantic(expectation: str, answer: str) -> float:
@@ -59,9 +107,10 @@ def pick_option(check: Check, answer: str) -> int | None:
     if m:
         return "abcd".index(m.group(1))
     hits = []
+    tn = _norm(t)                                        # option words are normalised the same way ("ten" → 10)
     for i, o in enumerate(check.options or []):
         kws = [_stem(w) for w in _words(o["text"])]
-        pos = [m.start() for w in kws for m in re.finditer(r"\b" + re.escape(w), t)]
+        pos = [m.start() for w in kws for m in re.finditer(r"\b" + re.escape(w), tn)]
         if kws and pos:
             hits.append((max(pos), i))
     if hits:
@@ -85,11 +134,23 @@ def grade(check: Check, answer: str, *, semantic: bool = True) -> dict:
             ok = check.options[i]["correct"]
             return {"verdict": "correct" if ok else "wrong", "covered": [], "missing": [], "option": i}
     exps = check.expectations or []
+    echo = {_stem(w) for w in _words(check.prompt or "")}
+    # an expectation made only of the question's own words tests nothing ("unknown doer" for "…when the doer is
+    # unknown?"): grade on the others
+    real = [i for i, e in enumerate(exps) if {_stem(w) for w in _words(e)} - echo or _numbers(e)]
+    if real and len(real) < len(exps):
+        exps = [exps[i] for i in real]
+    got_nums = _numbers(answer)
     covered, touched = [], []
     for i, e in enumerate(exps):
-        kw = _keyword_score(e, answer)
-        sem = _semantic(e, answer) if semantic and kw < 0.5 else 0.0
-        if kw >= 0.5 or sem >= 0.72:
+        kw = _keyword_score(e, answer, echo)
+        sem = _semantic(e, answer) if semantic and kw < COVER else 0.0
+        need = _numbers(e)
+        # a number in the expected answer must be said ("thirty" counts as 30): 'ten shirts' ≠ '30 shirts'
+        nums_ok = not need or any(_numbers(alt) <= got_nums for alt in _ALT.split(e.lower())
+                                  if _numbers(alt))
+        only_num = bool(need) and not _words(re.sub(r"\d+(?:\.\d+)?", " ", _norm(e)))   # '8.4', '5', '30%'
+        if only_num and nums_ok or (kw >= COVER or sem >= 0.72) and nums_ok:
             covered.append(i)
         elif kw >= 0.25 or sem >= 0.6:
             touched.append(i)                     # on the right track, not complete
