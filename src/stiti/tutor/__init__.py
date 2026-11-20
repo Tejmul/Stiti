@@ -323,7 +323,18 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
         print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
         if "--no-open" not in args:
             srv.open_browser()
-    audio = au.make(mode, events, debug="--debug" in args)
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .coach import concept_map
+    pool = ThreadPoolExecutor(1, thread_name_prefix="coach-map")
+    # D42: her voice (~13 s) and reading his file run at the same time, after the board is already on screen
+    fut = pool.submit(concept_map, book_path or target, book_path=book_path, unit=unit)
+    try:
+        audio = au.make(mode, events, debug="--debug" in args)
+    except BaseException:
+        if srv:
+            srv.stop()
+        raise
     stop = threading.Event()
     if mode != "voice" or sys.stdin.isatty():
         threading.Thread(target=_stdin_reader, args=(events, stop), daemon=True).start()
@@ -332,7 +343,8 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
     try:
         for _ in range(4):                           # at most a few re-plans in one sitting
             coach = Coach(book_path or target, audio=audio, events=events, server=srv, book_path=book_path,
-                          unit=unit, goal=goal)
+                          unit=unit, goal=goal, concepts_future=fut)
+            fut = None                               # a re-plan (other unit) maps again
             holder["t"] = coach.t
             if srv:
                 srv.connected.wait(15)
