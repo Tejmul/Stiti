@@ -6,8 +6,12 @@ Metcalfe & Kornell: triage under a deadline · AutoTutor hint ladder · DeepTuto
 1. While the concept map of his file is built (cached per file), she asks his goal: exam? when?
 2. Three quick probes spread over the units → local grading → mastery per concept (mastery.py).
 3. The queue: what he needs most first. Exam mode: nearly-known before brand-new, known ones get one quick check.
-4. Each concept = short steps: ≤ 2 spoken sentences, then HIS turn (a check), graded locally; mastery updates after
+4. Each concept = steps of one full idea (2–3 sentences), then HIS turn (a check), graded locally; mastery updates after
    every answer, and a concept he clearly knows is cut short. The board is one notes page per concept (slots).
+5. Feature 5: pacing (pacing.py) — about one check per full idea (≥ 3 sentences), sparser for the rest of the session
+   when he's fed up ("just teach", curt answers, a stressed voice), never the same question twice; Blurt — "tell me
+   everything you remember about X" after a topic (--blurt) or when he says "test me", graded per key point
+   (recalled / partial / missed) on a Blurt page, mastery per concept, missed points re-taught once.
 Concepts are written by the free cloud LLM one at a time while he works, so the first one starts in seconds.
 """
 from __future__ import annotations
@@ -20,8 +24,10 @@ import time
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from . import commands
 from .lesson import Check, Cue, Lesson, Op, Segment
 from .mastery import KNOWN, SHAKY, Mastery, key_for
+from .pacing import MIN_GAP, Pacing, mastery_verdict, norm_q
 
 # ---- pacing / budget
 CONCEPT_MIN = {"new": 6.0, "shaky": 4.0, "known": 1.0}   # minutes each, for the time budget
@@ -99,14 +105,16 @@ PROBES_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["
                                           "properties": {"concept_id": _S, "question": _S,
                                                          "expected": {"type": "array", "items": _S}}}}}}
 
-STEP_PROMPT = """Teach ONE concept by voice on a whiteboard, as a few short steps. After every step the learner
-answers a question — that is how they learn (never a lecture).
+STEP_PROMPT = """Teach ONE concept by voice on a whiteboard, as {steps} step(s). Each step is ONE full idea: explain
+it first, then the learner answers ONE question about that idea (explain first, then check — never a question after
+every sentence, and never a lecture).
 CONCEPT: {name} (unit: {unit}) · key facts: {points}
 LEARNER: {level_line} · mode: {mode_line}
 {sources}
 Return JSON: steps = {steps} item(s). Each step has:
-- say: 1–2 spoken sentences in total, one per array item (≤22 words each, plain English, a concrete example
-  before the jargon: a real everyday case, or for maths / code a small specific instance — no forced analogies).
+- say: 2–3 short spoken sentences that explain the whole idea, one per array item (≤22 words each, plain English, a
+  concrete example before the jargon: a real everyday case, or for maths / code a small specific instance — no
+  forced analogies).
 - points: 1–2 key facts for the board (≤10 words each).
 - figure: ONE small diagram that fits the subject, REQUIRED in step 1 (null in later steps): kind "graph" (≤5 nodes
   with short labels + labelled edges: a process, a cause → effect chain, a cycle, a timeline, a structure), "table"
@@ -115,8 +123,9 @@ Return JSON: steps = {steps} item(s). Each step has:
 - example: in a second step, 2–4 lines of working (≤8 words each), one per line: for a method, formula, rule or
   code, solve one real problem step by step; for facts, history, biology or language, walk through one real case,
   sequence or timeline (never a made-up "what if"). Empty in step 1.
-- check: one question the learner answers out loud right after, about what this step just showed, with one clear
-  right answer (never yes/no): kind recall / apply / explain_why, or mcq with 3 options (one correct).
+- check: one question the learner answers out loud right after, about the idea this step explained, with one clear
+  right answer (never yes/no, never the same question as another step): kind recall / apply / explain_why, or mcq
+  with 3 options (one correct).
   expectations = usually ONE key point a right SPOKEN answer must contain (a second only if the question asks for
   two things), 1–6 words in a student's own words (e.g. "longest match", "x squared"), not words from the question,
   never rubric phrasing like "mentions …"; add the common spoken ways to say it (and other right answers) in that
@@ -405,6 +414,21 @@ BREAK_EVERY_MIN = 45      # day mode: a 5-minute break about this often (he says
 BREAK_MIN = 5
 DAY_RESUME_H = 14         # day mode: what he did in the last 14 h counts as "done today" when he comes back
 EXAM_RX = re.compile(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b")
+NO_EXAM_RX = re.compile(r"\b(no|not for( an| the| my)?|without( an| the)?) (exams?|tests?)\b|\bexams? (is )?(over|done|"
+                        r"finished|cancell?ed)\b")
+
+
+GOAL_KEEP_DAYS = 14       # his goal for a file is remembered this long (an exam: until its date)
+GOAL_CONFIRM_S = 6.0      # "Still the exam on Friday? Carrying on." — this long for a one-line correction
+_GOAL_WORDS = re.compile(r"\b(exams?|tests?|viva|quiz|today|tonight|tomorrow|day after|next week|in \d+ days?|"
+                         r"monday|tuesday|wednesday|thursday|friday|saturday|sunday|whole|syllabus|hours?|"
+                         r"learn|understand|no exam|not for (an |the )?exam|postponed|moved|changed)\b", re.I)
+
+
+def _goal_words(text: str) -> bool:
+    """Does his reply to "Still the exam on …?" say a (new) goal, or is it just "yes" / "okay" / noise?"""
+    return bool(_GOAL_WORDS.search(text or "")) and not re.fullmatch(r"\W*(yes|yeah|yep|haan|ok(ay)?|right|"
+                                                                     r"correct|same)\W*", text or "", re.I)
 
 
 def _hours(t: str) -> float | None:
@@ -422,7 +446,7 @@ def parse_goal(text: str) -> dict:
     'teach me the whole syllabus today (in 6 hours)' / 'cover it in 4 hours' → {mode: day, hours: 6 / 4}."""
     t = (text or "").lower()
     hours = _hours(t)
-    exam = bool(EXAM_RX.search(t))
+    exam = bool(EXAM_RX.search(t)) and not NO_EXAM_RX.search(t)       # "no exam, just learn it" is not an exam
     if DAY_RX.search(t) or (hours is not None and not exam):    # his whole syllabus, or a few hours he has today
         return {"mode": "day", "days": 0, "hours": hours or DAY_DEFAULT_H, "hours_said": hours is not None}
     days = None
@@ -494,13 +518,17 @@ def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> lis
 _SENT_SPLIT = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9\"'(“‘])")
 
 
-def two_sentences(items) -> list[str]:
-    """≤ 2 spoken sentences per step, even when the model packs four into one 'say' item."""
+IDEA_SENTENCES = 3        # Feature 5: one full idea (2–3 sentences) before his turn — was 2, "it keeps on saying"
+                          # was about LONG monologues, iTutor's data says checks after every 2 lines come too early
+
+
+def idea_sentences(items, n: int = IDEA_SENTENCES) -> list[str]:
+    """≤ n spoken sentences per step (one idea), even when the model packs five into one 'say' item."""
     out: list[str] = []
     for it in items or []:
         if isinstance(it, str):
             out += [x.strip() for x in _SENT_SPLIT.split(it.strip()) if x.strip()]
-    return out[:2]
+    return out[:n]
 
 
 def _same_point(a: str, b: str) -> bool:
@@ -554,7 +582,7 @@ def _board_ops(items: list[dict]) -> list[Op]:
 
 def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict] | None,
                      total: int, call=None, again: bool = False) -> list[Segment]:
-    """One concept → short steps (≤ 2 sentences + his turn), on its own notes page, then the Remember box.
+    """One concept → steps of one idea each (≤ 3 sentences + his turn), on its own notes page, then the Remember box.
     again=True: he still got it wrong after the first pass — a different angle and a new example (one step)."""
     from . import planner as P
     from .lesson import sanitize_check
@@ -591,8 +619,9 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
                 boards[0].append(fig)
                 break
     n_points = sum(1 for b in boards for it in b if it.get("slot") == "point" and (it.get("text") or "").strip())
+    examples = [str(x) for st in raw for x in (st.get("example") or []) if str(x).strip()]
     for j, st in enumerate(raw):
-        says = two_sentences(st.get("say"))
+        says = idea_sentences(st.get("say"))
         if not says:
             continue
         ops = _board_ops(boards[j])
@@ -607,11 +636,13 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
         pts = [o for o in ops if o.region == "points"]
         rest = [o for o in ops if o.region != "points"]
         cues = [Cue(id=f"k{idx}s{j}c1", say=says[0], ops=first + pts + (rest if len(says) == 1 else []))]
-        if len(says) > 1:
-            cues.append(Cue(id=f"k{idx}s{j}c2", say=says[1], ops=rest))
+        for n, sentence in enumerate(says[1:], start=2):       # the figure / example appear with sentence 2
+            cues.append(Cue(id=f"k{idx}s{j}c{n}", say=sentence, ops=rest if n == 2 else []))
         chk = sanitize_check(st.get("check"))
         if chk:
             chk.expectations = clean_expectations(chk.expectations, question=chk.prompt) or ([chk.reveal] if chk.reveal else [])
+            # the ladder's worked-example rung: this step's own example lines, else the concept's
+            chk.example = [_cut(x, 80) for x in ((st.get("example") or []) or examples) if str(x).strip()][:4]
         segs.append(Segment(id=f"k{idx}s{j}", type="teach" if j == 0 else "worked_example", title=c.name,
                             cues=cues, check=chk))
     rem = _cut(str(d.get("remember") or ""), 90)
@@ -626,7 +657,8 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
 class Coach:
     def __init__(self, source: str, *, audio, events, server=None, book_path: str | None = None,
                  unit: str | None = None, goal: dict | None = None, log=print, call=None, persist: bool = True,
-                 planner=None, concepts_future=None, focus: list[str] | None = None, **tutor_kw):
+                 planner=None, concepts_future=None, focus: list[str] | None = None, blurt: bool = False,
+                 **tutor_kw):
         from .player import Tutor
         self.source, self.book_path, self.unit = source, book_path, unit
         self.goal, self.log, self.call = goal, log, call
@@ -663,15 +695,42 @@ class Coach:
         self.t0 = time.time()
         self.done_today: set[str] = set()            # day mode: concepts already done earlier today
         self.pool_n = 0                              # how many concepts the queue was chosen from
+        # Feature 5: one check per full idea, sparser when he's fed up, never the same question twice (this session,
+        # or one he got right in the last few days: the mastery file remembers); Blurt after each topic (--blurt)
+        self.t.pacing = Pacing(MIN_GAP, store=self.mastery)
+        self.t.should_check = self._should_check
+        self.t.on_blurt = self._blurt_segment
+        self.t.on_blurt_request = self._blurt_now
+        self.blurt = blurt
+        self.essential: set[str] = set()             # check segments always asked (a known concept's one quick check)
+        self.asked_concepts: set[str] = set()        # concepts whose check was asked this session
+        self.blurt_for: dict[str, list[str]] = {}    # blurt segment id → the concept ids it tests
+        self.blurts: list[dict] = []                 # {concepts, result} per Blurt (notes, tests)
+        self.reteached: set[str] = set()             # Blurt points already re-taught (once each)
+
+    # ---- pacing: is it time for his turn?
+    def _should_check(self, seg: Segment, pacing: Pacing) -> bool:
+        """≥ pacing.gap sentences since his last turn; a concept still gets its one check (its last step) unless he
+        asked for fewer questions; a known concept's quick check is always asked."""
+        cid = self.seg_concept.get(seg.id)
+        ok = seg.id in self.essential or pacing.since >= pacing.gap
+        if not ok and cid and not pacing.sparse and cid not in self.asked_concepts:
+            later = [s for s in self.L.segments[self.L.segments.index(seg) + 1:]
+                     if self.seg_concept.get(s.id) == cid and s.check is not None]
+            ok = not later                           # its last chance: one check per concept (idea)
+        if ok and cid:
+            self.asked_concepts.add(cid)
+        return ok
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
         cid = self.seg_concept.get(seg.id)
         if not cid or rec.get("verdict") not in ("correct", "partial", "wrong", "idk"):
             return
-        p = self.mastery.update(cid, rec["verdict"])
+        v = mastery_verdict(rec["verdict"], rec.get("rung", 0))   # right only after the worked example ≠ known
+        p = self.mastery.update(cid, v)
         self.checked.add(cid)
-        self.log(f"   [mastery] {cid} {rec['verdict']} → {p:.2f}")
+        self.log(f"   [mastery] {cid} {rec['verdict']}{'' if v == rec['verdict'] else f' (as {v})'} → {p:.2f}")
         if rec["verdict"] == "correct" and p >= KNOWN and rec.get("attempts", 1) <= 1:
             nxt = [s.id for s in self.L.segments]
             i = nxt.index(seg.id) if seg.id in nxt else -1
@@ -745,7 +804,7 @@ class Coach:
             lines = [f"# {self.L.title} — notes", f"_{time.strftime('%d %b %Y')} · mode: {self.goal.get('mode')}_", ""]
             cur = None
             for sg in self.L.segments:
-                if sg.id == "recap" or sg.type == "break":  # a break page is not part of his notes
+                if sg.id == "recap" or sg.type in ("break", "blurt"):   # break / test pages aren't notes
                     continue
                 if sg.title != cur:
                     cur = sg.title
@@ -769,6 +828,11 @@ class Coach:
                             lines += ["    " + " | ".join(r) for r in o.rows[1:]]
                         elif o.type == "formula" and o.text:
                             lines.append(f"  - `{o.text}`")
+            for b in self.blurts:                    # what he recalled on his own (✓ / ~ / ✗ per key point)
+                r = b["result"]
+                lines += ["", f"## Blurt · {b['topic']} — {r['recalled']} of {len(r['points'])} recalled"]
+                lines += [f"- {dict(recalled='✓', partial='~', missed='✗')[p['status']]} {p['point']}"
+                          for p in r["points"]]
             if self.t.questions:
                 lines += ["", "## Your doubts"] + [f"- {q}" for q in dict.fromkeys(self.t.questions)]
             path = CFG.home / "tutor" / "notes" / f"{re.sub(r'[^A-Za-z0-9]+', '-', self.L.title).strip('-')[:60]}.md"
@@ -842,8 +906,134 @@ class Coach:
                     self.log(f"   [coach] picture for {c.name}: {op.text}")
             for s in segs:
                 self.seg_concept[s.id] = c.id
+            if lvl == "known" and segs:
+                self.essential.add(segs[0].id)       # "you seem to know it": the one quick check is always asked
             self.L.segments.extend(segs)
+            if self.blurt and segs:                  # --blurt: test him at the end of each topic
+                day = self.goal["mode"] == "day"
+                nxt = self.queue[i + 1] if i + 1 < len(self.queue) else None
+                if day and nxt is not None and nxt.unit_idx == c.unit_idx:
+                    continue                         # day mode: one Blurt per section (unit), at its end
+                group = [x for x in self.queue[:i + 1] if x.unit_idx == c.unit_idx] if day else [c]
+                group = [x for x in group if self.mastery.level(x.id) != "known" or x is c][-3:]
+                if lvl != "known" or day:
+                    self._add_blurt_segment(group, f"{i}")
         self.L.complete = True                        # type: ignore[attr-defined]
+
+    # ---- Blurt (Coconote): free recall, graded per key point
+    def _blurt_points(self, c: Concept) -> list[str]:
+        """The concept's key points (concept map), else the points she wrote on its board."""
+        if c.points:
+            return list(c.points[:3])
+        return [o.text for s in self.L.segments if self.seg_concept.get(s.id) == c.id
+                for cue in s.cues for o in cue.ops if o.region == "points" and o.text][:3]
+
+    def _blurt_topic(self, group: list[Concept]) -> str:
+        if len(group) == 1:
+            return group[0].name
+        unit = group[0].unit
+        return unit if unit and all(c.unit == unit for c in group) else " and ".join(c.name for c in group[:3])
+
+    def _add_blurt_segment(self, group: list[Concept], tag: str) -> None:
+        topic = self._blurt_topic(group)
+        sid = f"b{tag}"
+        self.blurt_for[sid] = [c.id for c in group]
+        self.L.segments.append(Segment(id=sid, type="blurt", title="Blurt", cues=[Cue(
+            id=f"{sid}c1", say=f"Now, without looking: tell me everything you remember about {topic}.",
+            ops=[Op(type="new_page", text=_cut(f"Blurt · {topic}", 48))])]))
+
+    def _blurt_segment(self, seg: Segment) -> None:
+        """A planned Blurt segment's cue has asked; his free recall now (skipped when he wants fewer questions)."""
+        byid = {c.id: c for c in self.concepts}
+        group = [byid[i] for i in self.blurt_for.get(seg.id, []) if i in byid]
+        if not group:
+            return
+        if self.t.pacing.sparse:
+            self.t.say("Actually, let's skip the test and keep going.", interruptible=False)
+            return
+        self.run_blurt(group, asked=True)
+
+    def _blurt_now(self) -> bool:
+        """He said "test me" / "let me blurt": the concept on the board now (or the one just taught). -> False when
+        nothing has been taught yet."""
+        k = min(self.t.k, len(self.t._flat()) - 1)
+        if k < 0 or not self.t._flat():
+            return False
+        byid = {c.id: c for c in self.concepts}
+        cid = None
+        for kk in range(k, -1, -1):                  # the current cue's concept, or the closest one before it
+            sid = self.L.segments[self.t._flat()[kk][0]].id
+            cid = self.seg_concept.get(sid) or (self.blurt_for.get(sid) or [None])[-1]
+            if cid in byid:
+                break
+        if cid not in byid:
+            return False
+        self.t.audio.stop()
+        snap = self.t.board.snapshot()
+        acts = self.t.board.apply(Op(type="new_page", text=_cut(f"Blurt · {byid[cid].name}", 48)))
+        self.t.send({"type": "actions", "actions": [{**a, "at_ms": i * 60} for i, a in enumerate(acts)]})
+        self.run_blurt([byid[cid]], asked=False)
+        self.t.board.restore(snap)                   # back to the lesson page he was on
+        self.t.send({"type": "reset", "actions": list(self.t.board.log)})
+        if not self.t.ended:
+            self.t.say("Okay, back to where we were.", interruptible=False)
+        return True
+
+    def run_blurt(self, group: list[Concept], *, asked: bool) -> dict | None:
+        """Listen to everything he remembers → per key point ✓ recalled / ~ partial / ✗ missed on the Blurt page →
+        mastery per concept → missed points re-taught briefly, once."""
+        from . import grade as G
+        t = self.t
+        topic = self._blurt_topic(group)
+        pts: list[tuple[Concept, str]] = [(c, p) for c in group for p in self._blurt_points(c)][:6]
+        if not pts:
+            return None
+        prompt = None if asked else f"Go on, tell me everything you remember about {topic}."
+        ans = t.listen(prompt, check_box={"kind_label": "Blurt", "prompt": f"Everything you remember about {topic}",
+                                          "options": []}, timeout=90)
+        if ans is None:
+            return None
+        ans = (ans + " " + t.more_words()).strip()   # free recall comes in bursts: keep listening a little longer
+        if commands.classify(ans, answering=True) in ("next", "fewer") or re.fullmatch(r"\W*(skip|pass)\W*", ans, re.I):
+            t.say("Okay, no test then.", interruptible=False)
+            return None
+        res = G.blurt_grade([p for _, p in pts], ans, topic=topic,
+                            llm=G.llm_for(t.planner) or self.call is not None, call=self.call)
+        if res.get("source") == "llm":
+            self.log(f"   [blurt] second opinion ({res['llm_ms']:.0f} ms): {res['reason']}")
+        rows = res["points"]
+        self.log("   [blurt] " + " · ".join(f"{r['status']}: {r['point'][:30]}" for r in rows))
+        mark = {"recalled": ("✓", "green"), "partial": ("~", "warm"), "missed": ("✗", "red")}
+        ops = [Op(type="text", text=_cut(f"{mark[r['status']][0]} {r['point']}", 80), region="points",
+                  style=mark[r["status"]][1]) for r in rows]
+        score = f"Recalled {res['recalled']} of {len(rows)}" + (f" · {res['partial']} partly" if res["partial"] else "")
+        ops.append(Op(type="text", text=score, region="remember"))
+        acts = [a for op in ops for a in t.board.apply(op)]
+        t.send({"type": "actions", "actions": [{**a, "at_ms": i * 150} for i, a in enumerate(acts)]})
+        for c in group:                              # mastery per concept, from its own points
+            mine = [r for (cc, _), r in zip(pts, rows) if cc is c]
+            if not mine:
+                continue
+            got = sum(r["status"] == "recalled" for r in mine) + 0.5 * sum(r["status"] == "partial" for r in mine)
+            v = "correct" if got == len(mine) else "partial" if got >= len(mine) / 2 else "wrong"
+            p = self.mastery.update(c.id, v)
+            self.checked.add(c.id)
+            self.log(f"   [mastery] {c.id} blurt {v} → {p:.2f}")
+        self.blurts.append({"topic": topic, "concepts": [c.id for c in group], "result": res})
+        t.results.append({"segment": "blurt", "kind": "blurt", "verdict": None, "attempts": 1, "hints": 0,
+                          "confidence": None, "answers": [ans[:400]], "score": res["score"],
+                          "points": [{"point": r["point"], "status": r["status"]} for r in rows]})
+        n = len(rows)
+        if res["recalled"] == n:
+            t.say(f"All {n} points. Excellent.", interruptible=False)
+            return res
+        again = [r for r in rows if r["status"] != "recalled" and norm_q(r["point"]) not in self.reteached][:3]
+        t.say(f"You recalled {res['recalled']} of {n}" + (f", and {res['partial']} partly." if res["partial"] else ".")
+              + (" Quickly, what you missed:" if again else ""), interruptible=False)
+        for r in again:                              # re-taught briefly, once per point per session
+            self.reteached.add(norm_q(r["point"]))
+            t.say(("Almost: " if r["status"] == "partial" else "") + r["point"].rstrip(".") + ".", interruptible=False)
+        return res
 
     def opening(self) -> bool:
         """Goal + deadline, then quick probes. False = he ended it."""
@@ -856,11 +1046,21 @@ class Coach:
         t.ears_on(["exam", "tomorrow", "syllabus", "unit", "chapter", "test"] + self.focus + self.subject.split()[:6])
         t.status("playing", "starting")
         asked = self.goal is None
-        if asked:
+        kept = self._remembered_goal() if asked else None
+        if kept:                                     # he told her for this file recently: don't ask again ("it asks
+            goal, line = kept                        # the same questions again and again"); one line to correct it
+            ans = t.listen(line, timeout=GOAL_CONFIRM_S, nudge=False)
+            if ans is None:
+                return False
+            self.goal = parse_goal(ans) if _goal_words(ans) else goal
+            self.log(f"   [coach] remembered goal {goal} → {self.goal}")
+            asked = False
+        elif asked:
             ans = t.listen("Hi! Before I start: what do you need? Is this for an exam, and when is it?")
             if ans is None:
                 return False
             self.goal = parse_goal(ans)
+        self.mastery.set_goal(self.goal)             # the next lesson on this file starts without the question
         day = self.goal["mode"] == "day"
         if day:
             mins = (self.goal.get("hours") or DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
@@ -894,6 +1094,7 @@ class Coach:
             self.done_today = self._done_today(before=self.t0)    # (not the probes about to be asked now)
         probes = [] if self.returning else make_probes(self.concepts, n=min(PROBES, max(1, len(self.concepts))),
                                                          call=self.call)
+        probes = [p for p in probes if not t.pacing.repeat(p["question"])]   # never a question he just answered
         if self.returning and not self.done_today:
             solid = sum(self.mastery.level(c.id) == "known" for c in self.concepts)
             t.say(f"Welcome back. You're solid on {solid} of {len(self.concepts)} topics here, so I'll pick up "
@@ -913,6 +1114,7 @@ class Coach:
                 break
             v = grade(Check(kind="recall", prompt=pr["question"], expectations=pr.get("expected") or []), ans,
                       llm=True, call=self.call)["verdict"]     # mis-heard right answers get a free-LLM second opinion
+            t.pacing.answered(pr["question"], v == "correct")
             c = byid[pr["concept_id"]]
             self.mastery.set(c.id, {"correct": 0.85, "partial": 0.55}.get(v, 0.15))
             if v == "correct":                       # what comes before it in the same unit is probably known too
@@ -937,6 +1139,31 @@ class Coach:
         self.queue = order(pool, self.mastery, self.goal["mode"], mins)
         self._show_plan()
         return True
+
+    def _remembered_goal(self) -> tuple[dict, str] | None:
+        """His goal for this file from a recent lesson -> (goal, the line that confirms it), or None (ask him)."""
+        from datetime import date
+        g = self.mastery.goal or {}
+        age = time.time() - float(g.get("asked_at") or 0)
+        if not g.get("mode") or age > GOAL_KEEP_DAYS * 86400:
+            return None
+        if g["mode"] == "exam":
+            try:
+                d = date.fromisoformat(str(g.get("exam_date")))
+            except ValueError:
+                return None
+            days = (d - date.today()).days
+            if days < 0:                             # the exam is over: ask again
+                return None
+            when = "today" if days == 0 else "tomorrow" if days == 1 else f"on {d:%A}, {d.day} {d:%B}"
+            return {"mode": "exam", "days": days}, f"Still the exam {when}? Carrying on."
+        if g["mode"] == "day":
+            if age > DAY_RESUME_H * 3600:            # "the whole syllabus today" was about THAT day
+                return None
+            hrs = float(g.get("hours") or DAY_DEFAULT_H)
+            return ({"mode": "day", "days": 0, "hours": hrs, "hours_said": bool(g.get("hours_said", True))},
+                    "Still the whole syllabus today? Carrying on.")
+        return {"mode": "learn", "days": None}, "Still learning this properly, no exam rush? Carrying on."
 
     def _done_today(self, before: float | None = None) -> set[str]:
         """Day mode: the concepts he got at least partly right in the last DAY_RESUME_H hours (before `before`)."""

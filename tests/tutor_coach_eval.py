@@ -54,7 +54,8 @@ def fake_call(system, user, schema, name, max_tokens, **kw):
                            {"concept_id": "c3", "question": "Which match does a scanner take?",
                             "expected": ["longest"]}]}
     if name == "concept":
-        n = user.count("item(s)")
+        import re as _re
+        cname = (_re.search(r"CONCEPT: (.+?) \(unit", user) or [None, "it"])[1]
         steps = []
         for j in range(2):
             steps.append({"say": ["A lexer reads characters one by one.", "It groups them into tokens."],
@@ -65,9 +66,10 @@ def fake_call(system, user, schema, name, max_tokens, **kw):
                                      "edges": [{"from": "a", "to": "b", "text": None}], "rows": None},
                                     {"slot": "example", "kind": "text", "text": "x = 42 → ID EQ NUM",
                                      "nodes": None, "edges": None, "rows": None}],
-                          "check": {"kind": "recall", "prompt": "What does the lexer output?", "options": None,
-                                    "expectations": ["tokens"], "hints": ["Think of words.", "Not characters."],
-                                    "reveal": "Tokens."}})
+                          # a different question per concept and step (Feature 5: the same one twice is skipped)
+                          "check": {"kind": "recall", "prompt": f"In {cname}, step {j + 1}: what does the lexer output?",
+                                    "options": None, "expectations": ["tokens"],
+                                    "hints": ["Think of words.", "Not characters."], "reveal": "Tokens."}})
         return {"steps": steps, "remember": "Lexer: characters in, tokens out"}
     raise AssertionError(name)
 
@@ -125,8 +127,8 @@ check("topic → concepts, cached (second time: no LLM call)", len(mp) == 4 and 
       str(CALLS))
 segs = C.concept_segments(mp[0], 0, "new", "exam", None, 4, call=fake_call)
 check("new concept → 2 short steps + a Remember line", len(segs) == 3 and segs[-1].id.endswith("r"), str([s.id for s in segs]))
-check("every step: ≤ 2 sentences, then his turn (a check)",
-      all(len(s.cues) <= 2 and s.check is not None for s in segs[:2]), str([(len(s.cues), bool(s.check)) for s in segs]))
+check("every step: one idea (≤ 3 sentences), then his turn (a check)",
+      all(len(s.cues) <= 3 and s.check is not None for s in segs[:2]), str([(len(s.cues), bool(s.check)) for s in segs]))
 regions = {o.region for s in segs for c in s.cues for o in c.ops if o.region}
 check("board notes go to slots (points / figure / example / remember), page title first",
       regions >= {"points", "figure", "example", "remember"} and segs[0].cues[0].ops[0].type == "new_page", str(regions))
@@ -501,9 +503,14 @@ check("the new step form (points / figure / example fields) still lands in the b
 check("step 1 always gets the figure (borrowed from step 2 when the model left it out)",
       any(o.region == "figure" for cu in ss[0].cues for o in cu.ops)
       and not any(o.region == "figure" for cu in ss[1].cues for o in cu.ops), "")
-check("a 4-sentence 'say' is cut to 2 spoken sentences", len(ss[0].cues) == 2
-      and ss[0].cues[0].say == "Imagine a car speeding up." and ss[0].cues[1].say.startswith("Its speedometer"),
-      str([cu.say for cu in ss[0].cues]))
+check("a 4-sentence 'say' is cut to one idea: 3 spoken sentences", len(ss[0].cues) == 3
+      and ss[0].cues[0].say == "Imagine a car speeding up." and ss[0].cues[1].say.startswith("Its speedometer")
+      and ss[0].cues[2].say == "That change is a rate.", str([cu.say for cu in ss[0].cues]))
+check("…the figure / example still appear with sentence 2, sentence 3 draws nothing new",
+      not ss[0].cues[2].ops, str([[o.region for o in cu.ops] for cu in ss[0].cues]))
+check("the worked-example lines ride on each check (the hint ladder's third rung)",
+      ss[0].check.example[:1] == ["u = x^2, v = sin x"] and ss[1].check.example[-1] == "= 2x sin x + x^2 cos x",
+      str([s.check.example for s in ss[:2]]))
 check("rubric expectations become spoken words, at most 2",
       ss[0].check.expectations == ["u prime v plus u v prime", "order matters"], str(ss[0].check.expectations))
 pts = [o.text for cu in ss[0].cues for o in cu.ops if o.region == "points"]
@@ -600,6 +607,257 @@ check("the board is on screen before anything slow starts", at.get("browser open
 check("voice loading and reading his file overlap (not one after the other)",
       abs(at.get("voice loading", 0) - at.get("reading file", 9)) < 0.3 and at.get("session running", 9) < 0.9,
       str(marks))
+
+# ------------------------------------------------------------------ Feature 5: pacing, hint ladder, Blurt, no repeats
+print("\nFeature 5: one check per full idea, sparser when he's fed up, Blurt, never the same question twice")
+from stiti.tutor import pacing as PC  # noqa: E402
+from stiti.tutor import srs as SRS  # noqa: E402
+
+check("questions match after normalising ('Quick one: What does it OUTPUT?' = 'what does it output')",
+      PC.norm_q("Quick one: What does the lexer OUTPUT?") == PC.norm_q("what does the lexer output"))
+check("rung → rating: unaided good · nudge/hint hard · worked example / answer again · sure + unaided easy",
+      [PC.rung_rating("correct", r) for r in range(5)] == ["good", "hard", "hard", "again", "again"]
+      and PC.rung_rating("correct", 0, 5) == "easy" and PC.rung_rating("wrong", 0) == "again")
+check("…and FSRS uses it (srs.rating_for(…, rung=…))",
+      SRS.rating_for("correct", 1, None, rung=3) == SRS.Rating.Again
+      and SRS.rating_for("correct", 0, None, rung=0) == SRS.Rating.Good
+      and SRS.rating_for("correct", 1, None, rung=2) == SRS.Rating.Hard)
+check("right only after help is partial evidence for mastery (worked example → wrong)",
+      [PC.mastery_verdict("correct", r) for r in (0, 1, 3)] == ["correct", "partial", "wrong"])
+pc_ = PC.Pacing(3)
+tipped = [pc_.note(a, v) for a, v in (("tokens", "correct"), ("ok", "wrong"), ("whatever", "wrong"), ("fine", "wrong"))]
+check("curt non-answers ('ok', 'whatever', 'fine') make him 'fed up'; an honest short right answer doesn't",
+      tipped == [False, False, False, True], str(tipped))
+pc_ = PC.Pacing(3)
+check("a stressed voice on curt answers tips it sooner (2 curt + tense voice)",
+      [pc_.note("ok", "wrong", "stressed"), pc_.note("hmm", "wrong", "stressed")] == [False, True])
+pc_ = PC.Pacing(3)
+check("'I don't know' is honest, not curt (the ladder helps instead)",
+      not any(pc_.note("I don't know", "idk") for _ in range(5)))
+check("'skip the questions' / 'just teach' / 'test me' are commands, not doubts",
+      [CMD.classify(x) for x in ("skip the questions", "just teach", "stop asking me", "let me blurt", "test me")]
+      == ["fewer", "fewer", "fewer", "blurt", "blurt"])
+check("'no exam, I just want to learn it' is learn mode, not exam",
+      C.parse_goal("no exam now, I just want to learn it")["mode"] == "learn")
+
+
+def session2(source, answer_for, *, blurt=False, goal=None, voice_at=None, call=None, timeout=120):
+    """A whole coached session; answer_for(prompt_on_screen, n) gives his answer to each 'your turn'.
+    voice_at = {line_prefix: text}: said once while she is saying a line starting with that prefix."""
+    ev: queue.Queue = queue.Queue()
+    sv = FakeSrv()
+    lg: list[str] = []
+    stop = threading.Event()
+    fired: set = set()
+
+    def log(x):
+        lg.append(x)
+        for pre, text in (voice_at or {}).items():
+            if pre not in fired and x.startswith("Stiti: " + pre):
+                fired.add(pre)
+                ev.put({"type": "text", "text": text})
+
+    def feed():
+        seen = n = 0
+        while not stop.is_set():
+            sent = list(sv.sent)
+            waits = [m for m in sent if m.get("type") == "status" and m.get("mode") == "waiting"]
+            if len(waits) > seen:
+                seen = len(waits)
+                shown = [m for m in sent if m.get("type") == "check"]
+                time.sleep(0.05)
+                a = answer_for(shown[-1]["prompt"] if shown else "", n)
+                n += 1
+                if a is not None:
+                    ev.put({"type": "text", "text": a})
+            time.sleep(0.02)
+    co = C.Coach(source, audio=SilentAudio(scale=0.01), events=ev, server=sv, log=log, call=call or fake_call,
+                 persist=False, planner=None, pace=0.02, idle_resume_s=0.2, check_timeout_s=2, blurt=blurt, goal=goal)
+    co.sent = sv.sent
+    threading.Thread(target=feed, daemon=True).start()
+    res = {}
+    th = threading.Thread(target=lambda: res.setdefault("r", co.run()), daemon=True)
+    th.start()
+    th.join(timeout)
+    stop.set()
+    return co, [x[len("Stiti: "):] for x in lg if x.startswith("Stiti: ")], res.get("r"), lg
+
+
+def lesson_checks(co):
+    """The lesson's own check questions she asked (not the probes / goal / Blurt), in order."""
+    probes = {"What does a lexer produce?", "What is a DFA made of?", "Which match does a scanner take?"}
+    return [m["prompt"] for m in co.sent if m.get("type") == "check" and m.get("prompt") not in probes
+            and not str(m.get("kind_label", "")).startswith(("Question", "Blurt"))]
+
+
+ans_ok = lambda prompt, n: "I have an exam tomorrow" if n == 0 else "tokens"   # noqa: E731
+cop, saidp, rp, lgp = session2("pacing test", ans_ok)
+gaps = cop.t.pacing.gaps
+avg = sum(gaps) / max(1, len(gaps))
+check("a lesson averages ≥ 3 sentences between checks (one check per full idea, not every 2 sentences)",
+      rp is not None and rp.get("finished") and len(gaps) >= 3 and avg >= 3, f"gaps {gaps}")
+asked = lesson_checks(cop)
+check("…and every concept still gets its check", {cop.seg_concept.get(r["segment"]) for r in cop.t.results
+                                                    if r.get("verdict")} >= {c.id for c in cop.queue}, str(asked))
+check("…the planned 2-sentence steps don't each get a check (some are held for the full idea)",
+      any("[pacing] no check yet" in x for x in lgp) and len(asked) < sum(1 for s in cop.L.segments if s.check),
+      f"{len(asked)} asked")
+normed = [PC.norm_q(p) for p in asked]
+check("no question asked twice in a session", len(normed) == len(set(normed)), str(asked))
+
+# curt answers → sparser checks for the rest of the session, said once
+curt = lambda prompt, n: "I have an exam tomorrow" if n == 0 else "tokens" if n <= 3 else "ok"   # noqa: E731
+coc, saidc, rc, lgc = session2("curt test", curt)
+fewer_at = next((i for i, x in enumerate(lgc) if "[pacing] fewer questions from now on" in x), None)
+check("curt 'ok' answers → 'Okay, fewer questions.' said once",
+      saidc.count("Okay, fewer questions.") == 1 and coc.t.pacing.sparse, str([s for s in saidc if "fewer" in s]))
+after = coc.t.pacing.gaps[coc.t.pacing.sparse_at:] if coc.t.pacing.sparse else []
+check("…and after it the checks are sparser (≥ 7 sentences apart)",
+      fewer_at is not None and all(g >= PC.SPARSE_GAP for g in after), f"gaps {coc.t.pacing.gaps}, "
+      f"sparse from #{coc.t.pacing.sparse_at}")
+check("…fewer checks than the same lesson with normal answers", len(lesson_checks(coc)) < len(asked),
+      f"{len(lesson_checks(coc))} vs {len(asked)}")
+# "skip the questions" in a check: the answer, then fewer — said once
+sk = lambda prompt, n: "I have an exam tomorrow" if n == 0 else "tokens" if n <= 3 else "skip the questions"  # noqa: E731
+cos_, saids, rs, _ = session2("skip questions test", sk)
+check("'skip the questions' → the answer, 'Okay, fewer questions.' once, sparse for the rest",
+      saids.count("Okay, fewer questions.") == 1 and cos_.t.pacing.sparse and rs and rs.get("finished")
+      and any(s.startswith("The answer: Tokens") for s in saids), str([s for s in saids if "ewer" in s or "answer" in s]))
+check("…fewer lesson checks than the same lesson with normal answers",
+      len(lesson_checks(cos_)) < len(asked), f"{len(lesson_checks(cos_))} vs {len(asked)}")
+
+# Blurt after each topic (the Lessons page flag): per-point marks, mastery, missed points re-taught once
+BL_TOPIC = [{"unit": "Lexing", "name": "Tokens", "weight": 3,
+             "points": ["A lexer turns characters into tokens", "Whitespace and comments are thrown away"]},
+            {"unit": "Lexing", "name": "Regular expressions", "weight": 2,
+             "points": ["Regular expressions describe token patterns", "Each regex becomes a finite automaton"]}]
+
+
+def bl_call(system, user, schema, name, max_tokens, **kw):
+    if name == "concepts":
+        return {"concepts": BL_TOPIC}
+    if name == "probes":
+        return {"probes": []}
+    if name == "blurt":
+        raise RuntimeError("no LLM in this test")
+    return fake_call(system, user, schema, name, max_tokens, **kw)
+
+
+def bl_ans(prompt, n):
+    if n == 0:
+        return "I have an exam tomorrow"
+    if prompt.startswith("Everything you remember about Tokens"):
+        return "the lexer turns the characters into tokens"
+    if prompt.startswith("Everything you remember about Regular"):
+        return "regular expressions describe the token patterns, and each regex becomes a finite automaton"
+    return "tokens"
+
+
+cob, saidb, rb, lgb = session2("blurt test", bl_ans, blurt=True, call=bl_call)
+check("--blurt: after each topic 'tell me everything you remember about …'",
+      any(s.startswith("Now, without looking: tell me everything you remember about Tokens") for s in saidb)
+      and any("remember about Regular expressions" in s for s in saidb), str([s for s in saidb if "remember" in s]))
+b1 = cob.blurts[0]["result"]["points"] if cob.blurts else []
+check("Blurt is graded per key point: recalled / missed",
+      [p["status"] for p in b1] == ["recalled", "missed"], str(b1))
+labels = {getattr(e, "label", ""): e for e in cob.t.board.els.values()}
+check("the board's Blurt page marks each point ✓ recalled / ✗ missed, with the score",
+      "✓ A lexer turns characters into tokens" in labels and "✗ Whitespace and comments are thrown away" in labels
+      and any(lb.startswith("Recalled 1 of 2") for lb in labels), str([lb for lb in labels if lb[:1] in "✓✗~R"]))
+check("…the missed point is re-taught briefly", "Whitespace and comments are thrown away." in saidb, str(saidb[-12:]))
+check("…mastery updated per concept from its points",
+      any("[mastery] c0 blurt partial" in x for x in lgb) and any("[mastery] c1 blurt correct" in x for x in lgb),
+      str([x for x in lgb if "blurt" in x]))
+check("…and his notes keep the Blurt (✓ / ✗ per point)",
+      cob.notes_path is not None and "## Blurt · Tokens — 1 of 2 recalled" in cob.notes_path.read_text()
+      and "- ✗ Whitespace" in cob.notes_path.read_text(), (cob.notes_path.read_text() if cob.notes_path else "")[-300:])
+
+cod2, saidd2, rd2, lgd2 = session2("blurt day test", lambda p, n: (
+    "the lexer turns characters into tokens and regular expressions describe token patterns"
+    if p.startswith("Everything") else "tokens"), blurt=True, call=bl_call,
+    goal={"mode": "day", "days": 0, "hours": 2.0, "hours_said": True})
+check("day mode: one Blurt at the end of the section (unit), over its topics",
+      len(cod2.blurts) == 1 and cod2.blurts[0]["topic"] == "Lexing" and len(cod2.blurts[0]["result"]["points"]) == 4
+      and [p["status"] for p in cod2.blurts[0]["result"]["points"]] == ["recalled", "missed", "recalled", "missed"],
+      str([(b["topic"], [p["status"] for p in b["result"]["points"]]) for b in cod2.blurts]))
+
+# Blurt grading itself: the free-LLM second opinion only when a point is partial
+from stiti.tutor import grade as G  # noqa: E402
+BP = ["Plants use sunlight to make glucose", "Oxygen is released as a by-product"]
+BA = "plants take sunlight and turn it into glucose, and they give off oxygen"
+loc = G.blurt_grade(BP, BA, topic="Photosynthesis")
+JUDGED: list[str] = []
+
+
+def judge(system, user, schema, name, max_tokens, **kw):
+    JUDGED.append(name)
+    return {"points": [{"n": 1, "status": "recalled"}, {"n": 2, "status": "recalled"}], "reason": "gives off = released"}
+
+
+llm = G.blurt_grade(BP, BA, topic="Photosynthesis", llm=True, call=judge)
+check("Blurt local grading: a paraphrase the keywords half-catch is 'partial'",
+      [p["status"] for p in loc["points"]] == ["recalled", "partial"], str(loc["points"]))
+check("…the free-LLM second opinion settles partial points (one call)",
+      JUDGED == ["blurt"] and llm["source"] == "llm" and llm["recalled"] == 2 and llm["score"] == 1.0, str(llm))
+JUDGED.clear()
+G.blurt_grade(BP, "plants use sunlight to make glucose and oxygen is released as a by-product", topic="Photosynthesis",
+              llm=True, call=judge)
+none = G.blurt_grade(BP, "I don't know", topic="Photosynthesis", llm=True, call=judge)
+check("…and is never asked when nothing is partial (all recalled, or 'I don't know' → all missed)",
+      JUDGED == [] and none["missed"] == 2, str(JUDGED))
+down = G.blurt_grade(BP, BA, topic="Photosynthesis", llm=True,
+                     call=lambda *a, **k: (_ for _ in ()).throw(RuntimeError("429")))
+check("…LLM down → the local grades stand", down["source"] == "local" and down.get("llm_error"), str(down))
+check("the topic's own name recalls nothing ('photosynthesis is about plants')",
+      G.blurt_grade(["Photosynthesis makes glucose"], "photosynthesis is a thing", topic="Photosynthesis",
+                    semantic=False)["points"][0]["status"] == "missed")
+
+# "test me" any time → a Blurt on the concept on the board; a missed point is re-taught only once per session
+cot, saidt, rt, lgt = session2("blurt voice test", lambda p, n: "I have an exam tomorrow" if n == 0 else (
+    "I don't remember" if p.startswith("Everything") else "tokens"), call=bl_call,
+    voice_at={"It groups them into tokens": "test me", "So, remember": "let me blurt"})
+check("'test me' while she teaches → 'Go on, tell me everything you remember about Tokens.'",
+      any(s.startswith("Go on, tell me everything you remember about") for s in saidt)
+      and any(s == "Okay, back to where we were." for s in saidt), str([s for s in saidt if "remember" in s][:3]))
+check("…graded (all missed), and each missed point re-taught only once even when he blurts again",
+      len(cot.blurts) >= 2 and saidt.count("Whitespace and comments are thrown away.") == 1,
+      f"{len(cot.blurts)} blurts; {[s for s in saidt if 'Whitespace' in s]}")
+
+# the goal is remembered per file: no "is this for an exam?" every lesson
+cog, saidg, _, _ = session2("goal memory test", ans_ok)
+cog2, saidg2, _, _ = session2("goal memory test", lambda p, n: "tokens")
+check("same file again within days: no goal question, 'Still the exam tomorrow? Carrying on.'",
+      not any("what do you need" in s.lower() for s in saidg2)
+      and any(s.startswith("Still the exam tomorrow") for s in saidg2)
+      and cog2.goal["mode"] == "exam" and cog2.goal["days"] == 1, str(saidg2[:3]))
+cog3, saidg3, _, _ = session2("goal memory test", lambda p, n: "no exam now, I just want to learn it" if n == 0
+                              else "tokens")
+check("…one line corrects it ('no exam now, I just want to learn it' → learn)", cog3.goal["mode"] == "learn",
+      str(cog3.goal))
+mg = Mastery("goal memory old test")
+mg.set_goal({"mode": "exam", "days": 1})
+mg.goal["exam_date"] = "2000-01-01"
+mg.save()
+cog4, saidg4, _, _ = session2("goal memory old test", ans_ok)
+check("an exam date that has passed → she asks again", any("what do you need" in s.lower() for s in saidg4),
+      str(saidg4[:2]))
+cog5, saidg5, _, _ = session2("goal flags test", lambda p, n: "tokens", goal={"mode": "day", "days": 0, "hours": 2.0})
+check("a goal from the Lessons page: never asked, and stored for next time",
+      not any("what do you need" in s.lower() or s.startswith("Still") for s in saidg5)
+      and Mastery("goal flags test").goal.get("mode") == "day", str(saidg5[:2]))
+
+# questions answered right recently are not asked again in the next session
+asked_ok = {q for q, r in Mastery("pacing test").asked.items() if r.get("ok")}
+cop2, saidp2, _, _ = session2("pacing test", lambda p, n: "tokens")
+again = [p for p in lesson_checks(cop2) if PC.norm_q(p) in asked_ok]
+check("next session: no question he answered right in the last days is asked again",
+      asked_ok and not again, f"{len(asked_ok)} remembered; re-asked {again}")
+pz = PC.Pacing(3, store=Mastery("pacing test"))
+mz = Mastery("pacing test")
+k_old = next(iter(asked_ok))
+mz.asked[k_old]["t"] = time.time() - 5 * 86400
+check("…but after a few days (or a wrong answer) it may come back",
+      not PC.Pacing(3, store=mz).repeat(k_old) and pz.repeat(k_old))
 
 print(f"tutor coach: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
