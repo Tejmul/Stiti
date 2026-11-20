@@ -25,7 +25,7 @@
 ![Evals](https://img.shields.io/badge/evals-19%20suites%20%C2%B7%20650%2B%20checks-success) ![CI](https://github.com/Tejmul/Stiti/actions/workflows/ci.yml/badge.svg)
 [![M8ven Score](https://m8ven.ai/badge/mcp/tejmul-stiti-16a7zi?v=ece25ed1c347c7ca8be899dbcfca98aa&variant=verified)](https://m8ven.ai/mcp/tejmul-stiti-16a7zi?s=readme)
 
-*"Hey Stiti" · "Wake up baby girl" — and she remembers everything.*
+*"Hey Stiti" — and she remembers everything.*
 
 **🔓 Fully open source under the [MIT license](LICENSE): use it, fork it, build your own Stiti.**
 
@@ -66,7 +66,7 @@ Talking to a voice assistant usually feels like talking to a form. We reverse-en
 | ✋ | **Interrupt her like a person** | Two-stage barge-in: she ducks at 250 ms, checks your words; "mm-hm / haan" → she carries on, real words → she stops. She only remembers the part you actually heard. |
 | ⚡ | **Answers before you finish the pause** | Preemptive reply: the LLM starts on the early transcript and plays only once the turn is final. Measured: commit → first word **530 ms → ~0 ms** on waiting turns. |
 | 🎩 | **JARVIS, not a chatbot** | A local *reply strategy* each turn (listen, solve, confirm, banter, stay quiet…) sets the word cap, whether she may ask a question or bring up a memory. Code enforces it: no therapy-speak, no flattery, no random "how did the interview go?". |
-| 🗣️ | **Hears *your* words** | Whisper prompt built from your own brain (names, projects, docs) + snap-to-glossary + a cloud second opinion on unsure turns. "Tejmal" → **Tejmul**. WER **12.4% → 6.8%** on Indian-accented speech. Say "no, I said X" and she learns the word. |
+| 🗣️ | **Hears *your* words** | Whisper prompt built from your own brain (names, projects, docs) + snap-to-glossary + a cloud second opinion on unsure turns. "Tanvick" → **Tanvik**. WER **12.4% → 6.8%** on Indian-accented speech. Say "no, I said X" and she learns the word. |
 | 🇮🇳 | **Indian-English voice** | goonj-1-82M personas (Apache-2.0) on the same Kokoro runtime: English by default, Hindi words pronounced right, one voice per reply. `stiti voices try / use`. |
 | 🧠 | **Instructions stick instantly** | "Talk in English", "keep it short", "don't ask so many questions", "stop asking about X" become permanent rules the moment you say them. |
 | 💛 | **Learns *your* moods** | Opt-in local recorder + labels from your own words ("I'm so tired", "I'm not angry") → a nightly personal head on emotion2vec, switched on only when it beats the generic model on your data. |
@@ -84,7 +84,7 @@ Talking to a voice assistant usually feels like talking to a form. We reverse-en
 | 🧘 | **Psychology built in** | At most 3 items per answer (cognitive load), no guilt words, a "minimum viable day" mode when you're drained, and WOOP goal-setting. |
 | 🔒 | **Privacy tiers** | P0 public · P1 personal · **P2 sensitive (money, health, passwords) never leaves your Mac.** Your conversations are never shown on any web page, and the public website ships no chat code at all. |
 | 🌙 | **Sleeps like a brain** | A nightly job turns the day's chats into facts, updates your profile, curates lessons, and writes `USER.md`, `LESSONS.md` and `GRAPH_REPORT.md`. |
-| 🎙️ | **Always-on voice** | Say **"Hey Stiti"** or **"Wake up baby girl"** → "Hey, how are you?" → talk. "Bye" gets a short goodbye. ~0.85 s from your last word to her voice on an M2. |
+| 🎙️ | **Always-on voice** | Say **"Hey Stiti"** (or a wake phrase of your own: `stiti wake add "…"`) → "Hey, how are you?" → talk. "Bye" gets a short goodbye. ~0.85 s from your last word to her voice on an M2. |
 | 📅 | **Plans your day** | "plan my day" → OR-Tools CP-SAT time-blocks your tasks around deadlines and morning energy in ~50 ms. |
 | 🌱 | **Habits without guilt** | Strength that grows and dents, never resets. Reminders fade as the habit sticks. |
 | 🪜 | **Breaks big goals down** | "break down: launch Stiti" → Socratic questions → one 25-minute step with an if-then plan. |
@@ -298,7 +298,7 @@ cp .env.example .env   # paste keys
 # 4. Talk
 uv run stiti doctor          # checks Postgres, embedder, keys, LLM
 uv run stiti chat --debug    # chat; /debug shows route, mood, latency
-uv run stiti voice           # always-on voice: "Hey Stiti" / "Wake up baby girl"
+uv run stiti voice           # always-on voice: "Hey Stiti" / "Hi Stiti"
 uv run stiti graph           # open your life graph
 uv run stiti ingest ~/Notes  # make your notes/PDFs/docs searchable memory
 uv run stiti onboard         # 3-minute intro so she knows who you are
@@ -307,6 +307,7 @@ uv run stiti install-app     # menubar app that starts at login (mic, Calendar, 
 uv run stiti sleep --now     # run the night job now
 uv run stiti web             # your local chat + Memory pages (127.0.0.1:7317; Stiti.app serves them too)
 uv run stiti voices          # list / try / pick her voice (Indian-English personas)
+uv run stiti wake add "wake up sunshine"   # a wake phrase of your own (saved in your local profile)
 uv run stiti recordings on   # opt-in local recorder that teaches her your moods (off by default)
 uv run stiti teach           # whiteboard lesson by voice (built-in "How a compiler works"; no key needed)
 uv run stiti teach book.pdf --chapter 3.1   # teach a book chapter (needs a free LLM key)
@@ -317,6 +318,9 @@ Website: `cd frontend && pnpm install && pnpm build` (Next.js, static). `STITI_P
 public, landing-only site.
 
 Personal data lives in Postgres and `~/.stiti/` (`SOUL.md`, `USER.md`, `LESSONS.md`, `GRAPH_REPORT.md`), **never in git**.
+Fork it and it's yours: the code knows nobody; your name, people, wake phrases and voices come from your own local
+profile. Before you push, `python scripts/privacy_check.py` scans the repo for anything from *your* profile (it prints
+file:line only, never the value); `python scripts/privacy_check.py --install-hook` runs it before every commit.
 `SOUL.md` is Stiti's personality. It's yours to edit.
 
 ---

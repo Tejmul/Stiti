@@ -1,6 +1,6 @@
 """Real-time life updates and corrections (D38) — written in the turn, not after a night the Mac may sleep through.
 
-"Actually, I left MVRX Labs… my internship is done, I left in September" got "Noted. I will mark that down." and
+"Actually, I left Orbitly… my internship is done, I left in September" got "Noted. I will mark that down." and
 nothing was written (2026-11-14). Now, deterministic patterns first (no LLM, ~1 ms + one embedding per fact):
 
   I left / quit / resigned from X · my internship at X is over · maine X chhod diya   → end his ties to X, add "left X"
@@ -34,7 +34,7 @@ REL_CANON = {"mum": "mother", "mom": "mother", "mummy": "mother", "maa": "mother
              "papa": "father", "daddy": "father", "abba": "father", "sis": "sister", "didi": "sister", "bro": "brother",
              "bhai": "brother", "gf": "girlfriend", "bf": "boyfriend", "room mate": "roommate", "fiance": "fiancé",
              "fiancee": "fiancée", "co-founder": "cofounder", "grandma": "grandmother", "grandpa": "grandfather"}
-# a proper noun as STT writes it: capitalised words / acronyms ("MVRX Labs", "Newton School of Technology")
+# a proper noun as STT writes it: capitalised words / acronyms ("Orbitly Labs", "Lakeview College of Engineering")
 _CAP = r"[A-Z0-9][\w&.'-]*"
 ORG = rf"(?P<x>{_CAP}(?:\s+(?:of|and|&|for|the|de)\s+{_CAP}|\s+{_CAP}){{0,4}})"
 NAME = r"(?P<name>[A-Z][a-z]{1,20}(?:\s[A-Z][a-z]{1,20})?)"
@@ -157,7 +157,7 @@ def _rel(r: str) -> str:
 
 
 def _first_to_third(x: str, who: str) -> str:
-    """'my mom's birthday is on 12 March' → "Tejmul's mom's birthday is on 12 March"."""
+    """'my mom's birthday is on 12 March' → "Ravi's mom's birthday is on 12 March"."""
     reps = [(r"\bI'm\b|\bI am\b", f"{who} is"), (r"\bI've\b", f"{who} has"), (r"\bI\b", who), (r"\bmy\b", f"{who}'s"),
             (r"\bmine\b", f"{who}'s"), (r"\bme\b", who), (r"\bmyself\b", who)]
     for rx, rep in reps:
@@ -188,7 +188,7 @@ _IMPERATIVE_HEAD = re.compile(r"^\W*(?:(?:okay|ok|so|and|also|hey|stiti|please|j
 
 
 def _name(n: str | None) -> str | None:
-    """'Okay Pugal' → 'Pugal' (a capitalised filler word glued to the name by the regex)."""
+    """'Okay Kabir' → 'Kabir' (a capitalised filler word glued to the name by the regex)."""
     if not n:
         return None
     words = [w for w in n.split() if w not in NOT_NAMES]
@@ -247,7 +247,7 @@ def capture(text: str, user_ep: int | None, *, now: datetime | None = None, priv
                 continue
             org_left = True
             if any(o.startswith(x.lower()) or x.lower().startswith(o) for o in left_orgs):
-                break                                   # "…left MVRX Labs… I left MVRX" — the same place
+                break                                   # "…left Orbitly Labs… I left Orbitly" — the same place
             left_orgs.append(x.lower())
             org = resolve_entity(x, "org")
             fid = add(mine(), "left", f"{who} left {x}" + (f" in {when:%B %Y}" if when else "") + ".",
@@ -380,7 +380,7 @@ def _base(verb: str) -> str:
 
 
 def _correct(old: str, new: str, eps: list[int], privacy: int) -> list[int]:
-    """'not Newton's Club, it's Newton School of Technology': every current fact naming `old` is retracted (never
+    """'not Lakeview's Club, it's Lakeview College of Engineering': every current fact naming `old` is retracted (never
     true — a mishearing) and re-stated with `new`; an entity named `old` is renamed (old name kept as an alias).
     Returns new fact ids (and -entity_id for each renamed entity)."""
     rx = re.compile(rf"(?<!\w){re.escape(old)}(?!\w)", re.I)

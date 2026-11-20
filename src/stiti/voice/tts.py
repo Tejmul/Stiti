@@ -89,7 +89,7 @@ def say_as_setting() -> dict[str, str]:
 
 
 def apply_say_as(text: str, table: dict[str, str]) -> str:
-    """Whole-word, case-insensitive respelling ("Tej" → "Tayj"); longer words first so "Tejmul" wins over "Tej"."""
+    """Whole-word, case-insensitive respelling ("Arav" → "Ahrahv"); longer words first so "Aravind" wins over "Arav"."""
     for w in sorted(table, key=len, reverse=True):
         text = re.sub(rf"(?<!\w){re.escape(w)}(?!\w)", table[w], text, flags=re.I)
     return text

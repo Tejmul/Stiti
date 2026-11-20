@@ -1,7 +1,7 @@
 """She learns from normal conversation (D38): night extraction, real-time life updates, honest "noted".
 
 His real data (2026-11-14, 4 days, ~270 episodes): 12 facts, all from a resume import; two night runs extracted
-{} and {"added": 1}; "Actually, I left MVRX Labs…" got "Noted. I will mark that down." and nothing was written.
+{} and {"added": 1}; "Actually, I left <his old company>…" got "Noted. I will mark that down." and nothing was written.
 Here the same shapes with a made-up person (Ravi). The cloud LLM is FAKED (router.complete returns realistic
 extraction JSON), so this runs offline and deterministically.
 
@@ -252,12 +252,12 @@ lifeupdate.join()
 check("'I don't play hockey anymore' → updated", "hockey" in r and ("pdated" in r or "changed" in r), r)
 check("…the hockey fact is ended", not cur("f.fact_text ILIKE '%%hockey player%%'"))
 check("…and it's not mistaken for a lesson about how she talks", one("SELECT count(*) n FROM lessons")["n"] == n_les)
-r = eng.turn("Okay Pugal is my son. Do you know him?")
+r = eng.turn("Okay Ishan is my son. Do you know him?")
 lifeupdate.join()
-check("'Pugal is my son' → person + relation", bool(cur("s.name='Pugal' AND f.predicate='son_of'")), r)
+check("'Ishan is my son' → person + relation", bool(cur("s.name='Ishan' AND f.predicate='son_of'")), r)
 prof = one("SELECT content FROM briefing_cache WHERE key='standing_profile'")["content"]
-check("standing profile rebuilt right after the turn", "Pugal" in prof and "left Orbitly" in prof, prof)
-check("USER.md re-rendered right after the turn", "Pugal" in (sleep.CFG.home / "USER.md").read_text())
+check("standing profile rebuilt right after the turn", "Ishan" in prof and "left Orbitly" in prof, prof)
+check("USER.md re-rendered right after the turn", "Ishan" in (sleep.CFG.home / "USER.md").read_text())
 r = eng.turn("Remember that my locker code is 4412.")
 lifeupdate.join()
 check("'remember that…' is saved before she says so", r in say.variants("remember_ack")

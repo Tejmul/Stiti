@@ -3,8 +3,8 @@
 Wispr Flow learns words when the user edits a transcript (re_wispr_flow.md §3: align old/new text, keep ≤ 4 word
 substitutions, store `phrase + observedSource`). Stiti has no text box to watch, so the voice version listens for a
 correction right after a mis-hearing:
-  "no, I said Tejmul" · "it's Stiti, not City" · "Tejmul, not Tejmal" · "spell it T-E-J-M-U-L" ·
-  "nahi, maine Tejmul bola" · and explicit: "add 'Zonuly' to your vocabulary", "remember the word Zonuly".
+  "no, I said Tanvik" · "it's Stiti, not City" · "Tanvik, not Tanvick" · "spell it T-A-N-V-I-K" ·
+  "nahi, maine Tanvik bola" · and explicit: "add 'Tilecraft' to your vocabulary", "remember the word Tilecraft".
 The heard form comes from the correction itself ("not City") or from the previous utterance (the closest-sounding
 span). Learned terms go into the Whisper glossary (top priority, like Wispr's manual words) and the snap step; the
 heard form becomes a rewrite rule — unless it is an ordinary single word ("City" stays "City" elsewhere).
@@ -85,7 +85,7 @@ def add(term: str, heard: str | None = None, source: str = "explicit") -> None:
 
 # ---------------------------------------------------------------- rewrite known mis-hearings
 def _safe_heard(h: str) -> bool:
-    """Rewrite a heard form everywhere only if it can't be an ordinary word ('Tejmal', "Newton's Club" yes;
+    """Rewrite a heard form everywhere only if it can't be an ordinary word ('Tanvick', "Darwin's Club" yes;
     'City' no — that one only biases the prompt)."""
     from .glossary import _is_ordinary
     words = h.split()
@@ -112,22 +112,22 @@ RX = [
     # "spell it T-E-J-M-U-L" / "it's spelled T E J M U L"
     ("spelled", re.compile(rf"^{_LEAD}(?:{_NEG}[,.!]?\s*)?(?:(?:you )?spell(?:ed|t)?(?: it| that| my name| the name)?"
                            rf"(?: as| like| is)?|it'?s spelled|spelling is|the spelling is)\s*[:,]?\s*(?P<s>.+)$", re.I)),
-    # explicit: "add 'Zonuly' to your vocabulary", "remember the word Zonuly"
+    # explicit: "add 'Tilecraft' to your vocabulary", "remember the word Tilecraft"
     ("explicit", re.compile(rf"^{_LEAD}(?:please )?(?:add|put|save)\s+(?:the word |the name )?[{_Q}]?(?P<good>{_TERM}?)"
                             rf"[{_Q}]?\s+(?:to|in|into)\s+(?:your|my|the)\s+(?:vocabulary|vocab|dictionary|word list|"
                             rf"words)\b.*$", re.I)),
     ("explicit", re.compile(rf"^{_LEAD}(?:please )?(?:remember|learn)\s+(?:the|this|my)\s+(?:word|name|spelling)\s*[:,]?\s*"
                             rf"[{_Q}]?(?P<good>{_TERM}?)[{_Q}]?[.!]?$", re.I)),
-    # "not City, Stiti" / "not Tejmal, it's Tejmul"
+    # "not City, Stiti" / "not Tanvick, it's Tanvik"
     ("pair", re.compile(rf"^{_LEAD}(?:{_NEG}[,.!]?\s*)?not\s+[{_Q}]?(?P<bad>{_TERM}?)[{_Q}]?[,.;!]?\s+(?:it'?s |it is |"
                         rf"but |i said )?[{_Q}]?(?P<good>{_TERM}?)[{_Q}]?[.!]?$", re.I)),
-    # "it's Stiti, not City" / "Tejmul, not Tejmal" / "my name is Tejmul not Tejmal" / "Tejmul bola, Tejmal nahi"
+    # "it's Stiti, not City" / "Tanvik, not Tanvick" / "my name is Tanvik not Tanvick" / "Tanvik bola, Tanvick nahi"
     ("pair", re.compile(rf"^{_LEAD}(?:{_NEG}[,.!]?\s*)?(?:it'?s |it is |its |i said |say |my name is |the name is |"
                         rf"call me |that'?s )?[{_Q}]?(?P<good>{_TERM}?)[{_Q}]?[,;]?\s+not\s+[{_Q}]?(?P<bad>{_TERM}?)"
                         rf"[{_Q}]?[.!?]?$", re.I)),
     ("pair", re.compile(rf"^{_LEAD}[{_Q}]?(?P<good>{_TERM}?)[{_Q}]?\s+(?:bola|kaha)[,]?\s+[{_Q}]?(?P<bad>{_TERM}?)[{_Q}]?"
                         rf"\s+nahi[n]?[.!]?$", re.I)),
-    # "no, I said Tejmul" / "nahi, maine Tejmul bola" (needs the "no": "I said hello" alone is not a correction)
+    # "no, I said Tanvik" / "nahi, maine Tanvik bola" (needs the "no": "I said hello" alone is not a correction)
     ("said", re.compile(rf"^{_LEAD}{_NEG}[,.!]?\s*(?:i said|i say|i'?m saying|i meant|it'?s|it is|its|maine|main ne|"
                         rf"mera naam)\s+[{_Q}]?(?P<good>{_TERM}?)[{_Q}]?(?:\s+(?:bola|kaha|hai))?[.!]?$", re.I)),
 ]
@@ -140,7 +140,7 @@ def _clean(t: str) -> str:
 
 
 def _letters(s: str) -> str | None:
-    """'T-E-J-M-U-L' / 'T E J M U L' / 'Tee E J M U L.' → 'Tejmul' (single letters only)."""
+    """'T-A-N-V-I-K' / 'T A N V I K' / 'Tee A N V I K.' → 'Tanvik' (single letters only)."""
     m = _SPELLED.search(s)
     if not m:
         return None

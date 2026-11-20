@@ -4,7 +4,7 @@
 thinking ("So..." → instant reply, once just "…"), cuts him mid-sentence (the next segment starts with "and…": "and web. It
 contains…", "And I'll put the chat."), sometimes "doesn't hear him", speaks Hinglish when he asked for English, nags with the
 onboarding line on every wake, and asks follow-ups about old memories that have nothing to do with the topic.
-**Target:** "Hey Stiti" → "Hey Tej, how are you?" → long reminder sentence with pauses → "Got it, 4 PM. Anything else?" →
+**Target:** "Hey Stiti" → "Hey Ravi, how are you?" → long reminder sentence with pauses → "Got it, 4 PM. Anything else?" →
 "Not yet. Any new research paper?" → answer. Commercial systems (ElevenLabs, OpenAI, Deepgram, Hume) are covered by a
 separate doc; here they get one line each. **This doc reads the open-source stacks at source level.**
 
@@ -142,7 +142,7 @@ pre-recorded clips, only after he has talked ≥ `backchanneling_start_delay` (5
   asked". **Never ask a follow-up question about an old memory he didn't raise.**
 - **Fragments:** if a turn is committed by timeout but still looks unfinished, say only "Mm-hm?" / "Go on." (Unmute). Never guess
   the rest.
-- **Wake greeting:** ≤ 6 words, time-aware, varied ("Hey Tej, how are you?", "Morning! What's up?"). The onboarding offer is
+- **Wake greeting:** ≤ 6 words, time-aware, varied ("Hey Ravi, how are you?", "Morning! What's up?"). The onboarding offer is
   made at most once a day and never after he declines. The morning brief only when he asks for it.
 - **Ending:** after "Not yet / that's it / nothing" in reply to "Anything else?" → "Okay, I'm here." and go quiet (stay awake
   until the timeout, no chime). She never ends the conversation on her own ("Since it's late, I'll let you go").

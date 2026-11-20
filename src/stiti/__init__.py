@@ -1,4 +1,4 @@
-"""Stiti — Tejmul's local-first buddy. The brain is the memory engine; the LLM is a plug."""
+"""Stiti — a local-first voice buddy for whoever installs her. The brain is the memory engine; the LLM is a plug."""
 import os
 import sys
 import threading
@@ -104,6 +104,9 @@ def doctor():
               f"{' · silenced' if h.get('silenced') else ''}")
     else:
         print("➖ Stiti.app: not installed or never ran (uv run stiti install-app)")
+    from .install_app import legacy_agents
+    if legacy_agents():
+        print("❌ Login item: an older LaunchAgent label is still installed — run `uv run stiti migrate-local`")
     bk = sorted((CFG.home / "backups").glob("stiti-*.enc")) if (CFG.home / "backups").exists() else []
     print(f"{ok(bool(bk))} Backups: {len(bk)} kept" + (f", newest {bk[-1].name}" if bk else " — run `uv run stiti backup`"))
     try:
@@ -194,6 +197,12 @@ def main() -> None:
     elif cmd == "voices":
         from .voice.voices import cli as voices_cli
         voices_cli(args)
+    elif cmd == "wake":
+        from .voice.wake import cli as wake_cli
+        wake_cli(args)
+    elif cmd == "migrate-local":
+        from .migrate_local import cli as migrate_cli
+        migrate_cli(args)
     elif cmd == "sleep":
         from .brain.sleep import run
         run(verbose=True)
@@ -201,4 +210,4 @@ def main() -> None:
         from .learn.recorder import cli
         cli(args[1:])
     else:
-        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | voices [try|use <persona> | install] | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open] | recordings [status|on|off|delete [--before YYYY-MM-DD]|train]]")
+        print("usage: stiti [chat [--debug] | onboard | voice [--no-aec] [--debug] | backup [--show-key] | restore <file> [--into db] | ingest <path> | graph | mood | app | install-app | uninstall-app | mcp [approve <name>] | doctor | voices [try|use <persona> | install] | wake [add|remove "<phrase>"] | migrate-local [--wake "<phrase>"] | sleep --now | teach [topic|book.pdf --chapter N|--resume] [--type|--silent|--no-board] | book <file> | web [--no-open] | recordings [status|on|off|delete [--before YYYY-MM-DD]|train]]")

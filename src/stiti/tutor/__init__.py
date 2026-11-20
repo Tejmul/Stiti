@@ -4,12 +4,14 @@
     uv run stiti teach "how DNS works"     # any topic (needs a free LLM key in .env)
     uv run stiti teach book.pdf --chapter 3.1
     uv run stiti teach --resume            # continue the last unfinished lesson
+    uv run stiti teach --review [book.pdf] # spoken quiz of the concept cards that are due (all, or one file's)
     uv run stiti book book.pdf             # just show the book's outline
 Flags: --type (speakers + keyboard, no mic) · --silent (no sound) · --no-board (voice only, no screen)
        --minutes N · --debug
-Coach (his file or a topic): --focus "A and B" · --ptt · --classic (old lesson) ·
+Coach (his file or a topic): --focus "A and B" · --ptt · --blurt (free-recall test after each topic) · --classic ·
        --goal-mode learn|exam|day [--days N] [--hours H]  (goal already known, e.g. from the web Lessons page:
        the coach skips "is this for an exam?")
+Review: --review [<file or topic>] [--key <mastery key>] [--limit N] [--ptt]
 """
 from __future__ import annotations
 
@@ -206,7 +208,7 @@ def answerer(planner=None, lesson=None):
         return None
 
 
-VALUE_FLAGS = ("--chapter", "--minutes", "--hours", "--goal", "--focus", "--goal-mode", "--days")
+VALUE_FLAGS = ("--chapter", "--minutes", "--hours", "--goal", "--focus", "--goal-mode", "--days", "--key", "--limit")
 
 
 def _teach(args: list[str]) -> dict:
@@ -224,6 +226,8 @@ def _teach(args: list[str]) -> dict:
     srv = BoardServer(on_connect=lambda: holder["t"].on_connect() if "t" in holder else waiting) if board else None
     events = srv.events if srv else queue.Queue()
     print("Stiti is getting ready… (voice, whiteboard)" if mode == "voice" else "Stiti is getting ready…")
+    if "--review" in args:
+        return _review_session(target, args, mode, srv, events, holder)
     if course:
         audio = au.make(mode, events, debug="--debug" in args)
         return _course_session(args, target, audio, events, srv, stop_args=args)
@@ -350,7 +354,8 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
     try:
         for _ in range(4):                           # at most a few re-plans in one sitting
             coach = Coach(book_path or target, audio=audio, events=events, server=srv, book_path=book_path,
-                          unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")))
+                          unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")),
+                          blurt="--blurt" in args)          # Feature 5: "test me with Blurt" (Lessons page)
             fut = None                               # a re-plan (other unit) maps again
             holder["t"] = coach.t
             coach.t.ptt_mode = "--ptt" in args          # hold-to-talk from the start (noisy room)
@@ -374,6 +379,70 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
             srv.stop()
     print(f"\n✅ {'Finished' if res.get('finished') else 'Stopped'}: checks {res.get('checks_right', 0)}/"
           f"{res.get('checks_graded', 0)}, {res.get('questions', 0)} question(s).")
+    return res
+
+
+def review_source(target: str | None) -> str | None:
+    """`--review <file>` → the file's mastery source (absolute path); a topic stays itself; nothing → every source."""
+    if not target:
+        return None
+    p = Path(target).expanduser()
+    return str(p) if p.suffix.lower() in BOOK_EXTS and p.exists() else target
+
+
+def _review_session(target: str | None, args: list[str], mode: str, srv, events, holder: dict) -> dict:
+    """`teach --review [<file>] [--key K] [--limit N]`: the due concept cards as one short spoken quiz (feature 3).
+    Nothing due → says so and never opens the board."""
+    from . import audio as au
+    from . import srs
+    from .review import REVIEW_MAX, Review
+    key = _arg(args, "--key")
+    try:
+        limit = max(1, min(30, int(_arg(args, "--limit", str(REVIEW_MAX)))))
+    except ValueError:
+        limit = REVIEW_MAX
+    try:
+        cards = srs.due_concepts(key, review_source(target), limit)
+    except Exception as e:
+        print(f"Couldn't read your review cards right now ({type(e).__name__}: {str(e)[:120]}).")
+        return {"finished": False}
+    if not cards:
+        try:
+            nxt = srs.next_due(key)
+        except Exception:
+            nxt = None
+        print("Nothing is due for review right now." + (f" Next card: {nxt.astimezone():%a %d %b, %H:%M}." if nxt else ""))
+        return {"finished": True, "reviewed": [], "checks_right": 0, "checks_graded": 0}
+    if srv:
+        srv.start()
+        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (your open board tab picks it up; otherwise it opens now — press F for full screen)\n")
+        if "--no-open" not in args:
+            threading.Thread(target=srv.open_if_no_tab, daemon=True).start()
+    try:
+        audio = au.make(mode, events, debug="--debug" in args)
+    except BaseException:
+        if srv:
+            srv.stop()
+        raise
+    stop = threading.Event()
+    if mode != "voice" or sys.stdin.isatty():
+        threading.Thread(target=_stdin_reader, args=(events, stop), daemon=True).start()
+    print(f"Review: {len(cards)} card(s) due. Answer out loud (or type); say 'skip' or 'end' any time.\n")
+    try:
+        rv = Review(cards, audio=audio, events=events, server=srv)
+        holder["t"] = rv.t
+        rv.t.ptt_mode = "--ptt" in args
+        if srv:
+            srv.connected.wait(15)
+            for m in rv.t.on_connect():
+                srv.send(m)
+        res = rv.run()
+    finally:
+        stop.set()
+        audio.close()
+        if srv:
+            srv.stop()
+    print(f"\n✅ Review: {res.get('checks_right', 0)}/{res.get('checks_graded', 0)} right. Next reviews scheduled.")
     return res
 
 
@@ -435,7 +504,7 @@ def _course_session(args: list[str], target: str | None, audio, events, srv, sto
             for r in res.get("results") or []:
                 if r.get("segment", "").startswith("c"):
                     srs.review(int(r["segment"][1:]), srs.rating_for(r.get("verdict"), r.get("hints", 0),
-                                                                        r.get("confidence")))
+                                                                        r.get("confidence"), rung=r.get("rung")))
             print(f"\n✅ Revision: {res['checks_right']}/{res['checks_graded']} right. Next reviews scheduled.")
             return res
         if "--resume-course" in args:
@@ -491,6 +560,15 @@ REVISE_START_RX = __import__("re").compile(
     r"^(?:(?:hey |hi )?stiti,? )?(?:let'?s |start (?:my |the )?|time (?:to|for) |can we |chalo )?(?:revise|revision)"
     r"(?: (?:time|karna( hai)?|karao|karte hain|session|now|please))?$|\brevision (?:time|karna|karao|session)\b|"
     r"\brevise karna hai\b|\b(?:my |the )?flashcards?\b", __import__("re").I)
+# a REVIEW session of the concept cards that are due (feature 3): the whole line is the request, so "review my PR",
+# "start the review of my code" or "what's due today?" (to-dos, bills) never start a quiz
+REVIEW_START_RX = __import__("re").compile(
+    r"^(?:(?:hey |hi )?stiti,? )?(?:ok(?:ay)?,? |so,? |now,? )?(?:"
+    r"(?:let'?s |start (?:my |the |a )?|begin (?:my |the |a )?|open (?:my |the )?|do (?:my |a )?|"
+    r"time (?:to|for) (?:my |a )?|can we |chalo |quick )?review"
+    r"(?: (?:time|session|now|please|my cards|cards|what'?s due|karna hai|karte hain|karo))?(?: please| now)?"
+    r"|what(?:'s| is) due(?: (?:for|to) review(?: today)?)?"
+    r"|what (?:do|should) i (?:need to )?review(?: today| now)?)$", __import__("re").I)
 # to-dos, reminders and alarms are never lessons, even when they say "revise" / "study" / "teach"
 NOT_A_LESSON_RX = __import__("re").compile(
     r"\b(add|put|daal|note (it )?down)\b.*\b(to-?do|todos?|tasks?|list)\b|\b(remind me|reminder|alarm)\b",
@@ -532,6 +610,8 @@ def voice_request(text: str) -> tuple | None:
         return None          # "add revise DBMS notes to my to-do list" is a to-do, not a revision session (2026-11-11)
     if COURSE_RESUME_RX.search(t):
         return None, True, "night"
+    if REVIEW_START_RX.search(t):
+        return None, False, "review"
     if REVISE_START_RX.search(t):
         return None, False, "revise"
     if RESUME_RX.search(t):
@@ -655,6 +735,17 @@ def _launch(topic: str | None, resume: bool, mode: str | None) -> str:
         return "Your lesson's already open on the whiteboard."
     if not topic and not resume and mode is None:
         return ASK_TOPIC                        # "can you teach me?" alone: ask, don't start a random lesson
+    if mode == "review":                        # feature 3: the due concept cards (no LLM needed)
+        try:
+            from . import srs
+            n = srs.due_counts()["total"]
+        except Exception:
+            n = None
+        if n == 0:
+            return "Nothing's due for review right now. Cards come back just before you'd forget them."
+        _spawn(["--review"])
+        return (f"Review time: {n} card{'s' if n != 1 else ''} due. Opening the board." if n
+                else "Review time! Opening the board.")
     if mode in ("night", "revise"):
         if mode == "revise":
             args, msg = ["--revise"], "Revision time! Opening the board."

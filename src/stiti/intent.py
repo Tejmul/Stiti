@@ -42,7 +42,7 @@ DOMAIN_EX = {
              "bas aise hi baat karne ka mann tha",
              # life updates with people + days (2026-11-11: these went to tool / time / memory / control)
              "my uncle is coming over this weekend", "my brother's wedding is next month",
-             "dad is travelling to Hyderabad tomorrow", "I have a test on Friday", "my roommate got an internship today",
+             "dad is travelling to Jaipur tomorrow", "I have a test on Friday", "my roommate got an internship today",
              "my friend got a job at Google", "I'm meeting my friends tonight", "kal ghar pe guests aa rahe hain",
              "I'm so tired of this bug", "I'm done for today, my brain is fried", "ugh this assignment is killing me",
              # Telugu / Tenglish chat

@@ -10,7 +10,7 @@ D27 (docs/research/stt_tts_indian_english.md, re_wispr_flow.md), one transcripti
 3. **Escalate, don't drop.** Unsure local text (avg_logprob < −0.5), empty text while there was speech, Whisper's own
    no-speech filter firing on real speech ("Add buy milk to my todos" was dropped) or a prompt copy → the same audio
    goes to Groq whisper-large-v3 with the same prompt (stt_cloud.py, 700 ms cap, keep local text otherwise).
-4. **Snap to glossary** ("Tejmal" → "Tejmul", "Newton's Club" → "Newton School"), < 1 ms, ordinary words untouched.
+4. **Snap to glossary** ("Tanvick" → "Tanvik", "Darwin's Club" → "Darwin School"), < 1 ms, ordinary words untouched.
 Confidence: `transcribe_ex()` returns Whisper's own no_speech_prob / avg_logprob (duration-weighted) so the loop can
 refuse a phantom "Bye." and ask "Sorry, say that again?" instead of answering garbage.
 """
@@ -31,14 +31,14 @@ from . import glossary, hinglish, stt_cloud
 from .models import WHISPER_MAIN
 
 # the old one-block prompt (kept: tests and tools still use it as a plain Hinglish bias)
-HINGLISH_PROMPT = ("Hey Stiti. Wake up baby girl. Haan Stiti, kal subah 6 baje alarm laga do. "
+HINGLISH_PROMPT = ("Hey Stiti. Haan Stiti, kal subah 6 baje alarm laga do. "
                    "Meri todos kya hain? Aaj bahut kaam tha yaar. Remind me to call mummy.")
 WAKE_PROMPT = HINGLISH_PROMPT
 # D27 example blocks (none of them is a test sentence: an earlier draft that reused test lines looked 2 points better
 # than it was). Measured, whisper-small q4, 110 clips, + snap: English block first 7.8% WER (commands 5.3%), Hinglish
 # block first 7.9% (Hinglish 15.3%); English only 21.8% (it TRANSLATES Hinglish: 63%). So both blocks are always
 # there and the language prior only picks the order.
-WAKE_LINE = "Hey Stiti. Wake up baby girl."
+WAKE_LINE = "Hey Stiti."          # + the owner's own wake phrases from the local profile: see wake_line()
 EN_LINES = "Okay, set a reminder for my class tomorrow. What's on my calendar today?"
 HI_LINES = ("Haan Stiti, shaam ko 5 baje yaad dila dena. Aaj ka plan kya hai? "
             "Thoda busy hoon yaar, baad mein baat karte hain.")
@@ -161,13 +161,24 @@ def voiced_ms(audio: np.ndarray) -> int:
 
 
 # ---------------------------------------------------------------- prompt
+def wake_line() -> str:
+    """'Hey Stiti.' + each of the owner's own wake phrases (local profile) as a sentence, so Whisper expects them."""
+    try:
+        from . import wake
+        extra = wake.extra_phrases()[:3]
+    except Exception:
+        extra = []
+    return " ".join([WAKE_LINE] + [wake.spoken(p) + "." for p in extra])
+
+
 def build_prompt(lang: str = "en", prev: str = "", cloud: bool = False) -> str:
     """Glossary + the previous utterance + example blocks (ordered by the language prior)."""
-    blocks = [WAKE_LINE] + ([HI_LINES, EN_LINES] if lang == "hinglish" else [EN_LINES, HI_LINES])
+    wl = wake_line()
+    blocks = [wl] + ([HI_LINES, EN_LINES] if lang == "hinglish" else [EN_LINES, HI_LINES])
     try:
         from ..brain.lang import english_only
         if english_only():                            # D51: Hinglish example lines made Whisper write his English
-            blocks = [WAKE_LINE, EN_LINES]            # as "Draw jaisi Nandini raha hai" (2026-11-20 lesson log)
+            blocks = [wl, EN_LINES]                   # as Hindi-looking gibberish (2026-11-20 lesson log)
     except Exception:
         pass
     parts = [glossary.prompt_text(cloud=cloud)] if os.getenv("STITI_STT_BIAS", "on") != "off" else []

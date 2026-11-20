@@ -2,7 +2,7 @@
 
 - tool-RAG: only the top-5 tools most similar to the request are shown to the LLM (embedder, ~ms).
 - risk tiers: read → auto · low (open app, volume) → auto + announced · write/irreversible →
-  never executed without an explicit "haan/yes" from Tejmul on the next turn.
+  never executed without an explicit "haan/yes" from the owner on the next turn.
 - taint: once a turn has read untrusted content (mail, web, MCP output), write tools are blocked
   for that turn (CaMeL-lite: injected text can't make Stiti act).
 """

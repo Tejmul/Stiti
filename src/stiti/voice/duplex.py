@@ -2,7 +2,7 @@
 
 One 48 kHz duplex stream, 10 ms blocks: everything Stiti plays is fed to the APM as the far-end
 reference, the mic is cleaned against it, then downsampled to 16 kHz for VAD/STT.
-=> Tejmul can interrupt her on laptop speakers, no headphones needed (research: AEC was the blocker).
+=> the owner can interrupt her on laptop speakers, no headphones needed (research: AEC was the blocker).
 
 Barge-in controls (endpoint.py decides, this only does it): duck() lowers her to 30 % with a 30 ms ramp, pause()
 fades out and HOLDS the queue, resume() fades back in where she paused, stop_playback() fades out over 30 ms and

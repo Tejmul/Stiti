@@ -1,7 +1,7 @@
 # Learning from normal conversation — memory extraction + real-time updates (D38)
 
 **Problem (his real brain, 2026-11-14, 4 days, ~270 episodes):** 12 current facts, all from a day-one resume import.
-Two night runs extracted `{}` and `{"added": 1}` (a mishearing). 2 entities, 1 lesson. "Actually, I left MVRX Labs…"
+Two night runs extracted `{}` and `{"added": 1}` (a mishearing). 2 entities, 1 lesson. "Actually, I left Orbitly Labs…"
 got "Noted. I will mark that down." and nothing was written.
 
 ## How others turn chat into long-term memory

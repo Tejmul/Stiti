@@ -1,6 +1,6 @@
 # Agent core: tool calling, MCP, task state, memory (research, 2026-11-18)
 
-**Question (Tejmul):** can MCP and tool calling be faster, and can state and memory for a task be better, so a
+**Question (the owner):** can MCP and tool calling be faster, and can state and memory for a task be better, so a
 task he says once is carried to the end and a different phrasing does not break it?
 
 **Short answer:** yes, with four small pieces and no new model: (A) one local **skill router** instead of
@@ -156,7 +156,7 @@ vectors in a table so routing works while it is stopped. Voice timeout 8 s; reco
 | 5 | E + first MCP server (GitHub, read-only) | `footprint` before and after; idle stop works | RAM; poisoned descriptions → pin-and-diff, read-only token |
 | 6 | Later: save a finished plan as a reusable recipe; a small trained head on the `decisions` log | Second run of the same task needs no planning call | Stale recipes |
 
-## 5. Open questions for Tejmul
+## 5. Open questions for the owner
 
 1. Which three multi-step tasks should work first? They decide the first tools.
 2. Which accounts: GitHub token (read-only first?), and may she *send* mail after "haan", or only write drafts?

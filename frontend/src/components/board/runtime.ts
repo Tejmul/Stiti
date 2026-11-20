@@ -4,6 +4,8 @@
 // Ported from the plain-JS board (src/stiti/tutor/web/board.js), same action protocol:
 //   {do: "add", anim: none|fade|grow|type|sketch, els: [skeleton…], z?: "back", files?: [{id, dataURL, mimeType}]}
 //   {do: "style", ids, props} · {do: "erase", ids} · {do: "camera", rect: [x, y, w, h], ms}
+//   {do: "source", id, ids, page, unit, quote, passage, q_start, q_end}   (feature 2: a cited answer's source card;
+//   nothing to draw — the page keeps it so a click on the card opens the whole passage)
 
 type Lib = typeof import("@excalidraw/excalidraw");
 type Api = any;
@@ -25,6 +27,7 @@ export interface RuntimeOpts {
   toolbarShown: () => boolean;              // Excalidraw's own toolbar visible (D)
   reduced: () => boolean;                   // prefers-reduced-motion
   send: (m: object) => void;
+  source?: (a: Action) => void;             // a source card was drawn (feature 2)
 }
 
 export function createRuntime(o: RuntimeOpts) {
@@ -220,6 +223,7 @@ export function createRuntime(o: RuntimeOpts) {
       if (a.do === "style") return mutate(new Set(a.ids), () => a.props);
       if (a.do === "erase") { const ids = new Set(a.ids); return put(scene().filter((e) => !ids.has(e.id) && !ids.has(e.containerId))); }
       if (a.do === "camera") return camera(a, instant);
+      if (a.do === "source") return o.source?.(a);
     } catch (err) { o.send({ type: "error", msg: String(err).slice(0, 300), action: a.do }); }
   }
 

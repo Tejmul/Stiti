@@ -1,4 +1,4 @@
-"""Onboarding interview: Stiti gets to know Tejmul in ~3 minutes — no LLM needed.
+"""Onboarding interview: Stiti gets to know her owner in ~3 minutes — no LLM needed.
 
 10 short questions (voice or text). Each answer is stored verbatim as a high-importance episode
 (the night job can extract more later) AND written straight into the brain deterministically:
@@ -15,8 +15,10 @@ from ..config import CFG
 from ..db import one, q
 
 STATE = CFG.home / "onboarding.json"
+# (a bare "shuru karo" — "lesson shuru karo", "chalo shuru karo" — restarted the intro and asked "what should I call
+# you?" again: only the intro itself starts it)
 START_RX = re.compile(r"\b(onboard(ing)?|get to know me|mujhe jaano|mere baare mein jaano|intro (karte|karo|shuru)|"
-                      r"let'?s do the intro|shuru karo|start (the )?intro)\b", re.I)
+                      r"let'?s do the intro|start (the )?intro)\b", re.I)
 SKIP_RX = re.compile(r"^\s*(skip|pass|next|chhodo|chodo|aage|nahi pata|don'?t know)\b", re.I)
 PAUSE_RX = re.compile(r"^\s*(bas|stop|later|baad mein|ruk|pause)\b", re.I)
 NOTHING_RX = re.compile(r"^\s*(nothing|none|no|kuch nahi|nahi|nope|kuch bhi nahi)\s*\.?$", re.I)
@@ -99,7 +101,11 @@ def _apply(key: str, ans: str) -> str | None:
     if key == "name":
         name = re.sub(r"^(call me|you can call me|mujhe|i'?m|main)\s+", "", a, flags=re.I).split()[0:3]
         name = " ".join(name).strip(" ,.") or a
-        _directive(f"Call him “{name}”", "talk_style", "call_me")
+        from .. import profile
+        if not profile.get("name"):                  # a fresh install learns who it works for from the owner, locally
+            profile.set("name", name, "intake")
+        profile.set("call_me", name, "intake")
+        _directive(f"Call the owner “{name}”", "talk_style", "call_me")
         return f"what to call you ({name})"
     if key == "home":
         _self_fact("home", f"Home: {a}")
@@ -119,7 +125,7 @@ def _apply(key: str, ans: str) -> str | None:
             _self_fact("people", f"Important people: {a}")
         return f"{len(people)} people" if people else "your people"
     if key == "day":
-        _directive(f"His normal day: {a}", "routine", "routine_day")
+        _directive(f"Normal day: {a}", "routine", "routine_day")
         return "your routine"
     if key == "goals":
         goals = [g.strip(" .") for g in re.split(r"[,;\n]|\b\d[.)]\s*", a) if len(g.strip(" .")) > 2][:3]
@@ -127,7 +133,7 @@ def _apply(key: str, ans: str) -> str | None:
             _directive(f"Working towards: {g}", "goal", f"goal_{i}")
         return f"{len(goals) or 1} goal(s)"
     if key == "talk":
-        _directive(f"How he wants to be talked to: {a}", "talk_style", "talk_pref")
+        _directive(f"How to talk to the owner: {a}", "talk_style", "talk_pref")
         return "how to talk to you"
     if key == "never":
         if NOTHING_RX.match(a):
@@ -136,12 +142,42 @@ def _apply(key: str, ans: str) -> str | None:
         _directive(f"Never {rule}", "boundary", "boundary_main")
         return "what to never do"
     if key == "support":
-        _directive(f"When he's stressed or low, what helps: {a}", "preference", "support_style")
+        _directive(f"When stressed or low, what helps: {a}", "preference", "support_style")
         return "what helps when you're low"
     if key == "role":
-        _directive(f"He wants Stiti to be: {a}", "preference", "stiti_role")
+        _directive(f"Wants Stiti to be: {a}", "preference", "stiti_role")
         return "what I should be for you"
     return None
+
+
+_DIRECTIVE_KEYS = {"name": "call_me", "day": "routine_day", "goals": "goal_1", "talk": "talk_pref",
+                   "never": "boundary_main", "support": "support_style", "role": "stiti_role"}
+
+
+def known(key: str) -> bool:
+    """Does the brain already have this answer (from this intro, the profile, ask-me, a chat, his resume)? Then the
+    intro doesn't ask it again (2026-11-20: "I have answered something and it forgets it and asks again")."""
+    from . import asked as ledger
+    from .. import profile
+    if not ledger.ask_ok(f"onboarding:{key}"):
+        return True                                  # answered here before (or skipped recently)
+    try:
+        if key == "name" and profile.get("name"):
+            return True
+        if key == "home" and profile.get("city"):
+            return True
+        if (dk := _DIRECTIVE_KEYS.get(key)) and one("""SELECT 1 AS x FROM user_directives WHERE supersession_key=%s
+                                                         AND status='active' LIMIT 1""", (dk,)):
+            return True
+        preds = {"home": r"^(about_home|lives_in|lives_at|from|home|grew_up_in|moved_to)",
+                 "work": r"^(about_work|works_at|works_as|studies_at|student_at|is_.*_at|interns?_at|job|role)",
+                 "people": r"^about_people$"}.get(key)
+        if preds and one("""SELECT 1 AS x FROM facts f JOIN entities e ON e.id = f.subj_id WHERE e.kind='self'
+                            AND f.predicate ~ %s AND upper_inf(f.recorded) AND f.valid @> now() LIMIT 1""", (preds,)):
+            return True
+    except Exception:
+        return False
+    return False
 
 
 class Onboarding:
@@ -150,27 +186,47 @@ class Onboarding:
         self.step = st.get("step", 0) if not st.get("done") else 0
         self.learned: list[str] = st.get("learned", [])
 
+    def _next_unknown(self) -> None:
+        while self.step < len(QUESTIONS) and known(QUESTIONS[self.step][0]):
+            self.step += 1                           # already answered somewhere: never asked twice
+
+    def _ask(self) -> str:
+        from . import asked as ledger
+        key, text = QUESTIONS[self.step]
+        ledger.asked(f"onboarding:{key}", text, "onboarding")
+        return text
+
     def start(self) -> str:
-        intro = ("Chalo, let's get to know each other — 10 quick questions. Say “skip” to skip one, "
-                 "or “bas” to stop and continue later. ") if self.step == 0 else "Picking up where we left off. "
-        return intro + QUESTIONS[self.step][1]
+        fresh = self.step == 0
+        self._next_unknown()
+        if self.step >= len(QUESTIONS):
+            _save({"step": 0, "done": True, "learned": self.learned})
+            return "I already know the intro answers — you told me before. Say “ask me questions” for new ones."
+        intro = ("Chalo, let's get to know each other — a few quick questions. Say “skip” to skip one, "
+                 "or “bas” to stop and continue later. ") if fresh else "Picking up where we left off. "
+        return intro + self._ask()
 
     def answer(self, text: str, episode_id: int | None = None) -> tuple[str, bool]:
         """Returns (reply, finished)."""
+        from . import asked as ledger
         if PAUSE_RX.match(text) and len(text.split()) <= 3:
             _save({"step": self.step, "done": False, "learned": self.learned})
             return "No problem — say “intro shuru karo” anytime and we'll continue from here.", True
-        key, _ = QUESTIONS[self.step]
+        key, qtext = QUESTIONS[self.step]
         if not SKIP_RX.match(text):
             if episode_id:
                 q("UPDATE episodes SET importance = 8 WHERE id=%s", (episode_id,))
             note = _apply(key, text)
             if note:
                 self.learned.append(note)
+            ledger.answered(f"onboarding:{key}", text, episode_id=episode_id, question=qtext, source="onboarding")
+        else:
+            ledger.skipped(f"onboarding:{key}", question=qtext, source="onboarding")
         self.step += 1
+        self._next_unknown()
         if self.step < len(QUESTIONS):
             _save({"step": self.step, "done": False, "learned": self.learned})
-            return QUESTIONS[self.step][1], False
+            return self._ask(), False
         _save({"step": 0, "done": True, "learned": self.learned})
         from .mdsync import render_all
         from .sleep import standing_profile

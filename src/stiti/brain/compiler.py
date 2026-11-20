@@ -100,7 +100,8 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None, strategy=None,
           rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False,
           said=None, more: bool = False, saved: list[str] | None = None,
-          told: list[str] | None = None, examples: list[tuple[str, str]] | None = None) -> tuple[str, int]:
+          told: list[str] | None = None, examples: list[tuple[str, str]] | None = None,
+          answered: list[tuple[str, str]] | None = None) -> tuple[str, int]:
     """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29).
     said = norepeat.Ledger (what she already said this conversation), more = he asked "what else?" (D36): every line
     she already covered is left out and an ALREADY-SAID block tells the LLM to bring only new things.
@@ -164,6 +165,9 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
             parts.append("[MEMORY]\n(nothing relevant found — don't invent any)")
         if wins:
             parts.append("[HIS WINS — real facts, for one honest reframe]\n" + "\n".join(f"- {w}" for w in wins[:3]))
+        if answered:                                 # brain/asked.py: he answered these — never ask them again
+            parts.append("[YOU ALREADY ASKED — he answered; never ask these again, use his answer]\n"
+                         + "\n".join(f"- “{qq[:120]}” → {a[:140]}" for qq, a in answered[:3]))
         if how:
             parts.append("[HOW TO TALK NOW]\n" + "\n".join(how))
         if gists:

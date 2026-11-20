@@ -87,6 +87,16 @@ class SpeakerAudio(_Kokoro):
         self.stop()
 
 
+def _tone(seg, sr: int, text: str) -> str | None:
+    """His voice vs his own baseline (voice/prosody.py, numpy, ~ms; read-only, so a lesson doesn't shift the
+    baseline): 'stressed' / 'tired' / 'calm' / None. Feature 5 pacing counts a stressed voice on a curt answer."""
+    try:
+        from ..voice import prosody
+        return prosody.generic_label(prosody.features(np.asarray(seg, dtype=np.float32), sr, len(text.split())))
+    except Exception:
+        return None
+
+
 def keep_heard(text: str, unclear: bool) -> bool:
     """A clear line always counts. An unclear one only if it's a lesson command (ruko / phir se / continue…):
     mis-heard noise must not become a 'question' the tutor stops to answer."""
@@ -150,7 +160,7 @@ class VoiceAudio(_Kokoro):
                 print(f"   (heard {text!r}, {r.ms:.0f} ms, no_speech {r.no_speech_prob:.2f}, logprob {r.avg_logprob:.2f})")
             self.events.put({"type": "voice", "text": text, "at": getattr(seg, "start_t", None),
                              "no_speech": r.no_speech_prob, "logprob": r.avg_logprob,
-                             "barged": bool(getattr(seg, "barged", False))})
+                             "barged": bool(getattr(seg, "barged", False)), "emotion": _tone(seg, SR, text)})
 
     def play(self, audio, ms: int) -> None:
         self.vl._interrupted.clear()

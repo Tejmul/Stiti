@@ -2,8 +2,8 @@
 // "Start a lesson": what (one of his files, or a topic) → goal (learn / exam / the whole syllabus today) → optional
 // focus + hold-to-talk → Start. POST /api/lessons/start; the coach then skips its spoken goal question.
 import { useId, useState } from "react";
-import type { LessonMode, LessonStart, StudyFile } from "@/lib/stiti";
-import { api } from "@/lib/stiti";
+import type { Job, LessonMode, LessonStart, StudyFile } from "@/lib/stiti";
+import { JOB_LIVE, api } from "@/lib/stiti";
 import { Arrow, Icon, fmtDate, fmtSize } from "./bits";
 
 export type Pick = { kind: "file" | "topic"; path: string; topic: string };
@@ -23,19 +23,63 @@ type Props = {
   pick: Pick;
   setPick: (p: Pick) => void;
   onStarted: () => void;
+  jobs: Job[];
+  onJob: (j: Job) => void;
 };
 
-export default function StartCard({ files, active, boardUrl, pick, setPick, onStarted }: Props) {
+/** Per file: "Prepare" (queue its concept map), its job's state while it runs, or "Ready" once prepared. */
+function Prep({ file, job, busy, onPrepare }: { file: StudyFile; job: Job | undefined; busy: boolean; onPrepare: () => void }) {
+  if (job && JOB_LIVE.includes(job.status)) {
+    const t = job.status === "running" ? `Preparing ${job.percent}%` : job.status === "parked" ? "Waiting" : "Queued";
+    return <span className="prep prep--run" title={job.step ?? undefined}>{t}</span>;
+  }
+  const fresh = job?.status === "done" && !!job.finished_at && new Date(job.finished_at) >= new Date(file.modified);
+  if (file.prepared || fresh) {
+    return <span className="prep prep--ok" title="Prepared: a lesson on this file starts at once"><Icon name="check" />Ready</span>;
+  }
+  return (
+    <button type="button" className="prep prep--b" disabled={busy} onClick={onPrepare}
+      aria-label={`Prepare ${file.name} in the background`}>
+      {busy ? "Adding…" : "Prepare"}
+    </button>
+  );
+}
+
+export default function StartCard({ files, active, boardUrl, pick, setPick, onStarted, jobs, onJob }: Props) {
   const [mode, setMode] = useState<LessonMode>("learn");
   const [days, setDays] = useState(1);
   const [hours, setHours] = useState(6);
   const [focus, setFocus] = useState("");
   const [ptt, setPtt] = useState(false);
+  const [blurt, setBlurt] = useState(false);
   const [fq, setFq] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [started, setStarted] = useState("");
+  const [preparing, setPreparing] = useState("");
+  const [prepMsg, setPrepMsg] = useState<{ text: string; err: boolean } | null>(null);
   const id = useId();
+
+  // a file's newest concept_map job (jobs carry the file name as their label; live ones win)
+  const jobFor = (f: StudyFile) => jobs.find((j) => j.kind === "concept_map" && j.label === f.name && JOB_LIVE.includes(j.status))
+    ?? jobs.find((j) => j.kind === "concept_map" && j.label === f.name);
+
+  const prepare = async (f: StudyFile) => {
+    if (preparing) return;
+    setPreparing(f.path); setPrepMsg(null);
+    try {
+      const r = await api<{ ok: boolean; message: string; job: Job | null }>("/api/lessons/prepare", {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ target: f.path }),
+      });
+      if (r.job) onJob(r.job);
+      setPrepMsg({ text: r.message, err: false });
+    } catch (e) {
+      setPrepMsg({ err: true, text: e instanceof Error && e.message !== "not allowed" ? e.message
+        : "This page isn't linked to Stiti. Open it from Stiti's menu bar icon, then try again." });
+    } finally {
+      setPreparing("");
+    }
+  };
 
   const file = files.find((f) => f.path === pick.path);
   const topic = pick.topic.trim();
@@ -46,6 +90,7 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
     if (!ready || busy || active) return;
     setBusy(true); setErr(""); setStarted("");
     const body: LessonStart = { target: pick.kind === "file" ? pick.path : topic, mode, ptt };
+    if (blurt) body.blurt = true;
     if (mode === "day") body.hours = hours;
     if (mode === "exam") body.days = days;
     if (focus.trim()) body.focus = focus.trim();
@@ -69,6 +114,7 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
     MODES.find((m) => m.id === mode)!.title + (mode === "day" ? ` · ${hours} h` : mode === "exam" ? ` · ${WHEN.find((w) => w.d === days)!.t.toLowerCase()}` : ""),
     focus.trim() ? `focus: ${focus.trim()}` : null,
     ptt ? "hold to talk" : null,
+    blurt ? "Blurt test" : null,
   ].filter(Boolean).join(" · ");
 
   return (
@@ -102,21 +148,30 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
                 </div>
               )}
               <div className="files__list" role="radiogroup" aria-label="Your files">
-                {shown.map((f) => (
-                  <label key={f.path} className={`file${f.path === pick.path ? " is-on" : ""}`} title={f.path}>
-                    <input type="radio" name={`${id}-file`} className="sr-only" checked={f.path === pick.path}
-                      onChange={() => setPick({ ...pick, kind: "file", path: f.path })} />
-                    <span className="file__ext">{f.ext}</span>
-                    <span className="file__main">
-                      <span className="file__name">{f.name}</span>
-                      <span className="file__meta">{fmtSize(f.size)} · {fmtDate(f.modified)}</span>
-                    </span>
-                    <span className="file__tick" aria-hidden="true"><Icon name="check" /></span>
-                  </label>
-                ))}
+                {shown.map((f, i) => {
+                  const rid = `${id}-f${i}`;
+                  return (
+                    <div key={f.path} className={`file${f.path === pick.path ? " is-on" : ""}`}>
+                      <label className="file__pick" htmlFor={rid} title={f.path}>
+                        <input id={rid} type="radio" name={`${id}-file`} className="sr-only" checked={f.path === pick.path}
+                          onChange={() => setPick({ ...pick, kind: "file", path: f.path })} />
+                        <span className="file__ext">{f.ext}</span>
+                        <span className="file__main">
+                          <span className="file__name">{f.name}</span>
+                          <span className="file__meta">{fmtSize(f.size)} · {fmtDate(f.modified)}</span>
+                        </span>
+                      </label>
+                      <Prep file={f} job={jobFor(f)} busy={preparing === f.path} onPrepare={() => void prepare(f)} />
+                      <label className="file__tick" htmlFor={rid} aria-hidden="true"><Icon name="check" /></label>
+                    </div>
+                  );
+                })}
                 {!shown.length && <p className="files__none">No file matches “{fq.trim()}”.</p>}
               </div>
-              <p className="hint">From Downloads, Documents, Desktop and Books (PDF, EPUB, Word, slides, text). Newest first.</p>
+              {prepMsg && <p className={`msg${prepMsg.err ? " is-err" : " is-ok"}`} role={prepMsg.err ? "alert" : "status"}>
+                <Icon name={prepMsg.err ? "alert" : "check"} />{prepMsg.text}</p>}
+              <p className="hint">From Downloads, Documents, Desktop and Books (PDF, EPUB, Word, slides, text). Newest first.
+                {" "}<b>Prepare</b> reads a file ahead of time, so its lesson starts at once.</p>
             </div>
           ) : (
             <div className="empty empty--small">
@@ -188,6 +243,15 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
           <label htmlFor={`${id}-ptt`} className="toggle__text">
             <span className="toggle__t"><Icon name="mic" />Hold to talk</span>
             <span className="toggle__l">For a noisy room: she only listens while you hold Space on the board.</span>
+          </label>
+        </div>
+        <div className="toggle">
+          <button type="button" role="switch" aria-checked={blurt} className="switch" id={`${id}-blurt`} onClick={() => setBlurt(!blurt)}>
+            <span className="switch__knob" />
+          </button>
+          <label htmlFor={`${id}-blurt`} className="toggle__text">
+            <span className="toggle__t"><Icon name="check" />Blurt</span>
+            <span className="toggle__l">Test me at the end of each topic: say everything you remember, and she marks each key point.</span>
           </label>
         </div>
       </fieldset>

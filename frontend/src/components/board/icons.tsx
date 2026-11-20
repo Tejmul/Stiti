@@ -11,6 +11,7 @@ const P: Record<string, React.ReactNode> = {
   full: <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />,
   mic: <><rect x="9" y="3" width="6" height="11" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21" /></>,
   send: <path d="M12 19V5M6 11l6-6 6 6" />,
+  close: <path d="M6 6l12 12M18 6 6 18" />,
 };
 
 export type IconName = keyof typeof P;

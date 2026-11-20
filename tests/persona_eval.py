@@ -76,7 +76,7 @@ live.detect = lambda *a, **k: None                    # no internet in the offli
 q("TRUNCATE user_directives, lessons, tasks, intents, decisions, turns RESTART IDENTITY CASCADE")
 q("DELETE FROM owner_profile")
 profile._all.cache_clear()
-profile.set("name", "Tejmul", "owner_edit")
+profile.set("name", "Ravi", "owner_edit")
 profile.set("intro_offer", "off", "owner_edit")
 
 

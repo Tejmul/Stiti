@@ -6,7 +6,9 @@ Design (research §5 + pedagogy §7; OpenMAIC action engine, ChalkTalk hand-rais
 - Every cue boundary keeps a board snapshot → repeat / back / resume-after-question redraw exactly.
 - Code owns time, resume and repairs; content (LLM or hand-written) only fills slots.
 - Voice-first: everything works by talking (board optional, MCQ options are read out loud).
-- Checks are graded locally (grade.py). Hints ≤ 2, then a kind reveal. Never "samjha?".
+- Checks are graded locally (grade.py). A miss climbs a code-owned hint ladder (Feature 5): nudge → hint → worked
+  example → the answer; the rung he needed is kept on the record → FSRS rating. Never "samjha?". Pacing (pacing.py):
+  never the same question twice; the coach spaces checks one per full idea and sparser when he's fed up.
 - Doubts (D40): she stops, says "Good question —", turns to a doubt board under the current page, answers in
   2–4 sentences while drawing (cloud LLM in a background thread, a filler if it takes > 0.8 s), takes a follow-up
   ("still didn't get it" → simpler + an example), then "Back to where we were —" and replays the interrupted cue
@@ -26,6 +28,7 @@ from concurrent.futures import ThreadPoolExecutor
 from . import commands, grade
 from .ears import EchoGuard
 from .lesson import Check, Lesson, Op, resolve_at
+from .pacing import RUNGS, Pacing, rung_rating, sentences
 from .skills import Board
 
 PRAISE = "Yes, exactly right."
@@ -49,7 +52,9 @@ FRAG_S = 6.0                # a fragment dropped as "too short to interrupt" thi
 GATHER_UNFINISHED_S = 4.5   # his words end mid-thought ("…so", "…I want you to") → wait this long for the rest
 UNFINISHED_RX = re.compile(r"\b(so|and|but|or|because|to|the|a|an|of|in|on|with|for|is|are|was|like|that|which|"
                            r"if|then|i|my|you|want|mean|about|um+|uh+|actually|basically)\W*$", re.I)
-PTT_TAIL_S = 2.5            # hold-to-talk: speech still counts this long after he lets go (Whisper finishing)
+BLURT_MORE_S = 4.0          # Blurt: after his first burst of recall, this long of quiet means he has finished
+STALE_GRACE_S = 0.3        # speech starting this little before her question still counts as its answer (clock slop)
+PTT_TAIL_S = 2.5           # hold-to-talk: speech still counts this long after he lets go (Whisper finishing)
 STEER_LINES = {"skip_to": "Okay, let's jump ahead.", "restart": "Okay, let's go again from the start, slowly.",
                "switch": "Okay, let's switch to that.", "crash": "Got it. Let's cover the whole thing quickly for your exam."}
 
@@ -61,6 +66,12 @@ CHECKINS = ["Any doubt so far? Just ask, or I'll carry on.", "All clear till her
 OFFLINE_FIRST = "I can't reach my thinking brain right now, so here's the short version from this lesson."
 OFFLINE_PARK_FIRST = "I can't reach my thinking brain right now, so I've parked that, and we'll come back to it."
 OFFLINE_AGAIN = "Parked that one too. We'll come back to it."
+# feature 2: cited answers. Below the retrieval gate she says so BEFORE any LLM call and answers generally only on a yes.
+NOT_COVERED = "Your notes don't cover that. Want a general answer?"
+NOT_COVERED_OFFLINE = "Your notes don't cover that one."
+UNCITED = "Your notes don't spell this out, so this part is general knowledge."
+_YES_RX = re.compile(r"^(yes|yeah|yep|ya|yup|sure|ok|okay|haan|han|ha|ji|haan ji|please|go ahead|go on|tell me|do it|"
+                     r"general|of course|why not|fine|alright|all right)\b", re.I)
 _ACK_RX = re.compile(r"^(good|great|nice|achha|accha)( question| doubt| one)?[.!,—-]*\s*", re.I)
 
 
@@ -77,6 +88,9 @@ class Tutor:
         self._pick_i: dict[str, int] = {}
         self._offline_said = False                   # the honest "can't reach the cloud" line: once per lesson
         self.last_doubt: dict | None = None          # {"q", "a": [lines], "t"} for follow-ups
+        self.cite = self._start_cite(lesson)         # feature 2: his file indexed for cited answers (None: no file)
+        self.doubt_cites: list[dict] = []            # verified quotes shown during the current doubt
+        self._look = None                            # this doubt's retrieval (cite.Lookup)
         self.last_checkin = time.time()
         self.checkins = 0
         self.cue_open = False
@@ -100,9 +114,17 @@ class Tutor:
         self.on_check = None                            # D53 coach: (segment, record) after every graded check
         self.skip_to: int | None = None                 # D53 coach: jump here at the next step (he knows the rest)
         self.before_end = None                          # D53 coach: () -> True when it added more segments
+        # Feature 5: how often she asks (one check per full idea, sparser when he's fed up, never the same question
+        # twice). Plain lessons ask every check they have (min_gap 0); the coach sets the gap and should_check.
+        self.pacing = Pacing()
+        self.should_check = None                        # (segment, pacing) -> bool: ask this check now?
+        self.on_blurt = None                            # (segment) -> None: a "blurt" segment's free recall
+        self.on_blurt_request = None                    # () -> bool: he said "test me" / "let me blurt"
+        self.short_ladder = False                       # True: one hint, then the answer (D57's ~5-min review quiz)
         # hold-to-talk (Wispr Flow: the user decides when he's talking). 2026-11-20 demo: people talking in his room
         # ("Where did you play yesterday?") were graded as his answers. On: only speech while the key is held (or
         # within PTT_TAIL_S after release, while Whisper finishes) counts; commands like "end" too.
+        self._since_q: float | None = None              # listen(): when her question started (stale speech is older)
         self.ptt_mode = False
         self.ptt_down = False
         self.ptt_up_t = 0.0
@@ -167,6 +189,9 @@ class Tutor:
         if ev.get("type") in ("text", "voice") and not ev.get("_seen"):   # re-queued events were judged already
             ev["text"] = (ev.get("text") or "").strip()
             ev["_seen"] = True
+            if ev["type"] == "voice" and self._since_q is not None and self._stale(ev, self._since_q):
+                self.log(f"   (dropped, said before the question: {ev['text'][:60]!r})")
+                return None                           # still in flight when she asked: never his answer
             if ev["type"] == "voice" and ev["text"]:
                 keep, why = self.guard.check(ev["text"], at=ev.get("at"), no_speech=float(ev.get("no_speech") or 0),
                                              logprob=float(ev.get("logprob") or 0), barged=bool(ev.get("barged")))
@@ -205,6 +230,9 @@ class Tutor:
             except queue.Empty:
                 continue
             piece = (nx.get("text") or "").strip()
+            if nx.get("type") == "voice" and self._since_q is not None and self._stale(nx, self._since_q):
+                self.log(f"   (dropped, said before the question: {piece[:60]!r})")
+                continue
             if nx.get("type") == "voice" and piece:
                 keep, why = self.guard.check(piece, at=nx.get("at"), no_speech=float(nx.get("no_speech") or 0),
                                              logprob=float(nx.get("logprob") or 0), barged=True)
@@ -336,21 +364,36 @@ class Tutor:
                         words.append(op.text)
         return [w for w in words if w and not w.lower().startswith(("warm", "summary", "recap"))]
 
-    def _drop_stale_speech(self) -> None:
+    @staticmethod
+    def _stale(e: dict, since: float | None) -> bool:
+        """Speech that STARTED before the question began (its `at` is the mic's monotonic start time). Speech that
+        began while she was still asking — he answers over the end of her question — is his answer, not stale."""
+        if e.get("type") not in ("voice", "text"):
+            return False
+        at = e.get("at")
+        if since is not None and e.get("type") == "voice" and at is not None:
+            try:
+                return float(at) < since - STALE_GRACE_S
+            except (TypeError, ValueError):
+                return True
+        return True                                    # typed / no start time: queued before the question
+
+    def _drop_stale_speech(self, since: float | None = None) -> None:
         """2026-11-20: a garbled reply to the goal question was still queued and got graded as the answer to probe 1
         before he even heard it ('asking me the same questions again and again'). Voice/typed lines already waiting
-        when a new question starts are dropped; controls (end, pause…) are kept."""
+        when a new question starts are dropped (controls — end, pause… — are kept), except speech that started at or
+        after `since` (the question's start): that one is his answer and dropping it made her ask again."""
         keep = []
         while True:
             try:
                 e = self.events.get_nowait()
             except queue.Empty:
                 break
-            if e.get("type") in ("voice", "text"):
+            if self._stale(e, since):
                 self.log(f"   (dropped, said before the question: {(e.get('text') or '')[:60]!r})")
                 continue
             keep.append(e)
-        self._held = deque(e for e in self._held if e.get("type") not in ("voice", "text"))
+        self._held = deque(e for e in self._held if not self._stale(e, since))
         for e in keep:
             self.events.put(e)
 
@@ -392,7 +435,15 @@ class Tutor:
                 if ev is not None:
                     self._handle(ev)
                     continue
-                if ci == len(seg.cues) - 1 and seg.check is not None:
+                if seg.type != "break":               # a whole sentence of teaching heard: pacing counts it
+                    self.pacing.taught(sentences(cue.say))
+                if ci == len(seg.cues) - 1 and seg.type == "blurt" and self.on_blurt is not None and not self.ended:
+                    try:
+                        self.on_blurt(seg)            # Feature 5: "tell me everything you remember" (the coach)
+                    except Exception as e:
+                        self.log(f"   [blurt] {type(e).__name__}: {e}")
+                    self.pacing.asked()
+                if ci == len(seg.cues) - 1 and seg.check is not None and self._ask_check(seg):
                     r = self._run_check(seg)
                     if r in ("moved", "end"):
                         continue
@@ -468,6 +519,11 @@ class Tutor:
             self._explain_again(mid_cue)
         elif kind in ("hindi", "english"):
             self.say("I'll keep it in English." if kind == "hindi" else "Okay, English it is.")
+        elif kind == "fewer":                          # "skip the questions" / "just teach": sparser checks
+            self.fewer_questions("asked")
+        elif kind == "blurt":                          # "test me" / "let me blurt": free recall now
+            if self.on_blurt_request is None or not self.on_blurt_request():
+                self.say("Let's get a bit further first, then I'll test you.")
         elif kind == "click":
             self._explain_element(text)
         elif kind == "question":
@@ -477,15 +533,22 @@ class Tutor:
         elif kind == "correct":
             self._corrected(text, mid_cue)
 
-    def listen(self, prompt: str | None = None, *, check_box: dict | None = None, timeout: float = 60.0) -> str | None:
+    def listen(self, prompt: str | None = None, *, check_box: dict | None = None, timeout: float = 60.0,
+               nudge: bool = True) -> str | None:
         """Ask him something outside the lesson script and wait for his whole answer (D53 coach opening).
         -> his text, "" when he stayed silent, None when he ended the lesson."""
-        self._drop_stale_speech()                     # words from before this question are not its answer
-        ev = self.say(prompt) if prompt else None
+        since = time.monotonic()                      # the question starts now (the mic stamps speech the same way)
+        self._drop_stale_speech(since)                # words from before this question are not its answer
+        self._since_q = since                         # … nor speech still in flight (_next_event / _whole drop it)
+        try:
+            ev = self.say(prompt) if prompt else None
+        except BaseException:
+            self._since_q = None
+            raise
         if check_box:
             self.send({"type": "check", **check_box})
         self.status("waiting", "your turn — say or type your answer")
-        t0, nudged = time.time(), False
+        t0, nudged = time.time(), not nudge
         try:
             while not self.ended:
                 ev = ev or self._next_event(0.3)
@@ -508,9 +571,28 @@ class Tutor:
                 if text:
                     return text
         finally:
+            self._since_q = None
             if check_box:
                 self.send({"type": "check_done"})
         return None
+
+    def more_words(self, idle_s: float = BLURT_MORE_S) -> str:
+        """Free recall (Blurt) comes in bursts with thinking pauses: after his first burst, keep listening until he's
+        quiet for idle_s. -> the extra words ("" when none). A control ("end", "pause"…) goes back to the queue."""
+        out: list[str] = []
+        last = time.time()
+        while not self.ended and time.time() - last < idle_s * self.pace:
+            ev = self._next_event(0.05)
+            if ev is None:
+                continue
+            kind, text = self._kind(ev, answering=True)
+            if ev.get("type") in ("voice", "text") and text and kind in ("answer", "other", "question", "confused"):
+                out.append(text)
+                last = time.time()
+                continue
+            self.events.put(ev)
+            break
+        return " ".join(out)
 
     def _corrected(self, text: str, mid_cue: bool = True) -> None:
         """'No, I said lexer': she heard him wrong. Drop what she was doing with the wrong words and take the right
@@ -675,16 +757,24 @@ class Tutor:
         self.status("thinking", "thinking…")
         self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.begin_aside(title or question)]})
         first = True
+        self.doubt_cites = []
         while not self.ended:
             self.questions.append(question)
             lead = self._pick("simpler", SIMPLER) if simpler else (self._pick("ack", ACKS) if first else None)
             if simpler and not first:
                 self.send({"type": "actions", "actions": self._apply([Op(type="text", text="Simpler:", style="violet")],
                                                                      self.k)})
-            ans = self._fetch_answer(question, lead, simpler)
+            # "explain this box again" / "simpler" re-explain the lesson itself: never "your notes don't cover that"
+            ans = self._fetch_answer(question, lead, simpler, soft=simpler or title is not None)
             if self.ended:
                 break
-            lines = self._play_answer(ans) if ans and ans.get("say") else self._offline_answer(question)
+            lines = None
+            if ans is not None and ans.get("not_covered"):
+                ans, lines = self._offer_general(question, simpler)
+            if lines is None:
+                lines = self._play_answer(ans) if ans and ans.get("say") else self._offline_answer(question)
+            if ans and first and not simpler and self.cite is not None and self._look is not None:
+                self.cite.save(question, ans, self._look)    # the per-file answer bank (verified quotes only)
             self.last_doubt = {"q": question, "a": lines, "t": time.time()}
             if ans and ans.get("stuck_at"):
                 self.log(f"   [doubt] stuck at: {ans['stuck_at']} ({ans.get('error_type')})")
@@ -695,8 +785,12 @@ class Tutor:
             if nxt is None:
                 break
             question, simpler = nxt
-        self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]
-                   + [{**a, "at_ms": 300} for a in self.board.note_doubt(title or question)]})
+        strip = ([{**a, "at_ms": 0} for a in self.board.end_aside()]
+                 + [{**a, "at_ms": 300} for a in self.board.note_doubt(title or question)])
+        for c in self.doubt_cites[:1]:                # where the answer came from stays in his notes, next to the Q
+            strip += [{**a, "at_ms": 450} for a in self.board.source_card(c, "doubts")]
+        self.doubt_cites = []
+        self.send({"type": "actions", "actions": strip})
         if resume_cue:
             self.snaps[self.k] = self.board.snapshot()   # replay restores THIS (lesson board + doubt board below)
         if not self.ended:
@@ -704,18 +798,31 @@ class Tutor:
             if ev is not None:
                 self.events.put(ev)
 
-    def _fetch_answer(self, question: str, lead: str | None, simpler: bool) -> dict | None:
+    def _fetch_answer(self, question: str, lead: str | None, simpler: bool, *, soft: bool = False,
+                      general: bool = False) -> dict | None:
         """Ask the cloud in the background while she acknowledges; a filler only if it's slow; "ruko"/"bas karo"
-        still work while she waits. -> the answer dict, or None (no LLM / down / too slow)."""
-        fut = None
-        if self.planner is not None:
+        still work while she waits. -> the answer dict, or None (no LLM / down / too slow).
+        Feature 2, when the lesson has his file: the answer bank first (a repeated doubt: no LLM call), then one
+        hybrid retrieval (< 100 ms); below the gate → {"not_covered": True} before any LLM call (unless `soft`);
+        above it the top passages go to the LLM as SOURCES and only its verified quotes come back ("cited")."""
+        fut, early = None, None
+        look = self._look = (self.cite.lookup(question) if self.cite is not None and not general else None)
+        if look is not None and look.status == "bank" and not simpler:
+            early = look.answer
+            self.log(f"   [cite] answer bank hit ({look.answer.get('bank_sim', 0):.2f}): no LLM call")
+        elif look is not None and look.status == "not_covered" and not soft:
+            early = {"not_covered": True}
+        elif self.planner is not None:
             ctx = self._context()
             if self.last_doubt and time.time() - self.last_doubt["t"] < FOLLOWUP_S:
                 ctx["previous"] = {"q": self.last_doubt["q"], "a": self.last_doubt["a"]}
             ctx["simpler"] = simpler
+            if look is not None and look.status == "covered":
+                ctx["passages"] = look.passages
+            ctx["general"] = general
             fut = self.answer_pool.submit(self.planner.answer, question, ctx)
         t0 = time.time()
-        if lead:
+        if lead and not (early and early.get("not_covered")):     # not in his notes: she says so plainly, no "good q"
             a, ms = self.audio.synth(lead, self.speed)
             self.log(f"Stiti: {lead}")
             self.send({"type": "status", "mode": "playing", "text": "thinking", "caption": lead})
@@ -723,7 +830,7 @@ class Tutor:
         if fut is None:
             while self.audio.playing:
                 time.sleep(0.02)
-            return None
+            return early
         filler, stash = False, []
         while not fut.done() and time.time() - t0 < ANSWER_TIMEOUT_S:
             ev = self._next_event(0.03)
@@ -754,10 +861,40 @@ class Tutor:
         for ev in stash:
             self.events.put(ev)
         try:
-            return fut.result(timeout=0) if fut.done() else None
+            ans = fut.result(timeout=0) if fut.done() else None
         except Exception as e:                        # NoProvider / rate limit / bad JSON → honest local answer
             self.log(f"   [planner] {type(e).__name__}: {str(e)[:120]}")
             return None
+        if ans and look is not None and self.cite is not None:
+            ans = self.cite.attach(ans, look)         # fabricated quotes never reach his ears or the board
+        return ans
+
+    def _start_cite(self, lesson):
+        """Feature 2: index the lesson's file in the background (classic book lesson or the coach over a file)."""
+        try:
+            from . import cite
+            return cite.for_lesson(getattr(lesson, "source", None), log=self.log)
+        except Exception as e:
+            self.log(f"   [cite] off: {type(e).__name__}: {str(e)[:100]}")
+            return None
+
+    def _offer_general(self, question: str, simpler: bool) -> tuple[dict | None, list[str] | None]:
+        """His file doesn't cover the doubt: say so plainly (one short line) and answer from general knowledge only
+        if he says yes. -> (answer to play, None) or (None, the lines said)."""
+        self.send({"type": "actions", "actions": self._apply([Op(type="text", text="Not in your notes",
+                                                                 region="side", style="muted")], self.k)})
+        if self.planner is None:
+            self.say(NOT_COVERED_OFFLINE)
+            return None, [NOT_COVERED_OFFLINE]
+        reply = self.listen(NOT_COVERED, timeout=12)
+        if not reply:
+            return None, [NOT_COVERED]
+        if _YES_RX.match(reply.strip()):
+            self.status("thinking", "thinking…")
+            return self._fetch_answer(question, None, simpler, general=True), None
+        if commands.classify(reply) in ("question", "steer", "confused", "correct"):
+            self.events.put({"type": "text", "text": reply, "_seen": True})   # another doubt: the follow-up takes it
+        return None, [NOT_COVERED]
 
     def _offline_answer(self, question: str) -> list[str]:
         """No cloud answer: be honest ONCE, give what the lesson itself said about it, park the doubt."""
@@ -812,8 +949,9 @@ class Tutor:
 
     def _doubt_check(self, chk: dict | None) -> None:
         """D53: after a doubt, one short question shows whether the gap is really closed (not 'did you get it?')."""
-        if not chk or not chk.get("prompt"):
+        if not chk or not chk.get("prompt") or self.pacing.repeat(chk["prompt"]):   # never the same question twice
             return
+        self.pacing.answered(chk["prompt"], False)
         reply = self.listen(chk["prompt"], timeout=25)
         if not reply:
             return
@@ -841,10 +979,20 @@ class Tutor:
         for op in ops:
             i = next((j for j, s in enumerate(lines) if op.at and op.at.lower() in s.lower()), 0)
             buckets[i].append(op)
+        # feature 2: "Page 42 says: …" first — only a quote verified word for word in his file; its source card is
+        # drawn on the doubt board while she says it. Relevant file, nothing quotable → she says it's general knowledge.
+        cited, cards = ans.get("cited") or [], {}
+        if cited:
+            from .cite import spoken
+            lines, buckets = [spoken(cited[0])] + lines, [[]] + buckets
+            cards[0] = [a for c in cited[:2] for a in self.board.source_card(c, "side")]
+            self.doubt_cites += cited[:1]
+        elif ans.get("uncited"):
+            lines, buckets = [UNCITED] + lines, [[]] + buckets
         said = []
-        for line, b in zip(lines, buckets):
+        for li, (line, b) in enumerate(zip(lines, buckets)):
             audio, ms = self.audio.synth(line, self.speed)
-            acts = self._apply(b, self.k, line, ms)
+            acts = self._apply(b, self.k, line, ms) + [{**a, "at_ms": 0} for a in cards.get(li, [])]
             self.log(f"Stiti: {line}")
             self.send({"type": "actions", "actions": acts})
             self.send({"type": "status", "mode": "playing", "text": "answering", "caption": line})
@@ -892,6 +1040,85 @@ class Tutor:
             return f"{c.prompt} Is it {opts}?"
         return c.prompt
 
+    def _ask_check(self, seg) -> bool:
+        """Feature 5: ask this check now? Never a question already asked this session (or answered right in the last
+        few days); the coach's should_check decides the spacing (one check per full idea, sparser when he's fed up)."""
+        c = seg.check
+        if self.pacing.repeat(c.prompt):
+            self.log(f"   [pacing] skipped a repeated question: {c.prompt[:60]!r}")
+            return False
+        if self.should_check is None and self.pacing.sparse and self.pacing.since < self.pacing.gap:
+            self.log(f"   [pacing] fewer questions: skipped {c.prompt[:50]!r}")   # a plain lesson, he asked for fewer
+            return False
+        if self.should_check is not None and not self.should_check(seg, self.pacing):
+            self.log(f"   [pacing] no check yet ({self.pacing.since} sentences since the last one, gap "
+                     f"{self.pacing.gap}): {c.prompt[:50]!r}")
+            return False
+        return True
+
+    def fewer_questions(self, why: str) -> None:
+        """'skip the questions' / curt answers: checks get sparser for the rest of the session — said ONCE."""
+        if self.pacing.go_sparse(why):
+            self.log(f"   [pacing] fewer questions from now on ({why})")
+            self.say("Okay, fewer questions.", interruptible=False)
+        elif why == "asked":
+            self.say("Okay.", interruptible=False)    # already sparser: no second announcement
+
+    # ---- the hint ladder (iTutor; code-owned, LLM-free): nudge → hint → worked example → answer
+    def _rung_available(self, rung: int, c: Check) -> bool:
+        if rung == 2:
+            return bool(c.hints)
+        if rung == 3:
+            return bool(c.example or (c.options and len(c.options) > 2) or (c.reveal or "").split())
+        return True
+
+    def _next_rung(self, rung: int, verdict: str, c: Check) -> int:
+        if self.short_ladder:                          # review session: hint (if any) → the answer; rung still rates
+            return 2 if rung == 0 and c.hints else 4
+        nxt = rung + 1
+        if rung == 0 and verdict == "idk":
+            nxt = 2                                    # "What else?" after "I don't know" is a pump into nothing
+        while nxt in (2, 3) and not self._rung_available(nxt, c):
+            nxt += 1
+        if self.pacing.sparse and rung >= 1:
+            nxt = 4                                    # he wants fewer questions: one help, then the answer
+        return min(nxt, 4)
+
+    @staticmethod
+    def _nudge(c: Check, g: dict, verdict: str) -> str:
+        """Rung 1: a pump, pointed at what's missing (fair grading's missing_text) without giving it away."""
+        if c.options:
+            return "Not that one. Have another look at the options."
+        if verdict == "partial":
+            exps = c.expectations or []
+            missing = g.get("missing_text") or []
+            got = [e for i, e in enumerate(exps) if i not in (g.get("missing") or [])]
+            line = "Good start, you've got part of it."
+            if got and len(exps) > 1:
+                line += f" Yes, {got[0].split(' or ')[0]}."
+            if any(re.search(r"\d", m) for m in missing):
+                line += " There's a number still missing."
+            elif len(missing) > 1:
+                line += f" {len(missing)} more pieces."
+            return line + " What else?"
+        if verdict == "idk":
+            return "No worries. Take a guess, what comes to mind first?"
+        return "Not quite. Think about what I just showed you. Try once more?"
+
+    @staticmethod
+    def _worked_step(c: Check) -> str:
+        """Rung 3: ONE short worked step, no LLM — the step's example line, an MCQ elimination, or the start of the
+        answer."""
+        if c.example:
+            return f"Let me show you one step: {c.example[0].rstrip('.')}. Now you try."
+        if c.options and len(c.options) > 2:
+            wrong = next(o["text"] for o in c.options if not o.get("correct"))
+            return f"Here's a step: it's not {wrong}. So which one is it?"
+        words = (c.reveal or "").rstrip(".").split()
+        if len(words) >= 4:
+            return f"Here's how it starts: {' '.join(words[:len(words) // 2])}… Finish it."
+        return f"Here's a start: it begins with '{words[0][0]}'. What is it?" if words else "Have one more go."
+
     def _run_check(self, seg) -> str:
         c = seg.check
         label = {"predict": "Quick guess", "mcq": "Pick one", "recall": "From memory", "explain_why": "Explain why",
@@ -899,12 +1126,14 @@ class Tutor:
         self.send({"type": "check", "kind_label": label, "prompt": c.prompt,
                    "options": [o["text"] for o in c.options] if c.options else []})
         rec = {"segment": seg.id, "kind": c.kind, "verdict": None, "attempts": 0, "hints": 0, "confidence": None,
-               "answers": []}
+               "answers": [], "rung": 0, "ladder": []}
+        self.pacing.asked(c.prompt)
         ev = self.say(self._check_prompt(c))
         self.status("waiting", "your turn — say or type your answer")
         nudged = False
         t0 = time.time()
         outcome = "done"
+        tipped = False                                 # his answers just showed he's fed up with questions
         while not self.ended:
             if ev is None:
                 ev = self._next_event(0.3)
@@ -915,8 +1144,9 @@ class Tutor:
                     ev = self.say("Take your time. Or say 'I don't know', and I'll give you a hint.")
                     t0 = time.time() - 30
                 elif waited > self.check_timeout_s:
-                    ev = {"type": "text", "text": "pata nahi"}
+                    ev = {"type": "text", "text": "pata nahi", "_timeout": True}
                 continue
+            emotion, silent = ev.get("emotion"), bool(ev.get("_timeout"))
             kind, text = self._kind(ev, answering=True)
             ev = None
             if kind == "other" and not text:
@@ -962,6 +1192,15 @@ class Tutor:
                     else self._explain_element(text)
                 ev = self.say(self._check_prompt(c))
                 continue
+            if kind == "fewer":                       # "skip the questions": the answer, and fewer from now on
+                rec["verdict"] = "skipped"
+                self.fewer_questions("asked")
+                if c.reveal and c.kind != "predict":
+                    self.say("The answer: " + c.reveal)
+                break
+            if kind == "blurt":                       # "test me" in the middle of a check: the check comes first
+                ev = self.say("Sure, right after this one. " + self._check_prompt(c))
+                continue
             if kind == "confused":
                 text = "pata nahi"
             # ---- it's an answer
@@ -970,6 +1209,10 @@ class Tutor:
             g = grade.grade(c, text, llm=grade.llm_for(self.planner))   # wrong/partial → free-LLM second opinion
             self._log_grade(g)
             v = g["verdict"]
+            if (v != "predict" and not silent and self.pacing.note(text, v, emotion)
+                    and self.pacing.go_sparse("curt answers")):
+                tipped = True                          # the ladder shortens right away; she says so after this check
+                self.log("   [pacing] fewer questions from now on (curt answers)")
             if v == "predict":
                 self.predict = (c, text)
                 rec["verdict"] = "predict"
@@ -979,11 +1222,20 @@ class Tutor:
                 rec["verdict"] = "correct"
                 self.say(c.on_correct or PRAISE)
                 break
-            if rec["hints"] < len(c.hints) and rec["attempts"] < 3:
-                opener = {"partial": "Good start, you've got part of it. What else?", "wrong": "Not quite.",
-                          "idk": "No worries."}[v]
-                ev = self.say(f"{opener} Hint: {c.hints[rec['hints']]}")
-                rec["hints"] += 1
+            nxt = self._next_rung(rec["rung"], v, c)
+            rec["rung"] = nxt
+            rec["ladder"].append(RUNGS[nxt])
+            if nxt == 1:
+                ev = self.say(self._nudge(c, g, v))
+            elif nxt == 2:
+                opener = {"partial": "Close.", "wrong": "Not quite.", "idk": "No worries."}[v]
+                ev = self.say(f"{opener} Hint: {c.hints[0]}")
+            elif nxt == 3:
+                ev = self.say(self._worked_step(c))
+            if nxt < 4:
+                rec["hints"] += 1                      # help given (srs: any help → Hard)
+                t0 = time.time()                       # his turn again: the wait (and its nudge) starts over
+                self.status("waiting", "your turn — say or type your answer")
                 continue
             rec["verdict"] = "partial" if v == "partial" else "wrong"
             self.say(("Close. " if v == "partial" else "Here's the answer. ") + (c.reveal or "Let's look at it together."))
@@ -998,6 +1250,12 @@ class Tutor:
                 ev = None
             if rec["confidence"] and rec["confidence"] >= 4 and rec["verdict"] != "correct":
                 self.say("A confident miss. Those are the best ones to learn from, so this card goes to the top of your revision.")
+        if rec["verdict"] in ("correct", "partial", "wrong"):
+            rec["rating"] = rung_rating(rec["verdict"], rec["rung"], rec["confidence"])
+            self.pacing.answered(c.prompt, rec["verdict"] == "correct" and rec["rung"] == 0)
+            self.log(f"   [ladder] {rec['verdict']} at rung {RUNGS[rec['rung']]} → {rec['rating']}")
+        if tipped and not self.ended:
+            self.say("Okay, fewer questions.", interruptible=False)
         self.results.append(rec)
         self.send({"type": "check_done"})
         if self.on_check is not None:

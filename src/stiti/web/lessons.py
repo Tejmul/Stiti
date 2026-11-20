@@ -3,7 +3,11 @@
 Read-only except `start()`, which goes through the tutor's own argv spawn (never a shell string) under the same
 one-lesson lock as voice launches. A start target is either one of the files this module lists (exact path match)
 or a plain topic — never an arbitrary path, so the page can't make the tutor read a file he didn't pick.
-Notes are only read from ~/.stiti/tutor/notes (path-safe). Nothing here touches the database.
+Notes are only read from ~/.stiti/tutor/notes (path-safe). `prepare()` (D56) queues a background job that builds the
+concept map of one listed file before a lesson — same exact-path rule; the only database write here. Otherwise the
+database is only read: how many review cards are due (feature 3) and a source's mastery history for its map
+(feature 4, `map_view`); a missing database shows 0 due and an empty heatmap instead of failing the page.
+A review start is `{"mode": "review", "key"?: <16-hex mastery key>}` → `stiti teach --review [--key K]`.
 """
 from __future__ import annotations
 
@@ -20,6 +24,8 @@ MAX_FILES = 50
 MAX_TOPIC = 120
 MODES = ("learn", "exam", "day")
 HOURS_MIN, HOURS_MAX = 1.0, 12.0
+KEY_RX = re.compile(r"[0-9a-f]{16}")          # tutor/mastery.py key_for(): the only way the page names a source
+FOCUS_DROP_RX = re.compile(r"[^\w .,:;'’\"()&+/?!#-]+")
 # a topic is plain words: letters/digits/space and everyday punctuation; never a flag ("-…") or a path
 TOPIC_RX = re.compile(r"[\w .,:;'’\"()&+/?!#-]{1,%d}" % MAX_TOPIC)
 
@@ -62,7 +68,9 @@ def files() -> list[dict]:
             if st.st_size > MIN_BYTES:
                 found[str(f)] = (f, st.st_mtime, st.st_size)
     rows = sorted(found.values(), key=lambda x: -x[1])[:MAX_FILES]
-    return [{"path": str(f), "name": f.name, "ext": f.suffix.lower().lstrip("."), "size": size, "modified": _iso(mt)}
+    from ..tutor.prepare import prepared
+    return [{"path": str(f), "name": f.name, "ext": f.suffix.lower().lstrip("."), "size": size, "modified": _iso(mt),
+             "prepared": prepared(str(f))}
             for f, mt, size in rows]
 
 
@@ -161,10 +169,67 @@ def board_url() -> str:
     return f"http://127.0.0.1:{BOARD_PORT}/#t={board_token()}"
 
 
+def due_counts() -> dict:
+    """{"total", "by_key"} of concept cards due now; zeros when the database can't be read."""
+    try:
+        from ..tutor import srs
+        return srs.due_counts()
+    except Exception:
+        return {"total": 0, "by_key": {}}
+
+
 def overview() -> dict:
     t = _tutor()
+    rows = progress()
+    due = due_counts()
+    for r in rows:
+        r["due"] = int(due["by_key"].get(r["key"], 0))
     return {"active": bool(t.tutor_active()), "board_url": board_url(), "files": files(), "notes": notes(),
-            "progress": progress()}
+            "progress": rows, "review": {"total": int(due["total"])}}
+
+
+# ------------------------------------------------------------------------------------------------ the map
+def focus_name(name: str) -> str:
+    """A concept name as a safe `--focus` value (what build_args accepts): odd symbols dropped, ≤ MAX_TOPIC."""
+    s = " ".join(FOCUS_DROP_RX.sub(" ", str(name or "")).split()).lstrip("-").strip()
+    return s[:MAX_TOPIC]
+
+
+def _start_target(source: str) -> str | None:
+    """What a "learn this concept" start sends as its target: the listed file the source came from, or the topic.
+    None when the file isn't in his folders any more (the page then can't start from it)."""
+    base = source.partition("#")[0]
+    label, kind = _source_label(source)
+    if kind == "file":
+        return base if base in {f["path"] for f in files()} else None
+    try:
+        return plain_topic(source)
+    except Invalid:
+        return None
+
+
+def map_view(key, exam=None) -> dict:
+    """GET /api/lessons/map?key=…[&exam=YYYY-MM-DD] → {"status", …the map (tutor/mastery_map.py)…}.
+    400 for a malformed key or date, 404 for a key with no mastery and no concept map."""
+    from ..tutor import mastery_map
+    if not isinstance(key, str) or not KEY_RX.fullmatch(key):
+        return {"status": 400, "error": "Bad map key."}
+    ex = None
+    if exam not in (None, ""):
+        ex = mastery_map.parse_exam(exam)
+        if ex is None:
+            return {"status": 400, "error": "Exam date must look like 2026-12-01."}
+    m = mastery_map.build(key, ex)
+    if m is None:
+        return {"status": 404, "error": "No map for that yet: finish a lesson on it first."}
+    label, kind = _source_label(m["source"]) if m["source"] else (key, "topic")
+    for items in m["groups"].values():
+        for c in items:
+            c["focus"] = focus_name(c["name"])
+    m.update({"label": label, "kind": kind, "target": _start_target(m["source"]) if m["source"] else None,
+              "due": int(due_counts()["by_key"].get(key, 0)), "status": 200})
+    m.pop("source", None)                         # the page shows the label; the raw path stays on the Mac side
+    return m
 
 
 # ------------------------------------------------------------------------------------------------ start
@@ -195,6 +260,8 @@ def build_args(body: dict) -> tuple[list[str], str]:
     """Validated request → (argv for `stiti teach`, a short label). Raises Invalid."""
     if not isinstance(body, dict):
         raise Invalid("Bad request.")
+    if body.get("mode") == "review":
+        return review_args(body)
     target = body.get("target")
     listed = {f["path"]: f for f in files()}
     if isinstance(target, str) and target in listed:
@@ -234,7 +301,32 @@ def build_args(body: dict) -> tuple[list[str], str]:
         raise Invalid("Bad hold-to-talk value.")
     if ptt:
         args.append("--ptt")
+    blurt = body.get("blurt", False)               # Feature 5: "test me with Blurt at the end of each topic"
+    if not isinstance(blurt, bool):
+        raise Invalid("Bad Blurt value.")
+    if blurt:
+        args.append("--blurt")
     return args, label
+
+
+def review_args(body: dict) -> tuple[list[str], str]:
+    """`{"mode": "review", "key"?: <16 hex>, "ptt"?: bool}` → `["--review", ("--key", K)?, ("--ptt")?]`. Nothing else
+    is accepted alongside (no target, hours, days or focus: a review asks only what is due)."""
+    extra = set(body) - {"mode", "key", "ptt"}
+    if extra:
+        raise Invalid("A review only takes which file to review.")
+    args = ["--review"]
+    key = body.get("key")
+    if key not in (None, ""):
+        if not isinstance(key, str) or not KEY_RX.fullmatch(key):
+            raise Invalid("Bad review source.")
+        args += ["--key", key]
+    ptt = body.get("ptt", False)
+    if not isinstance(ptt, bool):
+        raise Invalid("Bad hold-to-talk value.")
+    if ptt:
+        args.append("--ptt")
+    return args, "your review"
 
 
 def start(body: dict) -> dict:
@@ -244,6 +336,16 @@ def start(body: dict) -> dict:
         args, label = build_args(body)
     except Invalid as e:
         return {"ok": False, "message": str(e), "status": 400}
+    if args[0] == "--review":                     # local grading: no cloud key needed; nothing due → nothing opens
+        due = due_counts()
+        n = due["by_key"].get(args[2], 0) if "--key" in args else due["total"]
+        if not n:
+            return {"ok": False, "status": 409, "due": 0, "message": "Nothing is due for review right now."}
+        if not t.start_lesson(args):
+            return {"ok": False, "active": True, "status": 409,
+                    "message": "A lesson is already open on the whiteboard. Finish it first (say “end” on the board)."}
+        return {"ok": True, "active": True, "due": n, "started_at": time.time(),
+                "message": f"Opening the whiteboard: {n} card{'s' if n != 1 else ''} to review."}
     from .. import router
     from ..tutor.lesson import demos
     if args[0] not in demos() and not any(s["key"] for s in router.status()):
@@ -254,3 +356,24 @@ def start(body: dict) -> dict:
                 "message": "A lesson is already open on the whiteboard. Finish it first (say “end” on the board)."}
     return {"ok": True, "active": True, "message": f"Opening the whiteboard with {label[:60]}.",
             "started_at": time.time()}
+
+
+# ------------------------------------------------------------------------------------------------ prepare (D56)
+def prepare(body: dict) -> dict:
+    """Queue "build the concept map" for one of his listed files, so a lesson on it starts at once. Idempotent: a
+    second click returns the same live job. Needs a free cloud key (the map is written by the free LLM)."""
+    if not isinstance(body, dict):
+        return {"ok": False, "status": 400, "message": "Bad request."}
+    target = body.get("target")
+    listed = {f["path"]: f for f in files()}
+    if not isinstance(target, str) or target not in listed:
+        return {"ok": False, "status": 400, "message": "Pick one of your files to prepare."}
+    from .. import jobs
+    from ..tutor import prepare as PR
+    if listed[target]["prepared"]:
+        return {"ok": True, "status": 200, "prepared": True, "job": None,
+                "message": f"{listed[target]['name']} is already prepared."}
+    row = PR.enqueue(target, listed[target]["name"])
+    return {"ok": True, "status": 200, "prepared": False, "job": jobs.public(row),
+            "message": (f"Preparing {listed[target]['name']} in the background." if row.get("new")
+                        else f"{listed[target]['name']} is already being prepared.")}

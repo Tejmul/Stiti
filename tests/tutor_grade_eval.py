@@ -232,11 +232,13 @@ check("with a real Planner, 'f equals m a' is praised, not hinted",
       str([x for x in logs if x.startswith(("Stiti", "   [grade"))][-4:]))
 check("…and the log shows the second opinion", any("[grade] second opinion:" in x for x in logs))
 res, logs, fake = play(ans, PM.Planner(None), {"verdict": "correct", "missing": [], "reason": ""}, delay=5)
-check("LLM slow → the hint ladder runs on the local verdict, the lesson isn't stuck",
-      any("Hint:" in x for x in logs) and res.get("finished") is not None and len(fake.calls) == 1,
+check("LLM slow → the hint ladder (its nudge) runs on the local verdict, the lesson isn't stuck",
+      any(x.startswith(("Stiti: Good start", "Stiti: Not quite")) for x in logs) and res.get("finished") is not None
+      and len(fake.calls) == 1,
       str([x for x in logs if x.startswith(("Stiti", "   [grade"))][-4:]))
 res, logs, fake = play(ans, None, {"verdict": "correct", "missing": [], "reason": ""})
-check("no planner (offline lesson) → local only, no call", fake.calls == [] and any("Hint:" in x for x in logs))
+check("no planner (offline lesson) → local only, no call",
+      fake.calls == [] and any(x.startswith(("Stiti: Good start", "Stiti: Not quite")) for x in logs))
 
 print("player: the one-question check after a doubt gets the second opinion too")
 

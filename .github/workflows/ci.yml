@@ -7,7 +7,7 @@ on:                             # README / docs-only changes don't run the evals
     paths-ignore: ["**.md", "docs/**", "LICENSE", ".gitignore"]
 jobs:
   evals:
-    runs-on: macos-latest      # Apple Silicon, like Tejmul's M2
+    runs-on: macos-latest      # Apple Silicon, like the M2 Stiti is built for
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4

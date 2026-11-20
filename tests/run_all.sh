@@ -56,10 +56,13 @@ run "intent: life updates are chat" tests/intent_eval.py
 run "intent: public yardstick (D50)" tests/public_intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
 run "web Lessons page (files, notes, start a lesson)" tests/web_lessons_eval.py
+run "background jobs + live progress (D56)" tests/jobs_eval.py
+run "review cards + mastery map (features 3, 4)" tests/review_map_eval.py
 run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
 run "the coach: goal, probes, day mode, any subject (D53, D55)" tests/tutor_coach_eval.py
 run "real pictures on the notes page" tests/tutor_pictures_eval.py
 run "tutor grades spoken answers fairly (D54)" tests/tutor_grade_eval.py
+run "cited answers + 'your notes don't cover that' (D60)" tests/cite_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
 run "card motion (added / done / cancelled)" tests/card_motion_eval.py
@@ -72,4 +75,7 @@ run "remembers all he told her (D48)" tests/recap_eval.py
 run "notices what matters, asks once, books it (D49)" tests/important_things_eval.py
 run "varied wording, same honesty (D50)" tests/wording_eval.py
 run "example replies in the briefing (D50)" tests/examples_eval.py
+run "reminders saved, said, never lost" tests/reminders_regress_eval.py
+run "an answered question is never asked again" tests/asked_once_eval.py
+run "fork-safe: fresh install + privacy check"  tests/privacy_eval.py
 exit $fail

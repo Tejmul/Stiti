@@ -1,7 +1,7 @@
 # Research: personal emotion learning (Stiti learns HIS voice) + local conversation recorder
 
 Date: 2026-11-11. Owner's ask: "the emotion detection could be trained by using [the system we] build" — Stiti should
-learn Tejmul's own voice from real use, with no forms, on an Apple M2 / 8 GB, free, with no local LLM.
+learn the owner's own voice from real use, with no forms, on an Apple M2 / 8 GB, free, with no local LLM.
 
 What exists today (read before this research):
 - `voice/prosody.py` — loudness / pitch / pitch-SD / speaking rate, z-scored against his own running baseline

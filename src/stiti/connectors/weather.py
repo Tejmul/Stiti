@@ -70,7 +70,20 @@ def city() -> tuple[str, bool]:
         return c, True
     if os.getenv("STITI_CITY"):
         return os.environ["STITI_CITY"].strip(), True
+    if (home := _home_from_brain()):
+        return home, True                 # he told her where he lives (a chat, the intro): no need to ask again
     return _tz_city(), False
+
+
+def _home_from_brain() -> str | None:
+    try:
+        from ..db import one
+        r = one("""SELECT o.name FROM facts f JOIN entities s ON s.id = f.subj_id JOIN entities o ON o.id = f.obj_id
+                   WHERE s.kind='self' AND o.kind='place' AND f.predicate ~ '^(lives_in|lives_at|based_in|moved_to)$'
+                   AND upper_inf(f.recorded) AND f.valid @> now() ORDER BY lower(f.valid) DESC LIMIT 1""")
+        return r["name"] if r else None
+    except Exception:
+        return None
 
 
 # ---------------------------------------------------------------- http (the one seam tests replace)
@@ -369,6 +382,11 @@ def set_city(name: str) -> str:
     except Exception:
         pass
     profile.set("city", name, "owner_edit")
+    try:
+        from ..brain import asked as ledger
+        ledger.answered(HINT_KEY, name, question=CITY_HINT, source="weather")
+    except Exception:
+        pass
     refresh_async(name)
     return f"Got it — I'll use {name} for the weather."
 
@@ -387,10 +405,22 @@ def answer(text: str, now: datetime | None = None, on_slow=None) -> str | None:
     if w is None:
         return "I can't reach the weather right now."
     reply = speak(w, ask.focus, ask.day, now)
-    if ask.place is None and not city()[1] and not _hinted[0]:
-        _hinted[0] = True
-        reply += " Tell me your city and I'll use that — say “my city is …”."
+    if ask.place is None and not city()[1] and _hint_ok():
+        reply += " " + CITY_HINT
     return reply
 
 
+CITY_HINT = "Tell me your city and I'll use that — say “my city is …”."
+HINT_KEY, HINT_EVERY_DAYS = "weather:city", 7
 _hinted = [False]
+
+
+def _hint_ok() -> bool:
+    """"Tell me your city" at most once a week, remembered in the brain (it lived in process memory, and the app
+    restarts often — so she asked on every restart), and never again once he has told her."""
+    from ..brain import asked as ledger
+    if _hinted[0] or not ledger.ask_ok(HINT_KEY, repeat_days=HINT_EVERY_DAYS):
+        return False
+    _hinted[0] = True
+    ledger.asked(HINT_KEY, CITY_HINT, "weather")
+    return True

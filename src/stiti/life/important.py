@@ -71,6 +71,7 @@ TODO = re.compile(r"\b(?:to-?do|todos?|task|my list|the list|list (?:mein|me|pe)
 NO_REMINDERS = re.compile(r"\b(?:no|without|bina|don'?t need) reminders?\b|\b(?:only|just|sirf|bas) (?:the |on the |on my )?"
                           r"calend[ae]r\b", re.I)
 REMIND = re.compile(r"\b(?:give me (?:a |one |the )?reminders?|remind me|set (?:a |my |the )?reminders?|put (?:a )?reminders?|"
+                    r"(?:keep|make|create|add|set up)(?: me)? (?:a |an |one |the )?reminders?|"   # "…so keep a reminder for 7"
                     r"(?:i want|i need|need) (?:a )?reminders?|reminders? (?:de(?:na| do| dena)?|laga\w*(?: do| dena)?|"
                     r"set kar\w*(?: do| dena)?|chahiye)|(?:mujhe )?yaad dila\w*(?: dena| do)?)\b", re.I)
 TO_CAL = re.compile(r"\b(?:put|add|save|mark|book|note|daal\w*|dal\w*)\b.{0,25}\bcalend[ae]r\b|"

@@ -61,7 +61,7 @@ https://aclanthology.org/2025.naacl-long.57 · arXiv https://arxiv.org/abs/2412.
 - **Strengths.** A ready-made rubric for Stiti's tutor evals. "Mistake location" and "coherence" are exactly what the owner
   means by "understand where I am stuck".
 - **Weaknesses.** Maths only, and single-turn. It measures mistake remediation, not questions the learner starts.
-  Its finding means we **cannot let an LLM grade our tutor automatically**: the eval needs human labels (Tejmul's).
+  Its finding means we **cannot let an LLM grade our tutor automatically**: the eval needs human labels (the owner's).
 - **Fit.** Good as an eval design (offline, free). Use free Llama-3.x-70B/405B-class models on Groq/OpenRouter for
   tutoring; skip small models for the doubt reply.
 
@@ -163,7 +163,7 @@ Read from `src/stiti/tutor/commands.py`, `audio.py`, `ears.py`, `voice/endpoint.
 4. **Cut off mid-doubt.** The tutor uses the global endpointer (Smart Turn at 300 ms, 3 s unfinished cap). Learners
    explaining a doubt pause to think and trail off ("so I want you to…"), so the turn is committed half-done and the tutor
    answers the fragment.
-5. **Mis-hearing reaches the brain unchecked.** The glossary prompt holds Tejmul's personal words (name, USER.md, graph,
+5. **Mis-hearing reaches the brain unchecked.** The glossary prompt holds the owner's personal words (name, USER.md, graph,
    document titles) but **not the current lesson's terms**. Nothing in `tutor/` adds them. A low-confidence transcript
    about "the lecture" (= "lexer") is acted on at once, with no chance to correct it.
 
