@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Stiti Whiteboard</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="https://esm.sh/@excalidraw/excalidraw@0.18.1/dist/prod/index.css">
 <script type="importmap">
 { "imports": {
@@ -15,30 +16,62 @@
 </script>
 <link rel="stylesheet" href="/static/board.css">
 </head>
-<body>
+<body class="clean">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M19 20 9 12l10-8v16Z"/><path d="M5 19V5"/></symbol>
+    <symbol id="i-next" viewBox="0 0 24 24"><path d="m5 4 10 8-10 8V4Z"/><path d="M19 5v14"/></symbol>
+    <symbol id="i-pause" viewBox="0 0 24 24"><path d="M9 5v14M15 5v14"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15L19 12 7 4.5Z"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 2.6-6.4L3 8"/><path d="M3 3v5h5"/></symbol>
+    <symbol id="i-slow" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+    <symbol id="i-fast" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+    <symbol id="i-pen" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></symbol>
+    <symbol id="i-full" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></symbol>
+  </defs>
+</svg>
 <div id="shell">
+  <header id="head">
+    <div id="brand"><span id="mark" aria-hidden="true"></span>Stiti</div>
+    <div id="where">
+      <div id="lesson"></div>
+      <div id="segment"></div>
+    </div>
+    <div id="meter" aria-live="off">
+      <span id="part"></span>
+      <div id="track"><div id="fill"></div></div>
+    </div>
+  </header>
   <div id="board"><div id="loading">Stiti is getting the whiteboard ready…</div></div>
   <div id="check" hidden>
     <div id="check-kind">Your turn</div>
     <div id="check-prompt"></div>
     <div id="check-options"></div>
   </div>
-  <div id="bar">
-    <div id="top-row">
-      <span id="status" class="pill">connecting</span>
-      <span id="progress"></span>
-      <span id="ask-chip" hidden></span>
+  <button id="ask-chip" hidden></button>
+  <div id="dock">
+    <div id="say">
+      <span id="status" class="pill"><i class="dot" aria-hidden="true"></i><span id="status-text">connecting</span></span>
+      <div id="caption" aria-live="polite"></div>
     </div>
-    <div id="caption"></div>
     <div id="controls">
-      <button data-cmd="back" title="Go back (←)">⏮</button>
-      <button id="pp" data-cmd="pause" title="Pause / play (space)">⏸</button>
-      <button data-cmd="repeat" title="Repeat (R)">🔁</button>
-      <button data-cmd="next" title="Skip to next part (→)">⏭</button>
-      <button data-cmd="slower" title="Slower">🐢</button>
-      <button data-cmd="faster" title="Faster">🐇</button>
-      <button id="fs" title="Presenter mode for a big screen (F)">⛶</button>
-      <form id="ask"><input id="q" autocomplete="off" placeholder="✋ Ask a question or type your answer…  (H)"><button>Send</button></form>
+      <div class="group" role="group" aria-label="Lesson">
+        <button data-cmd="back" title="Go back (←)" aria-label="Go back"><svg><use href="#i-back"/></svg></button>
+        <button id="pp" class="main" data-cmd="pause" title="Pause / play (space)" aria-label="Pause"><svg><use href="#i-pause"/></svg></button>
+        <button data-cmd="next" title="Skip to next part (→)" aria-label="Skip to next part"><svg><use href="#i-next"/></svg></button>
+        <button data-cmd="repeat" title="Say that again (R)" aria-label="Say that again"><svg><use href="#i-repeat"/></svg></button>
+      </div>
+      <div class="group speed" role="group" aria-label="Speed">
+        <button data-cmd="slower" title="Talk slower" aria-label="Talk slower"><svg><use href="#i-slow"/></svg></button>
+        <span class="lbl">speed</span>
+        <button data-cmd="faster" title="Talk faster" aria-label="Talk faster"><svg><use href="#i-fast"/></svg></button>
+      </div>
+      <form id="ask"><input id="q" autocomplete="off" placeholder="Ask a doubt or type your answer  (H)" aria-label="Ask a doubt or type your answer"><button aria-label="Send"><svg><use href="#i-send"/></svg></button></form>
+      <div class="group" role="group" aria-label="View">
+        <button id="draw" title="Show drawing tools (D)" aria-label="Show drawing tools" aria-pressed="false"><svg><use href="#i-pen"/></svg></button>
+        <button id="fs" title="Presenter mode for a big screen (F)" aria-label="Presenter mode"><svg><use href="#i-full"/></svg></button>
+      </div>
     </div>
   </div>
 </div>

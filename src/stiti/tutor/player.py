@@ -278,7 +278,7 @@ class Tutor:
         audio, ms = self._synth_future(k).result()
         acts = self._apply(cue.ops, k, cue.say, ms)
         self.send({"type": "cue", "seq": k, "cue_id": cue.id, "say": cue.say, "audio_ms": ms, "actions": acts,
-                   "progress": f"{seg.title} · part {si + 1} of {len(self.L.segments)}"})
+                   "progress": f"{seg.title} · part {si + 1} of {len(self.L.segments)}", "lesson": self.L.title})
         self.status("playing", "teaching")
         self.log(f"Stiti: {cue.say}")
         self._prefetch(k + 1)
