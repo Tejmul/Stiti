@@ -7,6 +7,13 @@ are pooled into three groups (Kannada/Tamil/Malayalam count as Telugu — tiny c
 Telugu wins only with ≥ 50 % of the pooled score. Measured on 27 synthetic clips (docs/research/language_switching.md):
 English 6/6, Hindi + Hinglish 9/9, Telugu 6/6; Tenglish 3/6 (the transcript's Telugu script settles those).
 STITI_LID=off disables it.
+
+D41 (2026-11-18) — English first. On his real voice the check was wrong far more often than on the synthetic clips:
+22 of his 105 turns since 11 Nov came out in Telugu script, and he says he speaks English almost all the time
+("Siti, నిను కార్చేనా దేల్సా?" was an English sentence). A wrong "Telugu" costs a whole turn (garbled text, a Telugu
+reply), a missed Telugu sentence costs nothing he can't fix by saying "talk in Telugu". So the check is OFF unless
+he asked for Telugu: "talk in Telugu" opens it for 30 minutes (extended by every Telugu turn), a Telugu language
+lock keeps it open, `stiti` profile key listen_telugu=on or STITI_LID_TELUGU=on makes it permanent.
 """
 from __future__ import annotations
 
@@ -24,8 +31,33 @@ _lock = threading.Lock()
 _m: dict = {}
 
 
+TELUGU_WINDOW_S = 30 * 60          # "talk in Telugu" keeps the Telugu check open this long after the last Telugu turn
+_te_until = 0.0
+
+
 def enabled() -> bool:
     return os.getenv("STITI_LID", "on") != "off"
+
+
+def listen_telugu(until: float) -> None:
+    """The engine says until when (time.time()) Telugu speech is expected: 0 = not, inf = a Telugu language lock."""
+    global _te_until
+    _te_until = until
+
+
+def telugu_on() -> bool:
+    """Is the Telugu check worth running for this turn? (D41: only when he asked for Telugu.)"""
+    env = os.getenv("STITI_LID_TELUGU")
+    if env:
+        return env != "off"
+    import time
+    if time.time() < _te_until:
+        return True
+    try:
+        from .. import profile
+        return profile.get("listen_telugu") == "on"
+    except Exception:
+        return False
 
 
 def _load():

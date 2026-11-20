@@ -91,7 +91,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Never repeats herself (D36, `brain/norepeat.py`) | 🟢 said-ledger, "what else?" → only new things / honest "that's all", repeat filter in code; NOT heard on the mic | DECISIONS D36, `docs/research/no_repeat.md` |
 | Desktop overlay (D26, D30) | 🟢 pill + cards that animate add/done/cancel; NOT seen by him on screen yet | DECISIONS D26/D30 |
 | Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
-| Four languages (D34) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; NOT tested on his real voice | `docs/research/language_switching.md` |
+| Four languages (D34) + English first (D41) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; Telugu speech check is opt-in ("talk in Telugu" → 30 min) because it turned 1 in 5 of his English turns into Telugu script; NOT tested on his real voice | `docs/research/language_switching.md` |
 
 ## 6. Whiteboard tutor (`src/stiti/tutor/`) — backend design
 - **Pattern: the brain decides, the LLM fills slots.** Code owns lesson shape (warm-up → hook → map → teach ×3 →
