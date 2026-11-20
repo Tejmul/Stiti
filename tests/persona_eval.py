@@ -201,14 +201,13 @@ check("10 'Not yet' after 'Anything else?' → 'Okay, I'm here.' and the session
       r10c == "Okay, I'm here." and not e.ended and one("SELECT count(*) n FROM intents WHERE state='pending'")["n"] >= 2, r10c)
 check("10 undo still works on the confirmed action (id kept internally)", e.last_action is None or True)
 
-# 11 — Hinglish tired → reply language Hinglish, LISTEN, feminine Hindi enforced
+# 11 — Hinglish tired → D51: she still understands him (LISTEN) but replies in English only
 r11 = run(e, "yaar aaj bahut thak gaya hoon", "Main samajh gaya. Aaj bas DBMS notes, baaki kal. Main dekhta hoon kya ho sakta hai.")
 SAMPLES.append(("11", "yaar aaj bahut thak gaya hoon", r11))
-check("11 REPLY_LANG = hinglish, strategy = LISTEN", e.last_debug.get("lang") == "hinglish"
+check("11 REPLY_LANG = english (D51), strategy = LISTEN", e.last_debug.get("lang") == "english"
       and e.last_debug.get("strategy") == "LISTEN", str(e.last_debug))
-check("11 briefing asks for Hinglish with feminine forms", "reply in Hinglish" in FAKE["system"] and "samajh gayi" in FAKE["system"])
-check("11 enforced: feminine first person (no 'samajh gaya' / 'dekhta hoon')", not MASC.search(r11)
-      and "samajh gayi" in r11.lower(), r11)
+check("11 briefing asks for English, not Hinglish (D51)", "Not Hindi, not Hinglish" in FAKE["system"]
+      and "reply in Hinglish" not in FAKE["system"])
 
 # 12 — thinking trap → LISTEN + reframe backed by a real win in the briefing
 memory.add_episode(None, "user", "I shipped the Stiti voice assistant with its own memory this month.", importance=7)
@@ -309,8 +308,8 @@ for _ in range(1000):
                     last_reply="Okay.", directives=["Reply in English (he asked for it)."])
 ms = (time.perf_counter() - t)
 check("strategy.choose < 1 ms per turn", ms < 1.0, f"{ms:.3f} ms")
-check("SOUL default: JARVIS persona, feminine Hindi, ≤ 40 lines",
-      "JARVIS" in (CFG.home / "SOUL.md").read_text() and "samajh gayi" in (CFG.home / "SOUL.md").read_text()
+check("SOUL default: JARVIS persona, English unless told otherwise (D51), ≤ 40 lines",
+      "JARVIS" in (CFG.home / "SOUL.md").read_text() and "English unless told otherwise" in (CFG.home / "SOUL.md").read_text()
       and len((CFG.home / "SOUL.md").read_text().splitlines()) <= 40)
 check("capabilities line: she knows she can read his documents",
       "Never claim you can't see his files" in FAKE["system"] or "ingested documents" in FAKE["system"]
@@ -331,7 +330,7 @@ LLM_CASES = [
     ("9", "I cracked the Acme round!!",
      lambda r, s: r.count("!") <= 1 and not EMOJI.search(r) and "how do you feel" not in r.lower() and words(r) <= 20),
     ("11", "yaar aaj bahut thak gaya hoon",
-     lambda r, s: hindi(r) >= 0.2 and not MASC.search(r) and words(r) <= 30),
+     lambda r, s: hindi(r) < 0.2 and not MASC.search(r) and words(r) <= 30),      # D51: English reply
     ("12", "I'm useless, I can't code anything.",
      lambda r, s: "amazing" not in r.lower() and not BANNED.search(r) and words(r) <= 35),
 ]

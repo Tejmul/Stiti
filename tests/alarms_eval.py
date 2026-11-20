@@ -104,7 +104,7 @@ said = rg.control("5 minute aur")
 th.join(2)
 check("'5 minute aur' snoozes 5 min", rg.outcome == "snoozed" and "5 more minutes" in said
       and row(rid)["state"] == "pending" and row(rid)["fire_at"] > now + timedelta(minutes=4), said)
-check("ring escalates: several rounds of tone + voice", fl.duplex.n >= 2 and any("Uth jao" in s for s in fl.said), str(fl.said[:3]))
+check("ring escalates: several rounds of tone + voice", fl.duplex.n >= 2 and any("get up" in s for s in fl.said), str(fl.said[:3]))
 rg2 = alarms.Ringer(row(rid), loop=FakeLoop(), log=lambda *_: None)
 th = threading.Thread(target=rg2.run); th.start(); time.sleep(0.1)  # noqa: E702
 rg2.control("band karo")

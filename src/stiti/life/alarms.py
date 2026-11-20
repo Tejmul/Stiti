@@ -436,9 +436,9 @@ def _ring_line(r: dict, round_no: int) -> str:
         return "Timer done!" if round_no == 0 else "Timer's still ringing — say stop."
     t = now()
     hi = f"{t:%I:%M}".lstrip("0")
-    first = ("Good morning! " if t.hour < 12 else "") + f"It's {hi}. Uth jao!" if p.get("say", "").startswith("Wake") \
+    first = ("Good morning! " if t.hour < 12 else "") + f"It's {hi}. Time to get up!" if p.get("say", "").startswith("Wake") \
         else f"It's {hi}. {p.get('say')}"
-    return first if round_no == 0 else ["Chalo, uth jao!", "Still ringing — say band karo, or 5 minute aur.",
+    return first if round_no == 0 else ["Come on, get up!", "Still ringing. Say stop, or snooze for 5 minutes.",
                                         "Up up up!"][round_no % 3]
 
 

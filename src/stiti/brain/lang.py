@@ -17,7 +17,18 @@ language) › the language of THIS message › for a tiny "ok / haan / bye", the
 """
 from __future__ import annotations
 
+import os
 import re
+
+
+def english_only() -> bool:
+    """D51 (owner, 2026-11-20): "remove this Hindi, Telugu… just make it talk in English only — suddenly it is shifting
+    and I don't understand". She still UNDERSTANDS Hindi/Telugu words; she only ever REPLIES in English.
+    STITI_LANGS=mirror brings back mirroring (D34)."""
+    return os.getenv("STITI_LANGS", "english").strip().lower() != "mirror"
+
+
+ENGLISH_ONLY_ACK = "I'll keep talking in English."
 
 LANGS = ("english", "hinglish", "hindi", "telugu", "tenglish")
 NAMES = {"english": "English", "hinglish": "Hinglish", "hindi": "Hindi", "telugu": "Telugu", "tenglish": "Tenglish"}
@@ -157,6 +168,8 @@ def is_language_rule(directive: str) -> bool:
 
 def decide(text: str, *, prev: str | None = None, lock: str | None = None, pref: str | None = None) -> str:
     """The reply language for this message."""
+    if english_only():
+        return "english"                         # D51: no mirroring, no locks into another language
     if lock:
         return lock
     heard = classify(text)

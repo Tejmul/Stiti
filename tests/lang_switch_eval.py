@@ -14,6 +14,7 @@ db = os.environ.get("STITI_DB", "")
 if not db.rstrip("/").split("/")[-1].startswith("stiti_test"):
     sys.exit(f"refusing to run against {db!r}: use a stiti_test* database")
 os.environ.setdefault("STITI_LIVE_WARM", "0")
+os.environ["STITI_LANGS"] = "mirror"          # D51: English only is the default now; this file tests the opt-in mirror
 for k in ("STITI_VOICE", "STITI_VOICE_HI", "STITI_VOICE_TE"):
     os.environ.pop(k, None)
 
@@ -242,6 +243,21 @@ if any(s.get("key") for s in router.status()):
     r3 = e.turn("ఈ రోజు సాయంత్రం నేను ఏమి చదవాలి?")
     check("live: unlocked → Telugu again", e.last_strategy.lang == "telugu" and bool(TE.search(r3)), r3[:80])
     q("DELETE FROM user_directives")
+
+# ---------------------------------------------------------------- D51: English only (the default)
+os.environ["STITI_LANGS"] = "english"
+from stiti.brain import instructions as _ins  # noqa: E402
+from stiti.brain import lang as _lang  # noqa: E402
+check("D51: English only → Hinglish / Telugu / Hindi in, English out",
+      [_lang.decide(t) for t in ("Yaar mujhe kal subah jaldi uthna hai", "nenu repu office ki veltanu",
+                                 "मुझे कल सुबह उठाना")] == ["english"] * 3)
+check("D51: …even under an old Hinglish lock or a 'talk in Telugu' pref",
+      _lang.decide("ok", lock="hinglish") == "english" and _lang.decide("hello there", pref="telugu") == "english")
+_i = _ins.parse("Stiti, talk in Telugu")
+check("D51: 'talk in Telugu' → she says she keeps to English, nothing saved",
+      _i is not None and _i.ack == _lang.ENGLISH_ONLY_ACK and _i.directive == "" and _i.lang_cmd == ("switch", "english"),
+      repr(_i))
+os.environ["STITI_LANGS"] = "mirror"
 
 print(f"language switch: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
