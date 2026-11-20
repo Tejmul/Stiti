@@ -51,6 +51,8 @@ run "intent: public yardstick (D50)" tests/public_intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
 run "web Lessons page (files, notes, start a lesson)" tests/web_lessons_eval.py
 run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
+run "the coach: goal, probes, day mode, any subject (D53, D55)" tests/tutor_coach_eval.py
+run "real pictures on the notes page" tests/tutor_pictures_eval.py
 run "tutor grades spoken answers fairly (D54)" tests/tutor_grade_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
