@@ -240,7 +240,9 @@ check("no LLM needed for it", CHAT_REPLY["calls"] == 0)
 orb = one("SELECT valid FROM facts WHERE fact_text='Ravi is an AI intern at Orbitly.'")
 check("the Orbitly internship fact is ended", orb["valid"].upper is not None)
 lf = cur("f.predicate='left' AND f.fact_text ILIKE '%%Orbitly%%'")
-check("'left Orbitly' saved once, dated September", len(lf) == 1 and lf[0]["valid"].lower.month == 9,
+# the month in HIS time zone (CFG.tz): 1 Sep 00:00 IST is still 31 Aug in UTC — the CI runner's zone
+check("'left Orbitly' saved once, dated September",
+      len(lf) == 1 and lf[0]["valid"].lower.astimezone(sleep.CFG.tz).month == 9,
       str([(x["fact_text"], x["valid"]) for x in lf]))
 check("the turn's episode is marked important", one("SELECT importance FROM episodes WHERE id=%s",
                                                      (eng.last_user_ep,))["importance"] >= 7)
