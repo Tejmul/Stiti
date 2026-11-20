@@ -217,10 +217,13 @@ keys["on"] = True
 # ------------------------------------------------------------------ the goal reaches the coach
 print("\nthe goal chosen on the page reaches the coach")
 check("flags → the same goal dict as the spoken answer",
-      C.goal_from_flags(day_args) == {"mode": "day", "days": 0, "hours": 6.0}
+      C.goal_from_flags(day_args) == {"mode": "day", "days": 0, "hours": 6.0, "hours_said": True}
       and C.goal_from_flags(exam_args) == {"mode": "exam", "days": 3}
       and C.goal_from_flags(["x", "--goal-mode", "learn"]) == {"mode": "learn", "days": None}
       and C.goal_from_flags(["x"]) is None and C.goal_from_flags(["x", "--goal-mode", "night"]) is None)
+check("…a day goal with no --hours: the plan won't claim 'your 6 hours' he never said",
+      C.goal_from_flags(["x", "--goal-mode", "day"]) == {"mode": "day", "days": 0, "hours": C.DAY_DEFAULT_H,
+                                                          "hours_said": False})
 check("the lesson's topic is never mistaken for a flag value", "--goal-mode" in T.VALUE_FLAGS and "--days" in T.VALUE_FLAGS)
 
 from stiti.tutor import audio as AU  # noqa: E402
@@ -244,7 +247,7 @@ try:
 finally:
     AU.make, C.concept_map, C.Coach.run = real
 check("`stiti teach <file> --goal-mode day --hours 6` → Coach(goal=day, 6 h) on his file",
-      len(got) >= 1 and got[0]["goal"] == {"mode": "day", "days": 0, "hours": 6.0} and got[0]["book"] == str(big), str(got[:1]))
+      len(got) >= 1 and got[0]["goal"] == {"mode": "day", "days": 0, "hours": 6.0, "hours_said": True} and got[0]["book"] == str(big), str(got[:1]))
 check("exam args → Coach(goal=exam, 3 days), focus split, hold-to-talk on",
       len(got) == 2 and got[1]["goal"] == {"mode": "exam", "days": 3} and got[1]["focus"] == ["page tables", "TLB"]
       and got[1]["ptt"] is True, str(got[1:]))

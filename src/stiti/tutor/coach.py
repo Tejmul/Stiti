@@ -453,8 +453,9 @@ def goal_from_flags(args: list[str]) -> dict | None:
         return args[args.index(flag) + 1] if flag in args and args.index(flag) + 1 < len(args) else None
     mode = val("--goal-mode")
     try:
-        if mode == "day":
-            return {"mode": "day", "days": 0, "hours": max(1.0, min(12.0, float(val("--hours") or DAY_DEFAULT_H)))}
+        if mode == "day":                            # hours_said: the plan line only says "your N hours" if he chose N
+            return {"mode": "day", "days": 0, "hours": max(1.0, min(12.0, float(val("--hours") or DAY_DEFAULT_H))),
+                    "hours_said": val("--hours") is not None}
         if mode == "exam":
             return {"mode": "exam", "days": max(0, min(365, int(val("--days") or 1)))}
     except ValueError:
