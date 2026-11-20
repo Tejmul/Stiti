@@ -1,7 +1,7 @@
 """Tutor grading accuracy on the labelled spoken-answer set — local grader vs local + free-LLM second opinion.
 
 NOT part of run_all (it calls the real free cloud models). Usage:
-  STITI_HOME=<tmp with models symlink> PYTHONPATH=src python tests/tutor_grade_live.py [--local] [--runs N]
+  STITI_HOME=<tmp with models symlink> PYTHONPATH=src python tests/tutor_grade_live.py [--local] [--runs N] [--gap S]
 Prints a confusion matrix (rows = true verdict, columns = graded verdict), accuracy, the misses, and latency.
 """
 from __future__ import annotations
@@ -12,11 +12,23 @@ import sys
 import time
 from pathlib import Path
 
+from stiti import router
 from stiti.tutor import grade
 from stiti.tutor.lesson import Check
 
 FIX = Path(__file__).parent / "fixtures" / "tutor_grade_cases.json"
 LABELS = ["correct", "partial", "wrong", "idk"]
+MODELS: list[str] = []
+_complete = router.complete
+
+
+def _spy(*a, **k):                     # which free model answered (never logs keys or prompts)
+    r = _complete(*a, **k)
+    MODELS.append(f"{r['provider']}/{r['model']}")
+    return r
+
+
+router.complete = _spy
 
 
 def load() -> list[tuple[Check, dict]]:
@@ -29,11 +41,12 @@ def load() -> list[tuple[Check, dict]]:
     return out
 
 
-def run(use_llm: bool) -> dict:
+def run(use_llm: bool, gap_s: float = 0) -> dict:
     cases = load()
     grade.grade(cases[0][0], "warm up the embedder")           # first embed loads the model: not a grading cost
     conf = {t: {p: 0 for p in LABELS} for t in LABELS}
     ms, llm_ms, misses, asked, changed = [], [], [], 0, 0
+    MODELS.clear()
     for chk, c in cases:
         t = time.perf_counter()
         g = grade.grade(chk, c["answer"], **({"llm": True} if use_llm else {}))
@@ -43,6 +56,9 @@ def run(use_llm: bool) -> dict:
         if g.get("llm_ms") is not None:
             asked += 1
             llm_ms.append(g["llm_ms"])
+            time.sleep(gap_s)                                    # --gap: space calls like a real lesson
+            if g.get("llm_error"):
+                misses.append(f"  (LLM {g['llm_error']} after {g['llm_ms']:.0f} ms on {c['answer']!r})")
         if g.get("source") == "llm" and g.get("local_verdict") != v:
             changed += 1
         if v != c["truth"]:
@@ -65,6 +81,9 @@ def show(r: dict, title: str) -> None:
     ms = sorted(r["ms"])
     print(f"latency per answer: median {statistics.median(ms):.0f} ms, p90 {ms[int(len(ms) * .9)]:.0f} ms, "
           f"max {ms[-1]:.0f} ms")
+    if MODELS:
+        print("answered by: " + ", ".join(f"{m} ×{MODELS.count(m)}" for m in sorted(set(MODELS))))
+        MODELS.clear()
     if r["llm_ms"]:
         lm = sorted(r["llm_ms"])
         print(f"LLM asked on {r['asked']}/{r['n']} answers, changed {r['changed']}; LLM latency median "
@@ -74,7 +93,8 @@ def show(r: dict, title: str) -> None:
 
 if __name__ == "__main__":
     runs = int(sys.argv[sys.argv.index("--runs") + 1]) if "--runs" in sys.argv else 1
+    gap = float(sys.argv[sys.argv.index("--gap") + 1]) if "--gap" in sys.argv else 0
     show(run(False), "local only")
     if "--local" not in sys.argv:
         for i in range(runs):
-            show(run(True), f"local + LLM second opinion (run {i + 1})")
+            show(run(True, gap), f"local + LLM second opinion (run {i + 1}{f', {gap:g} s apart' if gap else ''})")
