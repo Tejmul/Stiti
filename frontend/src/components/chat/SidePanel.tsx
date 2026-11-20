@@ -1,12 +1,12 @@
 "use client";
-// Left pane (bottom sheet on mobile): her mind sphere + state, hello, brain status, what she knows,
-// todos (check to finish) and upcoming alarms/reminders.
+// Left pane (bottom sheet on mobile): hello + her state (a still status line — internal pages have no particle
+// motion; owner rule), brain status, what she knows, todos (check to finish) and upcoming alarms/reminders.
 import Link from "next/link";
-import { useState, type Ref } from "react";
+import { useState } from "react";
 import { fmtDay, fmtTime, plural, type DayState, type Mind } from "@/lib/stiti";
-import MindCanvas, { type MindHandle, type MindState } from "./MindCanvas";
 
 export type Brain = "connecting" | "on" | "off" | "lost";
+export type MindState = "idle" | "thinking" | "talking" | "offline";
 const BRAIN_TEXT: Record<Brain, string> = {
   connecting: "Connecting to Stiti…",
   on: "Thinking brain connected (free cloud model)",
@@ -19,7 +19,6 @@ type Props = {
   brain: Brain;
   mindState: MindState;
   mindLabel: string;
-  mindRef: Ref<MindHandle>;
   day: DayState;
   knows: Mind | null;
   open: boolean;
@@ -81,15 +80,14 @@ function Knows({ knows }: { knows: Mind | null }) {
   );
 }
 
-export default function SidePanel({ name, brain, mindState, mindLabel, mindRef, day, knows, open, onClose, onDone }: Props) {
+export default function SidePanel({ name, brain, mindState, mindLabel, day, knows, open, onClose, onDone }: Props) {
   const nTodos = day.todos.length;
   return (
     <aside className={`side${open ? " is-open" : ""}`} id="side" aria-label="Stiti and today">
-      <div className="mind">
-        <MindCanvas ref={mindRef} state={mindState} />
-        <p className="mind__state label" aria-live="polite">{mindLabel}</p>
+      <div className="hello-wrap">
+        <p className={`mind mind--${mindState} label`} aria-live="polite"><span className="mind__dot" aria-hidden="true" />{mindLabel}</p>
+        <h1 className="hello"><span className="thin">Hi</span> <span className="bold">{name || "there"}.</span></h1>
       </div>
-      <h1 className="hello"><span className="thin">Hi</span> <span className="bold">{name || "there"}.</span></h1>
       <p className={`brain${brain === "on" ? " is-on" : brain === "connecting" ? "" : " is-off"}`}>
         <span className="brain__dot" aria-hidden="true" /><span>{BRAIN_TEXT[brain]}</span>
       </p>

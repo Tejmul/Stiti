@@ -1,4 +1,4 @@
-"""`stiti web` — Stiti's local web app (landing, chat, memory), served from this Mac only.
+"""`stiti web` — Stiti's local web app (landing, chat, memory, lessons), served from this Mac only.
 
 The UI is a Next.js static export in frontend/out (D23); this server adds the API + WebSocket.
 
@@ -176,6 +176,36 @@ def app():
         from . import mind
         return JSONResponse({"ok": await asyncio.to_thread(mind.forget_fact, int(req.path_params["id"]))})
 
+    async def lessons_api(req):
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import lessons
+        return JSONResponse(await asyncio.to_thread(lessons.overview), headers=nostore)
+
+    async def lesson_note(req):
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import lessons
+        name = req.query_params.get("name", "")
+        text = await asyncio.to_thread(lessons.note_text, name)
+        if text is None:
+            return JSONResponse({"error": "No such note."}, 404)
+        return JSONResponse({"name": name, "markdown": text}, headers=nostore)
+
+    async def lesson_start(req):
+        if not guard(req, write=True):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import lessons
+        try:
+            body = await req.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "message": "Bad request.", "error": "Bad request."}, 400)
+        out = await asyncio.to_thread(lessons.start, body)
+        code = out.pop("status", 200)
+        if code != 200:
+            out["error"] = out["message"]                # the page's api() helper shows `error`
+        return JSONResponse(out, status_code=code)
+
     async def ws_chat(ws):
         if not (host_ok(ws.headers) and ws.headers.get("origin") in origins
                 and secrets.compare_digest(ws.query_params.get("t", ""), token)):
@@ -217,6 +247,8 @@ def app():
         Route("/api/link", link), Route("/api/mind", mind_api),
         Route("/api/fact", fact_add, methods=["POST"]),
         Route("/api/fact/{id:int}/forget", fact_forget, methods=["POST"]),
+        Route("/lessons", page("lessons.html")), Route("/api/lessons", lessons_api),
+        Route("/api/lessons/notes", lesson_note), Route("/api/lessons/start", lesson_start, methods=["POST"]),
         Route("/icons/{n}.png", icon), Route("/api/state", state),
         Route("/api/todo/{id:int}/done", todo_done, methods=["POST"]),
         WebSocketRoute("/ws", ws_chat),

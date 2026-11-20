@@ -3,12 +3,12 @@
 import Link from "next/link";
 import Nav from "@/components/Nav";
 
-const NAME = { chat: "Chat", memory: "Memory", board: "Whiteboard" } as const;
+const NAME = { chat: "Chat", memory: "Memory", lessons: "Lessons", board: "Whiteboard" } as const;
 
-export default function LocalOnly({ page }: { page: "chat" | "memory" | "board" }) {
+export default function LocalOnly({ page }: { page: keyof typeof NAME }) {
   return (
     <>
-      <Nav current={page === "board" ? undefined : page} />
+      <Nav current={page === "chat" || page === "memory" ? page : undefined} />
       <main id="main" style={{ minHeight: "100dvh", display: "grid", placeItems: "center", padding: "120px var(--pad) 60px" }}>
         <div style={{ maxWidth: 620 }}>
           <p className="label">{NAME[page]} · runs on your Mac</p>

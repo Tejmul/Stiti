@@ -1,0 +1,34 @@
+/* In-app navbar (Chat, Memory, Lessons). The glass itself comes from .nav in globals.css; this only lays out the app tabs.
+   Shipped only with the private pages (imported by AppNav.tsx), never in the public build. */
+
+.appnav { gap: 4px; }
+.appnav__tabs { display: flex; align-items: center; gap: 2px; margin: 0 4px 0 6px; }
+.appnav__tab {
+  display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px 0 14px; border-radius: 999px;
+  font-size: 15.5px; font-weight: 500; color: var(--ink-2); white-space: nowrap;
+  transition: background .3s var(--out), color .3s var(--out);
+}
+.appnav__tab svg { width: 18px; height: 18px; flex: none; }
+.appnav__tab:hover { color: var(--ink); background: rgba(255, 255, 255, .5); }
+.appnav__tab[aria-current="page"] { color: var(--ink); background: rgba(255, 255, 255, .86);
+  box-shadow: inset 0 1px 0 #fff, 0 0 0 1px rgba(38, 43, 87, .08), 0 2px 8px -2px rgba(38, 43, 87, .14); }
+
+.appnav__local { display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 16px 0 14px; margin-left: 2px;
+  border-left: 1px solid rgba(38, 43, 87, .1); border-radius: 0 999px 999px 0;
+  font: 400 11px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); white-space: nowrap; }
+.appnav__dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(47, 138, 91, .14); }
+
+@media (max-width: 760px) {
+  .appnav__tabs { margin: 0 2px; }
+  .appnav__tab { padding: 0 13px 0 11px; font-size: 15px; gap: 7px; }
+  .appnav__local { display: none; }
+}
+/* a phone with an extra control after the tabs (chat's "Today"): the other tabs show their icon only */
+@media (max-width: 520px) {
+  .appnav--end .appnav__tab:not([aria-current="page"]) { padding: 0 12px; }
+  .appnav--end .appnav__tab:not([aria-current="page"]) span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+}
+@media (max-width: 360px) {
+  .appnav__tab span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .appnav__tab { padding: 0 13px; }
+}

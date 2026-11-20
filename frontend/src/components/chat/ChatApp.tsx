@@ -5,11 +5,10 @@
 // ← reply{text,route,domain,provider,ms,used} · ← state{todos,alarms}
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Nav from "@/components/Nav";
+import AppNav from "@/components/app/AppNav";
 import { api, ensureToken, fmtDay, NotAllowed, wsUrl, type DayState, type Mind, type Reply } from "@/lib/stiti";
 import Message, { type Msg } from "./Message";
-import SidePanel, { type Brain } from "./SidePanel";
-import type { MindHandle, MindState } from "./MindCanvas";
+import SidePanel, { type Brain, type MindState } from "./SidePanel";
 
 const SUGGEST = ["What's on my todo list?", "Remind me to drink water in 1 hour", "What did we talk about yesterday?",
                  "Add call mom to my todos"];
@@ -37,7 +36,6 @@ export default function ChatApp() {
   const ws = useRef<WebSocket | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLTextAreaElement>(null);
-  const mindRef = useRef<MindHandle>(null);
   const nextId = useRef(1);
   const streamId = useRef<number | null>(null);
   const jump = useRef(true);                         // next scroll is instant
@@ -70,7 +68,6 @@ export default function ChatApp() {
         setThinking(true);
         setMind({ state: "thinking", label: "Thinking" });
       } else if (m.type === "delta") {                 // reply streaming in while she writes it
-        mindRef.current?.pulse(0.3);
         if (streamId.current == null) {
           const id = (streamId.current = nextId.current++);
           setThinking(false);
@@ -88,7 +85,6 @@ export default function ChatApp() {
         setMsgs((l) => (sid != null ? l.map((x) => (x.id === sid ? { ...fin, id: sid } : x)) : [...l, { ...fin, id: nextId.current++ }]));
         setThinking(false);
         setBusy(false);
-        mindRef.current?.pulse(1);
         const fast = m.route === "fast_path";
         setMind({ state: "idle", label: fast ? "Done" : "Here for you" });
         clearTimeout(doneTimer.current);
@@ -202,9 +198,9 @@ export default function ChatApp() {
   const days = msgs.map((m) => fmtDay(m.at));
   return (
     <div className="pg-chat">
-      <Nav current="chat" cta={todayBtn} />
+      <AppNav current="chat" end={todayBtn} />
       <main className="chat" id="main">
-        <SidePanel name={name} brain={brain} mindState={mind.state} mindLabel={mind.label} mindRef={mindRef}
+        <SidePanel name={name} brain={brain} mindState={mind.state} mindLabel={mind.label}
           day={day} knows={knows} open={sideOpen} onClose={() => setSideOpen(false)} onDone={done} />
 
         <section className="thread" aria-label="Conversation">
