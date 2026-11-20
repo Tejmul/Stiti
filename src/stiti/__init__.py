@@ -78,7 +78,7 @@ def voice(aec: bool = True, debug: bool = False):
     stop = threading.Event()
     threading.Thread(target=_scheduler, args=(stop,), daemon=True).start()
     try:
-        VoiceLoop(Engine("voice"), aec=aec, debug=debug).run()
+        VoiceLoop(Engine("voice", resume=True), aec=aec, debug=debug).run()
     except KeyboardInterrupt:
         pass
     finally:

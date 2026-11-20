@@ -14,6 +14,8 @@ from datetime import date, datetime
 from . import embed, router, say
 from .brain import compiler, emotion, examples, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
 from .brain import asked as asked_mod
+from .brain import convstate
+from .brain import thread as thread_mod
 from .brain import lang as lang_mod
 from .config import CFG
 from . import db
@@ -145,12 +147,27 @@ def hello(name: str | None, now: datetime | None = None) -> str:
     return pick
 
 
+def _with_beat(s: strategy.Strategy, kind: str) -> strategy.Strategy:
+    """The strategy shape with ONE beat added: "ask" lets one question through (psych enforces ≤ 1), "build" one more
+    sentence; both get a few more words. The no-question wording of ACKNOWLEDGE / "then stop" of ANSWER is lifted."""
+    from dataclasses import replace as _replace
+    line = s.line.replace("No follow-up question, no advice", "No advice").replace(", first, then stop.", ", first.")
+    line = f"{line.strip()} {thread_mod.BEAT_ASK if kind == 'ask' else thread_mod.BEAT_BUILD}"
+    return _replace(s, ask=kind == "ask", max_words=s.max_words + (14 if kind == "ask" else 12), line=line)
+
+
 class Engine:
     NotSpeculable = NotSpeculable
 
-    def __init__(self, channel: str = "text"):
+    def __init__(self, channel: str = "text", resume: bool = False):
+        """resume=True (the always-on app, `stiti voice`): a restart within memory.RESUME_S of the last turn continues
+        that conversation — same session, and the in-memory state saved after every turn (convstate.py)."""
         self.channel = channel
-        self.session = memory.start_session(channel)
+        self.resume = resume
+        if resume:
+            self.session, self.resumed = memory.resume_session(channel)
+        else:
+            self.session, self.resumed = memory.start_session(channel), False
         self.last_marker: str | None = None                # ● ◐ ○ the LLM opened its last reply with (turnmark.py)
         self.incomplete_at = 0.0                            # when a reply was last dropped as ◐/○
         self._spec = False                                  # inside a speculative turn (D29)
@@ -193,6 +210,14 @@ class Engine:
         self.last_reply_full: str | None = None             # before a barge-in truncated it (learning signal)
         self.crisis_at = 0.0
         self.nudged: float | None = None                    # when she last pushed back (late night) — once per session
+        self.thread = thread_mod.Thread()                   # what they're talking about right now (follow-ups)
+        self.her_last: list[str] = []                       # her last 3 replies / his last 3 lines (the "one beat" rules)
+        self.his_last: list[str] = []
+        self.last_beat: str | None = None                   # "ask" / "build" / None — the beat allowed last turn
+        if self.resumed:
+            saved = convstate.load(self.session, memory.RESUME_S)
+            if saved:
+                convstate.restore(self, saved)
         if os.getenv("STITI_LIVE_WARM", "1") != "0":
             live.warm()                                     # news caches filled in the background, once per process
             weather.refresh_async()                         # so the morning brief has weather without waiting (D39)
@@ -466,6 +491,8 @@ class Engine:
         h, self._held, self._snap = self._held, None, None
         if h is not None:
             h.commit()
+            if self.resume:
+                convstate.save(self)
 
     def speculation_discard(self) -> None:
         h, snap = self._held, self._snap
@@ -616,6 +643,14 @@ class Engine:
             return s
 
         strat = pick(domain)
+        # 2026-11-20: a follow-up ("why?", "and that one?", "the second one") belongs to the thread, not a new topic
+        # (the classifier calls short elliptical lines "control" ~0.65; a real command names its action)
+        follow = (thread_mod.is_followup(text, self.thread) and not COMMAND_RX.search(text)
+                  and not (domain in ("todo", "time", "control") and d.conf.get("domain", 0.0) >= 0.8))
+        topic_more, beat_kind = False, None
+        if (strat.name == "QUIET" and norepeat.wants_more(text) and self.said.anchor is not None
+                and time.time() - self.info_at < 600):
+            strat = strategy.make("ANSWER", strat.lang)     # "and?" right after an answer = "go on", not a bare "Mm?"
         from . import farewell as bye
         from .life import alarms, important
         imp_turn = False                        # this turn was about a noticed thing (D49)
@@ -838,9 +873,21 @@ class Engine:
             t = time.perf_counter()
             # D36: "what else?" means "more about what I asked before" — recall with THAT question, not these words
             more = (norepeat.wants_more(text) and self.said.anchor is not None and time.time() - self.info_at < 600)
-            rtext, rvec = self.said.anchor if more else (text, qvec)
-            if not more:
-                self.said = self.said.with_anchor(text, qvec)
+            # …but only a question about HIM pages through his facts to an honest "that's all I know". "Tell me more"
+            # about black holes / his project idea continues that topic (2026-11-20: it got "that's most of what I know")
+            topic_more = more and not thread_mod.is_personal(self.said.anchor[0])
+            more = more and not topic_more
+            if more or topic_more:
+                rtext, rvec = self.said.anchor
+            elif follow:                                 # recall with the topic + his words, not the bare "why?"
+                rtext = thread_mod.query(self.thread, text)
+                rvec = embed.embed_query(rtext)
+            else:
+                rtext, rvec = text, qvec
+            if not (more or topic_more):
+                self.said = self.said.with_anchor(rtext, rvec)
+            if topic_more:
+                strat = strategy.make("ANSWER", strat.lang, max_words=60)
             if told:
                 more = False                             # a recap is his words again: nothing is "already said"
             strat.said = None if (told or norepeat.wants_repeat(text) or strat.name == "REPAIR") else self.said
@@ -849,6 +896,8 @@ class Engine:
             mems = [m for m in mems if m["episode_id"] != user_ep and m["sim"] >= 0.25
                     and m.get("importance", 3) > 1]
             recent = memory.recent_turns(self.session, n=compiler.RECENT_N + 1)[:-1]
+            earlier = (memory.earlier_this_conversation(self.session, recent[0]["id"], max_privacy=min(privacy, 1))
+                       if len(recent) >= compiler.RECENT_N and not told else [])
             in_recent = {r["text"] for r in recent}
             mems = [m for m in mems if m["text"] not in in_recent]   # already in RECENT: not a "memory" (D36)
             asked = strategy.asks_about_past(text, domain) or more
@@ -900,6 +949,19 @@ class Engine:
             ex = (examples.pick(strat.name, qvec, text) if live_job is None and live_res is None and not tools_turn
                   and not told and not more and not strat.reframe and strat.lang == "english" else [])
             strat.shown = examples.sentences(ex)
+            # one beat that keeps the conversation going (brain/thread.beat): a follow-up question or a sentence that
+            # builds on what he said — decided here, the shape is enforced in code like every other strategy rule
+            beat_kind = thread_mod.beat(
+                strategy=strat.name, text=text, th=self.thread, follow=follow or topic_more, her_last=self.her_last,
+                his_last=self.his_last, mood=emo.label, mood_conf=emo.conf, directives=talk,
+                interrupted=self.last_interrupted,
+                blocked=bool(told or more or live_job is not None or live_res is not None or tools_turn or corrected
+                             or crisis or strat.reframe or self.pending is not None))
+            if beat_kind:
+                strat = _with_beat(strat, beat_kind)
+            th_live = self.thread if self.thread.live() else thread_mod.Thread(
+                topic=self.said.anchor[0] if self.said.anchor else text, at=time.time())
+            th_block = thread_mod.block(th_live, text, more=topic_more) if (follow or topic_more) else None
             brief, brief_tokens = compiler.build(
                 text=text, now=now, privacy=privacy, emotion_hint=emo.hint(), tone=psych.tone(emo.label),
                 recent=recent, memories=mems, facts=facts, lessons=les,
@@ -907,7 +969,8 @@ class Engine:
                 strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
                 markers=markers and not told, said=strat.said, more=more, told=told, examples=ex,
                 saved=[x if x != "__remember__" else "what he asked you to remember" for x in upd.saved] + learned,
-                answered=asked_mod.for_briefing(qvec) if privacy < 2 else None)
+                answered=asked_mod.for_briefing(qvec, k=5 if beat_kind == "ask" else 3) if privacy < 2 else None,
+                thread=th_block, earlier=earlier)
             if live_job is not None:
                 try:
                     live_res = live_job.result(timeout=live.budget(lreq) + 1.5)
@@ -1042,6 +1105,10 @@ class Engine:
         if self.te_ears_until and lang_mod.TE_CHARS.search(text):
             self.te_ears_until = time.time() + TE_EARS_S    # still speaking Telugu: the window rolls on
         self._sync_ears()
+        self.thread = thread_mod.update(self.thread, text, reply, follow=follow or topic_more, domain=str(domain),
+                                        route=route, strategy=strat.name)
+        self.her_last, self.his_last = (self.her_last + [reply])[-3:], (self.his_last + [text])[-3:]
+        self.last_beat = beat_kind
         self.last_interrupted = False
         self.live_last = (live_res, live_from + 3, time.time()) if live_res is not None and live_res.items else None
         try:                                    # what to SHOW on screen while she says it (desktop overlay card)
@@ -1066,5 +1133,8 @@ class Engine:
                            "live": None if live_res is None else {
                                "kind": live_res.req.kind, "query": live_res.req.query, "items": len(live_res.items),
                                "pages": [p.url for p in live_res.pages], "queries": list(live_res.req.queries),
-                               "ok": live_res.ok, "failed": live_res.failed}}
+                               "ok": live_res.ok, "failed": live_res.failed},
+                           "follow": follow, "topic_more": topic_more, "beat": beat_kind}
+        if self.resume and not self._spec:
+            convstate.save(self)                        # a restart picks the conversation up here (convstate.py)
         return reply
