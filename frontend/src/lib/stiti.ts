@@ -115,4 +115,4 @@ export type LessonProgress = {
   revise: string[]; last_seen: string | null;
 };
 export type Lessons = { active: boolean; board_url: string; files: StudyFile[]; notes: LessonNote[]; progress: LessonProgress[] };
-export type LessonStart = { target: string; mode: LessonMode; hours?: number; days?: number; focus?: string; ptt?: boolean };
+export type LessonStart = { target: string; mode: LessonMode; hours?: number; days?: number; focus?: string; ptt?: boolean; blurt?: boolean };

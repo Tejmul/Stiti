@@ -31,6 +31,7 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
   const [hours, setHours] = useState(6);
   const [focus, setFocus] = useState("");
   const [ptt, setPtt] = useState(false);
+  const [blurt, setBlurt] = useState(false);
   const [fq, setFq] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -46,6 +47,7 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
     if (!ready || busy || active) return;
     setBusy(true); setErr(""); setStarted("");
     const body: LessonStart = { target: pick.kind === "file" ? pick.path : topic, mode, ptt };
+    if (blurt) body.blurt = true;
     if (mode === "day") body.hours = hours;
     if (mode === "exam") body.days = days;
     if (focus.trim()) body.focus = focus.trim();
@@ -69,6 +71,7 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
     MODES.find((m) => m.id === mode)!.title + (mode === "day" ? ` · ${hours} h` : mode === "exam" ? ` · ${WHEN.find((w) => w.d === days)!.t.toLowerCase()}` : ""),
     focus.trim() ? `focus: ${focus.trim()}` : null,
     ptt ? "hold to talk" : null,
+    blurt ? "Blurt test" : null,
   ].filter(Boolean).join(" · ");
 
   return (
@@ -188,6 +191,15 @@ export default function StartCard({ files, active, boardUrl, pick, setPick, onSt
           <label htmlFor={`${id}-ptt`} className="toggle__text">
             <span className="toggle__t"><Icon name="mic" />Hold to talk</span>
             <span className="toggle__l">For a noisy room: she only listens while you hold Space on the board.</span>
+          </label>
+        </div>
+        <div className="toggle">
+          <button type="button" role="switch" aria-checked={blurt} className="switch" id={`${id}-blurt`} onClick={() => setBlurt(!blurt)}>
+            <span className="switch__knob" />
+          </button>
+          <label htmlFor={`${id}-blurt`} className="toggle__text">
+            <span className="toggle__t"><Icon name="check" />Blurt</span>
+            <span className="toggle__l">Test me at the end of each topic: say everything you remember, and she marks each key point.</span>
           </label>
         </div>
       </fieldset>
