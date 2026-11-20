@@ -169,6 +169,54 @@ for fr, es in by_frame.items():
                 over += 1
 check("board: nothing on a page overlaps anything else", over == 0, f"{over} overlaps")
 
+# ------------------------------------------------------------------ still wrong → again; recap; notes; welcome back
+print("\nhe keeps getting it wrong → she comes back to it; recap; notes saved; next time: welcome back")
+
+
+def session(source, answers):
+    ev: queue.Queue = queue.Queue()
+    sv = FakeSrv()
+    lg: list[str] = []
+    stop = threading.Event()
+
+    def feed():
+        seen = 0
+        while not stop.is_set():
+            waits = [m for m in list(sv.sent) if m.get("type") == "status" and m.get("mode") == "waiting"]
+            if len(waits) > seen and answers:
+                seen = len(waits)
+                time.sleep(0.05)
+                ev.put({"type": "text", "text": answers.pop(0)})
+            time.sleep(0.02)
+    co = C.Coach(source, audio=SilentAudio(scale=0.01), events=ev, server=sv, log=lg.append, call=fake_call,
+                 persist=False, planner=None, pace=0.02, idle_resume_s=0.2, check_timeout_s=2)
+    threading.Thread(target=feed, daemon=True).start()
+    res = {}
+    th = threading.Thread(target=lambda: res.setdefault("r", co.run()), daemon=True)
+    th.start()
+    th.join(120)
+    stop.set()
+    return co, [x[len("Stiti: "):] for x in lg if x.startswith("Stiti: ")], res.get("r")
+
+
+co2, said2, r2 = session("compilers second test", ["exam tomorrow", "no idea", "no idea", "no idea"] + ["no idea"] * 120)
+check("concepts still wrong after their steps come back later, from another angle",
+      any(s.startswith("Before we finish, let's come back to") for s in said2)
+      and any(sg.id.endswith("v") or "v" in sg.id.split("s")[0] for sg in co2.L.segments)
+      and any(sg.cues[0].ops and sg.cues[0].ops[0].type == "new_page" and "again" in (sg.cues[0].ops[0].text or "")
+              for sg in co2.L.segments), str(said2[-6:]))
+check("a 'Today' recap is said at the end (to revise: …, asked first next time)",
+      any(s.startswith("That's it for today.") and "To revise" in s for s in said2), str(said2[-3:]))
+notes = co2.notes_path.read_text() if co2.notes_path else ""
+check("his notes are saved as readable markdown (concepts, points, examples, Remember)",
+      co2.notes_path is not None and notes.startswith("# ") and "## Tokens" in notes and "- Lexer groups" in notes
+      and "e.g." in notes and "**Remember:**" in notes, notes[:300])
+check("the session finished normally", r2 is not None and r2.get("finished"), str(r2))
+co3, said3, r3 = session("compilers second test", ["exam tomorrow"] + ["tokens"] * 120)
+check("next session on the same file: 'Welcome back', no probe questions again",
+      any(s.startswith("Welcome back") for s in said3) and co3.returning
+      and not any("quick questions first" in s for s in said3), str(said3[:4]))
+
 # ------------------------------------------------------------------ D42 for the coach: board first, voice ∥ reading
 print("\nopens fast: board first, her voice and reading his file at the same time")
 import stiti.tutor as T  # noqa: E402
