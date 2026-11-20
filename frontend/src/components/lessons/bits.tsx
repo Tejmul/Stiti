@@ -17,6 +17,9 @@ const ICONS: Record<string, ReactNode> = {
   mic: <><rect x="7.5" y="2.5" width="5" height="9" rx="2.5" {...S} /><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5" {...S} /></>,
   clock: <><circle cx="10" cy="10" r="7" {...S} /><path d="M10 6v4.2l2.8 1.8" {...S} /></>,
   target: <><circle cx="10" cy="10" r="7" {...S} /><circle cx="10" cy="10" r="3.5" {...S} /><path d="M10 10h.01" {...S} /></>,
+  cards: <><rect x="3" y="6" width="11" height="10" rx="1.5" {...S} /><path d="M6 6V4.5a1 1 0 0 1 1-1h9a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1h-2M6.5 11h4" {...S} /></>,
+  map: <><path d="M3 5.5 7.5 3.5l5 2 4.5-2v11l-4.5 2-5-2L3 16.5v-11Z" {...S} /><path d="M7.5 3.5v11M12.5 5.5v11" {...S} /></>,
+  play: <path d="M6.5 4.5v11l9-5.5-9-5.5Z" {...S} />,
   open: <><path d="M11 3.5h5.5V9M16.5 3.5 9.5 10.5" {...S} /><path d="M14.5 12v3.5a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1H8" {...S} /></>,
 };
 

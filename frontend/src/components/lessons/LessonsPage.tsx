@@ -7,8 +7,10 @@ import Link from "next/link";
 import AppNav from "@/components/app/AppNav";
 import type { LessonNote, LessonProgress, Lessons } from "@/lib/stiti";
 import { NotAllowed, api } from "@/lib/stiti";
+import MapView from "./MapView";
 import NoteView from "./NoteView";
 import Progress from "./Progress";
+import Review from "./Review";
 import StartCard, { type Pick } from "./StartCard";
 import { Arrow, Icon, fmtSize, fmtWhen } from "./bits";
 
@@ -23,6 +25,7 @@ export default function LessonsPage() {
   const [lag, setLag] = useState(false);
   const [pick, setPick] = useState<Pick>({ kind: "file", path: "", topic: "" });
   const [note, setNote] = useState<LessonNote | null>(null);
+  const [map, setMap] = useState<LessonProgress | null>(null);
   const [watch, setWatch] = useState(0);                 // > now: keep polling (a lesson was just started)
   const got = useRef(false);
   const kindSet = useRef(false);
@@ -118,13 +121,16 @@ export default function LessonsPage() {
             <StartCard files={data.files} active={data.active} boardUrl={data.board_url} pick={pick} setPick={setPick}
               onStarted={started} />
             <div className="side">
-              <Progress rows={data.progress} onContinue={continueFrom} />
+              <Review total={data.review?.total ?? 0} rows={data.progress} active={data.active} boardUrl={data.board_url}
+                onStarted={started} />
+              <Progress rows={data.progress} onContinue={continueFrom} onMap={setMap} />
               <Notes notes={data.notes} onOpen={setNote} />
             </div>
           </div>
         )}
       </main>
       <NoteView note={note} onClose={() => setNote(null)} />
+      <MapView row={map} active={!!data?.active} boardUrl={data?.board_url ?? ""} onClose={() => setMap(null)} onStarted={started} />
     </div>
   );
 }
