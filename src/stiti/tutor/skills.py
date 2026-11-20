@@ -446,15 +446,16 @@ class Board:
 
     def _op_text(self, op: Op) -> list[dict]:
         region = op.region or "main"
-        small = region in ("parking", "goal", "notes", "doubts")
-        fs = 16 if small else 22 if region in ("points", "remember") else 20
+        small = region in ("parking", "goal", "notes")
+        # notes pages are read from across a room: big type by role (title 40 · points 30 · remember 26 · example 24)
+        fs = 16 if small else {"points": 30, "remember": 26, "example": 24, "doubts": 20}.get(region, 20)
         text = op.text
         if region == "points":                           # numbered key points: the page reads like notes
             st = self._fs()
             st["points_n"] = st.get("points_n", 0) + 1
             text = f"{st['points_n']}. {text}"
-        width = {"side": 34, "parking": 34, "goal": 34, "points": 52, "example": 26, "doubts": 40,
-                 "remember": 34}.get(region, 52)
+        width = {"side": 34, "parking": 34, "goal": 34, "points": 46, "example": 22, "doubts": 40,
+                 "remember": 30}.get(region, 52)
         txt = wrap(text, width)
         w, h = text_size(txt, fs)
         x, y, reg = self._place(w, h, op.place, op.ref, region)
@@ -526,8 +527,9 @@ class Board:
         gid = op.id or f"g{self.n + 1}"
         nodes = op.nodes or []
         sizes, dims = {}, {}
+        gfs = 24 if op.region == "figure" else 20
         for n in nodes:
-            txt, w, h = self._box_dims(n["text"], n.get("shape") or "rectangle", 20)
+            txt, w, h = self._box_dims(n["text"], n.get("shape") or "rectangle", gfs)
             sizes[n["id"]], dims[n["id"]] = (w, h), txt
         reg = "figure" if op.region == "figure" else "main"
         rx, ry, rw, rh = self.region(reg)
@@ -547,7 +549,7 @@ class Board:
             shape = n.get("shape") or "rectangle"
             self._register(nid, "box", x, y, w, h, reg, shape, label=n["text"])
             el = _base(type=shape, id=nid, x=x, y=y, width=w, height=h, strokeColor=stroke, backgroundColor=bg,
-                       label={"text": dims[n["id"]], "fontSize": 20})
+                       label={"text": dims[n["id"]], "fontSize": gfs})
             if shape == "rectangle":
                 el["roundness"] = {"type": 3}
             acts.append({"do": "add", "anim": "sketch", "dt": t, "els": [el]})
@@ -567,9 +569,9 @@ class Board:
         rows = op.rows or []
         ncol = max(len(r) for r in rows)
         rows = [r + [""] * (ncol - len(r)) for r in rows]
-        fs = 18
+        fs = 22 if op.region == "figure" else 18
         colw = [max(110, max(len(r[c]) for r in rows) * fs * CH + 30) for c in range(ncol)]
-        rowh = 50
+        rowh = 58 if op.region == "figure" else 50
         W, H = sum(colw), rowh * len(rows)
         x0, y0, reg = self._place(W, H, op.place, op.ref, op.region)
         tid = self._new_id(op.id, "tbl")
