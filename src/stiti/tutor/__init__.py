@@ -263,7 +263,7 @@ def _teach(args: list[str]) -> dict:
             srv.send(m)
     if mode != "voice" or sys.stdin.isatty():     # --silent / --type read typed lines (piped too); the app gives DEVNULL
         threading.Thread(target=_stdin_reader, args=(events, stop), daemon=True).start()
-    print("Talk any time: ruko / continue / phir se / peeche / skip / dheere / tez / bas karo — or just ask.\n"
+    print("Talk any time: wait / continue / repeat / go back / skip / slower / faster / end — or just ask.\n"
           if mode == "voice" else "Type answers or questions here or on the board. Commands: pause, continue, "
                                   "repeat, back, skip, slower, faster, end.\n")
     try:

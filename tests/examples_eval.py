@@ -16,6 +16,7 @@ if not db.rstrip("/").split("/")[-1].startswith("stiti_test"):
 os.environ.setdefault("STITI_LIVE_WARM", "0")
 os.environ.setdefault("STITI_EVENTKIT", "off")
 os.environ.pop("STITI_EXAMPLES", None)
+os.environ["STITI_LANGS"] = "mirror"          # D51: the Hinglish check below needs the opt-in mirror mode
 
 passed = total = 0
 

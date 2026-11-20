@@ -9,7 +9,7 @@
        {"say": "Hey! Today we'll figure out what a compiler actually does when you hit compile.",
         "ops": [{"type": "new_page", "text": "How a compiler works", "at": "start"},
                 {"type": "text", "text": "Goal: the phases of a compiler", "region": "goal", "at": "compiler"}]},
-       {"say": "Chalo, before I explain anything, take a quick guess.",
+       {"say": "Okay, before I explain anything, take a quick guess.",
         "ops": [{"type": "box", "id": "q", "text": "?", "shape": "ellipse", "style": "violet", "place": "center", "at": "guess"}]}
      ],
      "check": {"kind": "predict",

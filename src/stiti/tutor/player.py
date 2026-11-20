@@ -40,9 +40,9 @@ CHECKIN_MIN_GAP_S = 120.0   # "any doubt so far?" only at a section end, and at 
 CHECKIN_WAIT_S = 3.0        # … then this long for a doubt before she carries on
 LONG_PAUSE_S = 90.0         # paused and silent this long → one gentle "whenever you're ready"
 
-ACKS = ["Good question.", "Achha, good doubt.", "Hmm, nice one."]
+ACKS = ["Good question.", "Okay, good doubt.", "Hmm, nice one."]
 FILLERS = ["Let me draw it out.", "One sec, let me sketch this.", "Let me show you on the board."]
-BRIDGES = ["Back to where we were.", "Okay, back to the lesson.", "Chalo, back to where we were."]
+BRIDGES = ["Back to where we were.", "Okay, back to the lesson.", "Right, back to where we were."]
 SIMPLER = ["Okay, let me try it another way.", "No problem, simpler this time.", "Let me put it differently."]
 CHECKINS = ["Any doubt so far? Just ask, or I'll carry on.", "All clear till here? Stop me any time with a doubt."]
 OFFLINE_FIRST = "I can't reach my thinking brain right now, so here's the short version from this lesson."
@@ -319,8 +319,7 @@ class Tutor:
         elif kind == "confused":
             self._explain_again(mid_cue)
         elif kind in ("hindi", "english"):
-            self.say("Okay. The prepared lesson is in English, but ask me anything in Hinglish, and I'll answer that way."
-                     if kind == "hindi" else "Okay, English it is.")
+            self.say("I'll keep it in English." if kind == "hindi" else "Okay, English it is.")
         elif kind == "click":
             self._explain_element(text)
         elif kind == "question":
@@ -613,7 +612,7 @@ class Tutor:
                 waited = time.time() - t0
                 if waited > 30 and not nudged:
                     nudged = True
-                    ev = self.say("Take your time. Or say 'pata nahi', and I'll give you a hint.")
+                    ev = self.say("Take your time. Or say 'I don't know', and I'll give you a hint.")
                     t0 = time.time() - 30
                 elif waited > self.check_timeout_s:
                     ev = {"type": "text", "text": "pata nahi"}
@@ -668,7 +667,7 @@ class Tutor:
                 self.say(c.on_correct or PRAISE)
                 break
             if rec["hints"] < len(c.hints) and rec["attempts"] < 3:
-                opener = {"partial": "Good start, you've got part of it. Aur?", "wrong": "Not quite.",
+                opener = {"partial": "Good start, you've got part of it. What else?", "wrong": "Not quite.",
                           "idk": "No worries."}[v]
                 ev = self.say(f"{opener} Hint: {c.hints[rec['hints']]}")
                 rec["hints"] += 1

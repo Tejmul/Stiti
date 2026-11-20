@@ -42,6 +42,10 @@ def parse(text: str) -> Instruction | None:
         pass                                       # "I speak English at work" is a fact, not an instruction
     elif c := L.command(t):
         op, lg = c                                 # D34: only an explicit lock is saved; "talk in X" just switches
+        if L.english_only() and lg not in (None, "english"):   # D51: English only — "talk in Telugu" lands on English
+            return Instruction("", "language", "talk_style", L.ENGLISH_ONLY_ACK, lang_cmd=("switch", "english"))
+        if L.english_only() and op == "unlock":    # "talk in any language" — she'd promise what D51 won't do
+            return Instruction("", "language", "talk_style", L.ENGLISH_ONLY_ACK, lang_cmd=c)
         if op == "lock":
             return Instruction(L.lock_directive(lg), "language", "talk_style", L.phrase("locked", lg), lang_cmd=c)
         if op == "unlock":

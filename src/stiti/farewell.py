@@ -52,7 +52,8 @@ def farewell(heard: str = "", mood: str | None = None, now: datetime | None = No
     h = now.hour
     part = "night" if (h >= 21 or h < 4 or re.search(r"good ?night|\bgn\b|so jao|soja|sleep|sone|so raha|so rahi|bed", heard, re.I)) \
         else "morning" if h < 12 else "day"
-    lang = "hi" if HINGLISH.search(heard) else "en"
+    from .brain.lang import english_only
+    lang = "hi" if HINGLISH.search(heard) and not english_only() else "en"   # D51: English only
     name = _name()
     options = [l for l in _LINES[(part, lang)] if l != _last] or _LINES[(part, lang)]
     line = random.choice(options)

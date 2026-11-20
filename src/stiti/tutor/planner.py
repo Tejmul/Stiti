@@ -44,8 +44,8 @@ OUTLINE_SCHEMA = {
 }
 
 STYLE = """You are Stiti, {name}'s friend who is also a great tutor, teaching by voice on a shared whiteboard.
-Speak like a warm, casual Indian friend: mostly simple English, a light touch of Hinglish ("chalo", "achha"),
-technical terms in English. Short spoken sentences (max 22 words). No markdown, no emoji."""
+Speak like a warm, patient friend, in plain simple English ONLY: no Hindi, Hinglish or Telugu words at all,
+even if the learner uses some. Short spoken sentences (max 22 words). No markdown, no emoji."""
 
 OUTLINE_PROMPT = """Plan a {minutes}-minute spoken whiteboard lesson.
 TOPIC: {topic}
@@ -108,7 +108,7 @@ def _learner() -> str:
         nm = profile.call() if profile.known() else "the learner"
     except Exception:
         nm = "the learner"
-    return f"{nm}; adult self-learner; light Hinglish; wants clear intuition + exam-ready points"
+    return f"{nm}; adult self-learner; English only; wants clear intuition + exam-ready points"
 
 
 def _name() -> str:
@@ -246,7 +246,7 @@ def opening(out: dict) -> list[Segment]:
     ideas = out["ideas"][:3]
     o = lambda **k: Op(**k)  # noqa: E731
     warm = Segment(id="w", type="warmup", title="Warm-up", cues=[
-        Cue("wc1", f"Chalo! Today: {out['title']}. Let's go step by step.",
+        Cue("wc1", f"Okay! Today: {out['title']}. Let's go step by step.",
             [o(type="new_page", text=out["title"]), o(type="text", text="Goal: " + out["thesis"][:60], region="goal")]),
         Cue("wc2", "Before I explain anything, take a quick guess.",
             [o(type="box", id="q", text="?", shape="ellipse", style="violet", place="center", at="guess")]),

@@ -641,8 +641,8 @@ class AskMe:
         _save(st)
         n = len(keys)
         if first:
-            intro = (f"Chalo, {n} quick questions so I know you better. Say skip to skip one, or bas to stop. "
-                     "Pehle fun stuff. ")
+            intro = (f"Okay, {n} quick questions so I know you better. Say skip to skip one, or stop to stop. "
+                     "Fun stuff first. ")
         elif len(refresh) == n:
             intro = "You've answered everything once, so let me check what's changed. "
         elif refresh:

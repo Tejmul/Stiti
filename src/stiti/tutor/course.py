@@ -314,7 +314,7 @@ class Night:
         L = self.plan["lessons"]
         mins = round((self.deadline - time.time()) / 60)
         self._say_board("Tonight's plan", [(f"{k + 1}. {x['title']}", "blue" if k == 0 else "plain") for k, x in enumerate(L)],
-                        f"Chalo! Tonight: {self.plan['title']}. {len(L)} short lessons in about {mins // 60} hours "
+                        f"Okay! Tonight: {self.plan['title']}. {len(L)} short lessons in about {mins // 60} hours "
                         f"{mins % 60} minutes, with breaks. First, a quick guess-check so I can skip what you already know.")
         if self.stopped:
             return
@@ -446,9 +446,9 @@ class Night:
                 mins = BREAK_LONG_MIN if breaks % 3 == 0 else BREAK_SHORT_MIN
                 if not self.stopped:
                     self._say_board(f"Break · {mins} min", [("Stand up · water · look far away", "green"),
-                                                             ("Say \"chalo\" when you're back", "muted")],
+                                                             ("Say \"continue\" when you're back", "muted")],
                                     f"Break time, {mins} minutes. Stand up, drink some water, no phone. "
-                                    "Say chalo when you're back.")
+                                    "Say continue when you're back.")
                     self._wait_break(mins)
         if not self.stopped:
             self.final_review()
