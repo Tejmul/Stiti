@@ -18,7 +18,7 @@ run() {
   if [ "${FRESH:-1}" = "1" ]; then fresh_db; fi
   if out=$(uv run python "$@" 2>&1); then echo "✅ $name — $(echo "$out" | tail -1)"; else
     echo "❌ $name"
-    echo "$out" | grep -E "✗|❌|Traceback|Error:|assert" | head -20   # the failing checks themselves (not cut off)
+    { echo "$out" | grep -E "✗|❌|Traceback|Error:|assert" | head -20; } || true   # the failing checks (not cut off); no match must not stop the run
     echo "   … last lines:"; echo "$out" | tail -20; fail=1
   fi
 }
