@@ -99,6 +99,13 @@ def reminders() -> list[dict]:
                 ORDER BY fire_at""")
 
 
+def _kal_2pm() -> datetime:
+    """'kal 2 baje' = tomorrow 2 PM from the real today (it was hard-coded to 19 Nov and broke on the 20th)."""
+    from datetime import timedelta
+    d = datetime.now(CFG.tz) + timedelta(days=1)
+    return at(d.day, d.month, 14, year=d.year)
+
+
 def times() -> list[datetime]:
     return [r["fire_at"].astimezone(CFG.tz) for r in reminders()]
 
@@ -476,7 +483,7 @@ check("a reminder command keeps its fast path", len(reminders()) == 1 and remind
       and not one("SELECT 1 x FROM noticed") and not cal, r)
 r = say(e, "kal 2 baje meeting yaad dilana")
 check("'kal 2 baje meeting yaad dilana' is a plain reminder at 2 PM (no calendar entry)", len(reminders()) == 2 and not cal
-      and not one("SELECT 1 x FROM noticed") and at(19, 11, 14) in times(), f"{r} {times()}")
+      and not one("SELECT 1 x FROM noticed") and _kal_2pm() in times(), f"{r} {times()}")
 A._last["await_label"] = False                         # (she asked "What's it for?" — not part of this test)
 r = say(e, "set an alarm for 6 am")
 check("an alarm command too", bool(one("SELECT 1 x FROM intents WHERE kind='alarm'")) and not one("SELECT 1 x FROM noticed"), r)
