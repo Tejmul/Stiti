@@ -1342,3 +1342,23 @@ wherever it wants." Research and plan: `docs/research/tutor_agent.md` (15 source
 **Not yet:** heard on his real voice; a mastery-gated re-teach (a concept still wrong after its steps comes back
 later in the session); notes export ("save my notes"); Smart Turn tuned for the tutor; confirm-when-unsure hearing.
 **Tests:** `tutor_coach_eval` (22, new), `tutor_teacher_eval` 112, `tutor_eval` 27, `tutor_launch_eval` 63.
+
+## D54: The coach teaches any subject, and a syllabus file (2026-11-20)
+"It should teach me ANYTHING… if I give my entire syllabus it should teach me in a day." Evaluated with the real free
+models on 6 subjects (biology, history, economics, maths, programming, language) + 3 syllabus files; evidence and
+examples in `docs/research/tutor_subjects.md`.
+1. **A syllabus is an outline, not a book** (`book.is_outline`, `unit_text`, `outline_topics`; "Module N" / "Week N"
+   headings). Each unit's LISTED TOPICS + general knowledge make its concepts (`OUTLINE_PROMPT`, every listed topic
+   covered, in order); a flat list is one grouping call. `Concept.general` → steps get no fake SOURCES and never say
+   "the book says". Before, every unit got the text-book citations as its "sources" and 6 major OS topics were lost.
+   The concept cache key includes the file's mtime + size.
+2. **Prompts for any subject:** topic maps in 2–5 real units (regrouped if a model gives one unit per concept; a lazy
+   one-concept answer is asked again); probes one per unit with ONE expected point plus spoken paraphrases ("A or
+   B"); steps fill named `points` / `figure` (required in step 1) / `example` fields — same board slots and
+   Segment/Check — with subject-neutral figures and a real case/timeline (not a made-up "what if") as the worked
+   example for non-procedural subjects. Code keeps ≤ 2 spoken sentences, borrows a missing figure, de-duplicates
+   points, clips at word boundaries, and merges alternative expectations unless the question asks for several things.
+3. **Fairer local grading** (`grade.py`): spoken ↔ written numbers and maths, numbers must match, comma lists are one
+   answer, question-echo words don't count, light stemming, both of two key words. Simulated spoken answers: right
+   graded correct 52 % → 63 %, wrong rejected 80 % → 85 %.
+**Not yet:** order/negation-aware grading (a small local NLI model), a fact check of the cached concept map.
