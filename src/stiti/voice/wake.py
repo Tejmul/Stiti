@@ -172,7 +172,11 @@ def is_goodbye(transcript: str) -> bool:
 
 
 def is_sleep(transcript: str) -> bool:
-    return bool(SLEEP_RX.search(transcript)) or is_stop(transcript)
+    """A sleep phrase — in a long sentence only at its end (2026-11-20: a 49-word line with "bye Stiti" in the middle
+    ended the conversation)."""
+    words = _norm(transcript).split()
+    hay = " ".join(words[-5:]) if len(words) > 8 else transcript
+    return bool(SLEEP_RX.search(hay)) or is_stop(transcript)
 
 
 def is_stop(transcript: str) -> bool:

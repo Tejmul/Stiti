@@ -136,6 +136,7 @@ class Duplex:
         self._opened_at = time.monotonic()
         self._last_reopen = 0.0
         self.reopens = 0
+        self.dead_reopens = 0             # reopens because the mic was DEAD (not a macOS default-mic switch)
         self._streak = 0                  # reopens in a row without the mic coming back
         self._dev_id: int | None = None   # CoreAudio default input when the stream was (re)opened ...
         self._pinned = False              # D45: opened on the Mac's own mic on purpose (the default is a headset)
@@ -167,10 +168,19 @@ class Duplex:
         return None
 
     def reopen_failed(self, now: float | None = None) -> bool:
-        """A reopen happened and still no real sound after RECOVER_S (2026-11-11: after CoreAudio err -50 every
-        in-process reopen gave pure zeros, while a fresh process heard fine) → the caller restarts the process."""
+        """A reopen for a DEAD mic happened and still no real sound after RECOVER_S (2026-11-11: after CoreAudio err -50
+        every in-process reopen gave pure zeros, while a fresh process heard fine) → the caller may restart the process.
+        A reopen because macOS switched the default mic doesn't count (2026-11-20): a Bluetooth headset's mic can send
+        zeros for a few seconds while it changes mode, and that killed the process mid-conversation; if the new mic
+        really is dead, health() flags it after ZERO_S and a dead-mic reopen follows."""
         now = time.monotonic() if now is None else now
-        return bool(self.reopens) and self._last_sound < self._opened_at and now - self._opened_at > RECOVER_S
+        return bool(self.dead_reopens) and self._last_sound < self._opened_at and now - self._opened_at > RECOVER_S
+
+    @property
+    def heard_once(self) -> bool:
+        """Has this process ever had real (non-zero) sound from a mic? No → a fresh process doesn't help either
+        (lid closed, input muted, headset away): restarting again is pointless (loop.mic_restart_ok)."""
+        return self._last_sound > 0.0
 
     def heal(self, now: float | None = None) -> str | None:
         """Reopen the stream if the mic is dead (rate-limited). Returns the reason when it acted."""
@@ -188,6 +198,7 @@ class Duplex:
             return None
         self._last_reopen = now
         self.reopens += 1
+        self.dead_reopens += 0 if switched else 1
         self._streak += 0 if switched else 1
         try:
             self.stream.abort()
