@@ -95,6 +95,8 @@ class Tutor:
         self._frag: tuple[float, str] | None = None   # (when, text) of a too-short piece of his speech
         self._held: deque = deque()                     # events that arrived while she waited for his whole sentence
         self.switch: dict | None = None                 # {"mode": switch|crash, "target", "say"} → __init__ plans it
+        self.on_check = None                            # D53 coach: (segment, record) after every graded check
+        self.skip_to: int | None = None                 # D53 coach: jump here at the next step (he knows the rest)
         if start:                                    # resuming: rebuild the board silently up to `start`
             flat = lesson.cue_list()
             for kk in range(min(start, len(flat))):
@@ -328,6 +330,8 @@ class Tutor:
                     if r in ("moved", "end"):
                         continue
                 self.k += 1
+                if self.skip_to is not None:            # the coach saw he knows this concept: skip its other steps
+                    self.k, self.skip_to = max(self.k, self.skip_to), None
                 self._save_cursor()
                 if ci == len(seg.cues) - 1 and not self.ended:      # end of a section: breathe, maybe check in
                     ev = self._section_end(seg)
@@ -402,6 +406,40 @@ class Tutor:
             self._answer(text, resume_cue=mid_cue)
         elif kind == "steer":
             self._steer(text, mid_cue=mid_cue)
+
+    def listen(self, prompt: str | None = None, *, check_box: dict | None = None, timeout: float = 60.0) -> str | None:
+        """Ask him something outside the lesson script and wait for his whole answer (D53 coach opening).
+        -> his text, "" when he stayed silent, None when he ended the lesson."""
+        ev = self.say(prompt) if prompt else None
+        if check_box:
+            self.send({"type": "check", **check_box})
+        self.status("waiting", "your turn — say or type your answer")
+        t0, nudged = time.time(), False
+        try:
+            while not self.ended:
+                ev = ev or self._next_event(0.3)
+                if ev is None:
+                    waited = time.time() - t0
+                    if waited > timeout * self.pace:
+                        return ""
+                    if not nudged and waited > timeout * self.pace / 2:
+                        nudged = True
+                        ev = self.say("Take your time. Or say I don't know.")
+                    continue
+                kind, text = self._kind(ev, answering=True)
+                ev = None
+                if kind == "end":
+                    self.ended = True
+                    return None
+                if kind == "repeat" and prompt:
+                    ev = self.say(prompt)
+                    continue
+                if text:
+                    return text
+        finally:
+            if check_box:
+                self.send({"type": "check_done"})
+        return None
 
     # ------------------------------------------------------------ he changes the plan (D52)
     def _units(self) -> tuple[str, list[str]]:
@@ -835,6 +873,11 @@ class Tutor:
                 self.say("A confident miss. Those are the best ones to learn from, so this card goes to the top of your revision.")
         self.results.append(rec)
         self.send({"type": "check_done"})
+        if self.on_check is not None:
+            try:
+                self.on_check(seg, rec)
+            except Exception as e:
+                self.log(f"   [coach] on_check {type(e).__name__}: {e}")
         return outcome
 
     def _revisit_hook(self) -> None:
