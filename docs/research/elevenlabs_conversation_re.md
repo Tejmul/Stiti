@@ -1,6 +1,6 @@
 # Research: reverse-engineering commercial conversation engines (ElevenLabs first)
 
-Date: 2026-11-11. Why: Tejmul says Stiti jumps in during his thinking pauses, interrupts, mishears and asks random
+Date: 2026-11-11. Why: the owner says Stiti jumps in during his thinking pauses, interrupts, mishears and asks random
 follow-ups. Scope: commercial leaders only, studied from public docs, API specs, changelogs, blogs and their **open-source
 SDKs** (design learned, no code copied). Open-source frameworks (LiveKit, Pipecat, TEN, Unmute, Bolna, VAP) are covered elsewhere.
 Code read: ElevenLabs `github.com/elevenlabs/packages` @ `fd3c20d` (2026-11-10) and `github.com/elevenlabs/elevenlabs-python`.

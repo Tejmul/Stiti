@@ -27,7 +27,7 @@ Note: the Desktop is iCloud-synced — keep `.venv` (1.8 GB) out of iCloud or mo
 | Decisions | exemplar kNN on the embedder + rule floors (Laya parked: 13–15/30, 2.7 GB) | 26/30, 8 ms |
 | Fast paths | todos, alarms, reminders, timers, Hinglish dates, plans, habits, chunker, WOOP — no LLM | dates 15/15 |
 | Knows you | onboarding (10 Q), two-way USER.md/LESSONS.md, encrypted nightly backups (Keychain key) | sync 10/10, restore round-trip |
-| Voice | wake ("Stiti", "Hi/Hey Stiti", "Wake up baby girl"), stop words ("shut up", "okay", "chalo", "bye", "bas") → silent until woken, Smart Turn v3.2, WebRTC AEC3 barge-in, filler, resume after "haan" | AEC self-hearing 84%→0%; Smart Turn 6/6 |
+| Voice | wake ("Stiti", "Hi/Hey Stiti" + the owner's own phrases from the local profile), stop words ("shut up", "okay", "chalo", "bye", "bas") → silent until woken, Smart Turn v3.2, WebRTC AEC3 barge-in, filler, resume after "haan" | AEC self-hearing 84%→0%; Smart Turn 6/6 |
 | Emotion | prosody vs personal baseline + text mood; emotion2vec+ optional (+1.5 GB) | |
 | Proactive | presence, meeting heads-ups, deadlines, breaks, wrap-up, follow-ups, Thompson-sampled nudge gate | proactive eval 10/10 |
 | Mac | EventKit calendar r/w + Reminders two-way (rings on iPhone), Spotlight, music, iMessage (confirm), web search/read, screen + Vision OCR | |
@@ -71,7 +71,7 @@ Note: the Desktop is iCloud-synced — keep `.venv` (1.8 GB) out of iCloud or mo
 
 ## 2026-11-10 (night 2) — whiteboard tutor + web app
 
-### Whiteboard tutor (`src/stiti/tutor/`, D15) — paused here by Tejmul to focus on chat; resume tomorrow
+### Whiteboard tutor (`src/stiti/tutor/`, D15) — paused here by the owner to focus on chat; resume tomorrow
 | Piece | What | Proof |
 |---|---|---|
 | Board | Excalidraw 0.18.1 page + runtime (sketch/grow/type/fade, camera, reset/replay), Starlette WS server (token + Host/Origin + CSP), presenter mode (F) for a big monitor | Playwright screenshots; WS security checks |
@@ -84,7 +84,7 @@ Note: the Desktop is iCloud-synced — keep `.venv` (1.8 GB) out of iCloud or mo
 ### Web app (`src/stiti/web/`, D16)
 - `uv run stiti web` → landing page + `/chat`. Chat = same Engine (fast paths ran in 80–560 ms on the test DB),
   side panel with todos (tick to finish) + alarms/reminders, Stiti's breathing particle "mind", action chips with
-  the owner's pictograms. Web eval 12/12 (security + a real turn).
+  The owner's pictograms. Web eval 12/12 (security + a real turn).
 - Landing page built in parallel by a sub-agent from the owner's motion spec; particles only in the hero (owner rule).
 
 ### Not verified

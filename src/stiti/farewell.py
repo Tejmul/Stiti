@@ -19,7 +19,7 @@ BYE_RX = re.compile(r"^\s*((ok(ay)?|chalo|acha|achha|alright|right|so|hmm)[,!. ]
                     r"i'?m (going to )?(sleep|bed)|sleeping now|time to sleep|so(ne)? ja (raha|rahi) (hoon|hu)|"
                     r"so raha hoon|so rahi hoon|kal milte|shubh ratri)\b", re.I)
 
-_LINES = {   # {n} = ", Tejmul" (or nothing when she doesn't know the name)
+_LINES = {   # {n} = ", <their name>" (or nothing when she doesn't know the name)
     ("night", "en"): ["Night{n}.", "Sleep well{n}.", "Good night{n}."],
     ("night", "hi"): ["Good night{n}. Kal milte hain.", "Chalo, so jao. Good night.", "Shubh ratri. Kal milte hain."],
     ("morning", "en"): ["Have a good one{n}.", "Later{n}.", "Go get it{n}."],

@@ -3,7 +3,7 @@
 Date: 2026-11-10. Scope: redesign of the fast-path alarm/reminder/timer flow. The current flow parses locally in `fastpath/dates.py`
 with no LLM, stores rows in `intents`, mirrors them to Apple Reminders through `connectors/eventkit.py`, and fires them from a 5 s scheduler loop.
 Goals: correct AM/PM defaults, recurring alarms, a real ring that can be dismissed or snoozed by voice, a missed-alarm policy, editing and
-cancelling by voice, and reminders that reach Tejmul when he is present or away.
+cancelling by voice, and reminders that reach the owner when he is present or away.
 
 ## 1. Sources compared
 
@@ -68,7 +68,7 @@ cancelling by voice, and reminders that reach Tejmul when he is present or away.
 ### 2c. The ring (wake alarms)
 - **Sound**: a melodic tone [22], looped.
 - **Volume ramp**: start at **30%** of the target, add **+10% every 15 s**, reach **100% at about 2 min**. Raise the Mac output volume to at least **50%** while ringing, then restore it.
-- **Voice line**: first at **0:10**, then every **60 s**. Short and concrete [21]: "Tejmul, 6 baj gaye — uthne ka time. 'Band karo' ya '5 minute aur' bolo." From the 3rd line on, add today's first event ("9:30 pe standup hai").
+- **Voice line**: first at **0:10**, then every **60 s**. Short and concrete [21]: "the owner, 6 baj gaye — uthne ka time. 'Band karo' ya '5 minute aur' bolo." From the 3rd line on, add today's first event ("9:30 pe standup hai").
 - **Listening while it rings**: no wake word needed [6], for the whole ring. Use a closed on-device grammar fed by whisper STT, with the tone loop as the AEC reference. Duck the tone to **20%** while speech is detected [1].
   - **Dismiss**: `band karo`, `bas`, `stop`, `off`, `uth gaya/gayi`, `utha hoon`, `theek hai`.
   - **Snooze**: `snooze`, `N minute aur`, `thodi der aur`, `baad mein`.

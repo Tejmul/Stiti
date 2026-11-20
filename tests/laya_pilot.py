@@ -1,6 +1,6 @@
 """Laya pilot (build step 4): accuracy / latency / RSS of the 11-question pass.
 Usage: uv run python tests/laya_pilot.py english|multilingual
-NOTE: synthetic sentences written by Claude; replace with 30 of Tejmul's real ones.
+NOTE: synthetic sentences written by Claude; replace with 30 of the owner's real ones (kept local, never committed).
 """
 import json, resource, sys, time
 sys.path.insert(0, __import__('os').path.dirname(__file__))

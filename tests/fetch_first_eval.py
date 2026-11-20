@@ -461,7 +461,7 @@ try:
               "web_search(query=\"trending repos\")", "commentary to=functions.web_search json {\"query\":\"x\"}"):
         check(f"markup: {t[:44]!r}", psych.tool_markup(t))
     for t in ("Per Wikipedia, it is an open standard.", "The iPhone 17 scored 152 <3", "Use the map function, f(x) = 2x.",
-              "Your name is Tejmul, that's the key.", "I searched the web: nothing useful came up."):
+              "Your name is Ravi, that's the key.", "I searched the web: nothing useful came up."):
         check(f"not markup: {t!r}", not psych.tool_markup(t))
     sl = psych.StreamLint(policy=strategy.make("ANSWER", "english"))
     out = [sl.feed(p) for p in ("Let me check that.", "<tool_call>web_search", "<arg_key>query</arg_key>", "It is sunny.")]

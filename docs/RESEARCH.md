@@ -57,7 +57,7 @@ Sources: [techsy](https://techsy.io/en/blog/best-open-source-voice-agent-framewo
 | **SenseVoice-Small** (FunASR) | ASR + emotion + audio events in one small model: best fit for 8 GB. |
 | FunASR toolkit | Runs both; has streaming + OpenAI-compatible server. |
 
-Plan: benchmark both on Tejmul's own recordings (Phase 3) and build a personal baseline.
+Plan: benchmark both on the owner's own recordings (Phase 3) and build a personal baseline.
 Sources: [FunASR](https://github.com/modelscope/FunASR), [SenseVoice vs emotion2vec discussion](https://huggingface.co/emotion2vec/emotion2vec_plus_large/discussions/1), [arXiv pilot](https://arxiv.org/pdf/2609.26054).
 
 ## 5. Free LLM access

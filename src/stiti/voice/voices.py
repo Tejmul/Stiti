@@ -5,7 +5,7 @@
   stiti voices use <persona>       save it (owner_profile `voice`; STITI_VOICE still wins if set)
   stiti voices use-hi <voice|off>  a second voice for Hinglish / Hindi lines (owner_profile `voice_hi`)
   stiti voices speed <0.8–1.3>     base speaking speed (owner_profile `voice_speed`; moods scale it)
-  stiti voices say-as <word> <how> respell a word for the American voices ("say-as Tej Tayj"); `say-as` lists them
+  stiti voices say-as <word> <how> respell a word for the American voices ("say-as Arav Ahrahv"); `say-as` lists them
   stiti voices install [--from D]  get goonj: copy an existing export from D, or export it (scripts/goonj_export.py)
 """
 from __future__ import annotations

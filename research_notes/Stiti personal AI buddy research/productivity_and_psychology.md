@@ -2,7 +2,7 @@
 
 Scope note: researched 2026-11-10 for a local-first, zero-cost voice buddy on an Apple M2 / 8 GB Mac. Decisions belong to the deterministic decision model (Laya) and the memory engine. The LLM only phrases things and proposes decompositions. Each feature below covers 10+ papers, algorithms or projects in a comparison table before the recommendation. Items marked "(not re-verified this session)" are canonical projects whose URLs I know but did not fetch during this research. Everything else comes from search results retrieved this session. Several sources are secondary summaries; this is flagged where it matters.
 
-**Original measurement in this session:** I benchmarked CP-SAT (OR-Tools 9.15, Python 3.14) on this Mac (Apple M2, 8 GB). The script is `/private/tmp/claude-501/-Users-tejmul-Stiti/438cc315-bb0b-4ab1-b313-887493e51886/scratchpad/bench_cpsat.py`. Results are in Feature 2.
+**Original measurement in this session:** I benchmarked CP-SAT (OR-Tools 9.15, Python 3.14) on this Mac (Apple M2, 8 GB). The script is `<session scratchpad>`. Results are in Feature 2.
 
 ---
 

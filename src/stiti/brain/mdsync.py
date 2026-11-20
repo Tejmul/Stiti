@@ -1,6 +1,6 @@
 """Two-way sync between Postgres and the human-readable files in ~/.stiti/.
 
-USER.md and LESSONS.md are rendered with a stable id on every line ([F12], [D7], L3). When Tejmul
+USER.md and LESSONS.md are rendered with a stable id on every line ([F12], [D7], L3). When the owner
 edits a file, the next sync imports it as OWNER EDITS (owner always wins), then re-renders:
   - changed line  → directive superseded / fact corrected / lesson edited (ACE EDIT)
   - deleted line  → directive retired / fact retracted (kept in history, never deleted) / lesson retired
@@ -214,7 +214,7 @@ def _import_lessons(text: str) -> dict:
             pol = "dont" if n["pol"].upper().startswith(("MUST NOT", "DON")) else "do"
             vec = embed.embed_docs([f"Any situation. {n['text']}"])[0]
             q("""INSERT INTO lessons(situation, guidance, polarity, source, status, confidence, situation_embedding, origin)
-                 VALUES ('Any situation (written by Tejmul)', %s, %s, 'owner_explicit', 'active', 0.95, %s, 'owner_edit')""",
+                 VALUES ('Any situation (written by the owner)', %s, %s, 'owner_explicit', 'active', 0.95, %s, 'owner_edit')""",
               (n["text"], pol, vec))
             stats["added"] += 1
     active = {r["id"] for r in q("SELECT id FROM lessons WHERE status='active'")}

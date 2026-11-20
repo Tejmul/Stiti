@@ -13,7 +13,7 @@ from stiti.voice.tts import TTS, sentences, speakable
 tts = TTS(); embed.embed_query("warm"); intent._index(); stt.transcribe(np.zeros(16000, np.float32))
 eng = Engine("voice")
 LINES = ["Hey Stiti, add todo buy milk", "Stiti, kal subah 6 baje alarm laga do", "Hey Stiti, what are my todos",
-         "Hey Stiti, itna lamba mat bolo yaar", "Wake up baby girl, meri sister Priya Pune mein rehti hai, yaad rakhna"]
+         "Hey Stiti, itna lamba mat bolo yaar", "Hello Stiti, meri sister Priya Pune mein rehti hai, yaad rakhna"]
 for line in LINES:
     a, sr = tts.synth(line)
     a16 = np.interp(np.linspace(0, len(a), int(len(a) * 16000 / sr), endpoint=False), np.arange(len(a)), a).astype(np.float32)

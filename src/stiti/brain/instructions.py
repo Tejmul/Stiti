@@ -1,6 +1,6 @@
 """Standing instructions about HOW Stiti should talk — saved the moment he says them, applied from the next reply.
 
-"Talk in English", "keep it short", "don't ask so many questions", "stop asking about my interview", "call me Tej"
+"Talk in English", "keep it short", "don't ask so many questions", "stop asking about my interview", "call me Ravi"
 are instructions, not corrections (the decision layer scores them 0 as is_correction), so they used to wait for
 the night job — which hadn't run — and were never remembered. Now they become active `user_directives`
 (category talk_style / boundary) at once; the compiler puts talk_style rules into every briefing, and USER.md shows

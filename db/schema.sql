@@ -61,7 +61,7 @@ CREATE TABLE facts (
   predicate          text   NOT NULL,              -- works_at, lives_in, feels_about, knows...
   obj_id             bigint REFERENCES entities(id),
   obj_literal        text,
-  fact_text          text   NOT NULL,              -- "Tejmul works at X"
+  fact_text          text   NOT NULL,              -- "Ravi works at X"
   attrs              jsonb,                        -- {"valence":-0.6}
   functional         boolean NOT NULL DEFAULT false,
   valid              tstzrange NOT NULL DEFAULT tstzrange(now(), NULL),  -- world time
@@ -104,7 +104,7 @@ CREATE UNIQUE INDEX one_active_directive ON user_directives (supersession_key) W
 -- 7. lessons: ACE-style itemized playbook (renders LESSONS.md)
 CREATE TABLE lessons (
   id                  bigserial PRIMARY KEY,
-  situation           text  NOT NULL,                 -- "Tejmul stressed, late night, work topic"
+  situation           text  NOT NULL,                 -- "Ravi stressed, late night, work topic"
   trigger             jsonb NOT NULL DEFAULT '{}',    -- {"mood":["stressed"],"topic":["work"],"time":"late_night","person":[12]}
   guidance            text  NOT NULL,                 -- imperative, <= 25 words
   polarity            text  NOT NULL CHECK (polarity IN ('do','dont')),

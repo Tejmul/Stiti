@@ -1,9 +1,9 @@
 # Stiti — task list (started 2026-11-18)
 
-One list of what is broken, in the order it gets fixed. A task is **done** only when its test passes AND Tejmul has
+One list of what is broken, in the order it gets fixed. A task is **done** only when its test passes AND the owner has
 tried it by voice. Evidence for each: `docs/research/jarvis_gap_audit.md`.
 
-Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being fixed · ⬜ open · 🙋 needs Tejmul
+Status: ✅ fixed + tested by code · 🎙️ needs his voice test · 🔧 being fixed · ⬜ open · 🙋 needs the owner
 
 ## A. She answers wrong (highest priority) — 12-task score: 2 of 12 before, 8 of 12 after D43 (the other 4 are honest "I can't yet")
 | # | Problem | Status |

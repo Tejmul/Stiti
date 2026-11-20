@@ -289,7 +289,7 @@ class Engine:
             stt.mark_active()
 
     def greet(self) -> str:
-        """Called when woken with no command. Like a person: "Hey Tejmul, how are you?" (the daily brief once a
+        """Called when woken with no command. Like a person: "Hey Ravi, how are you?" (the daily brief once a
         morning). The intro is offered only if she really knows nothing about him, at most once a week, and never
         again once he says "turn this off" (owner: she kept asking on every wake)."""
         from . import profile
@@ -578,7 +578,7 @@ class Engine:
         from .voice.wake import is_stop
         after_offer = bool(re.search(r"anything else\?\s*$", self.last_reply_text or "", re.I)) and bool(NOTHING_RX.match(text))
         from .voice import vocab
-        # "no, I said Tejmul" / "spell it T-E-J-M-U-L" / "add Zonuly to your vocabulary": she misheard a WORD (D27) —
+        # "no, I said Tanvik" / "spell it T-A-N-V-I-K" / "add Tilecraft to your vocabulary": she misheard a WORD (D27) —
         # learn it for the ears; it's not an undo of her last action and not a lesson about how she talks
         taught = None if crisis else vocab.parse(text, self.last_user_text)
         undo = not taught and not in_ask and bool(learning.UNDO_RX.match(text)) and self.last_route == "fast_path" and self.last_action is not None \

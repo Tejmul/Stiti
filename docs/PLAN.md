@@ -46,7 +46,7 @@ Smart Turn, Whisper, emotion2vec+, Kokoro, wake word (≈1.8–3.7 GB est., budg
 | Episodic memory | `episodes`: every utterance verbatim, never deleted; privacy P0/P1/P2; origin (owner/agent/untrusted/system); importance, strength. |
 | Retrieval | `recall()` SQL: vector top-50 + text top-50 → RRF(k=60) × recency (30-day half-life, 0.5 floor) × importance × strength. No reranker on voice path. |
 | Knowledge graph | `entities` + bitemporal `facts` (Graphiti model in plain SQL); Postgres exclusion constraint blocks contradictory "current" facts; recursive CTEs for 1–2 hops. |
-| User model | `user_directives`: one imperative rule per row, superseded in place → renders `USER.md`. `SOUL.md` owned by Tejmul. |
+| User model | `user_directives`: one imperative rule per row, superseded in place → renders `USER.md`. `SOUL.md` owned by the owner. |
 | Lessons | ACE-style itemized playbook: ADD/EDIT/MERGE/RETIRE/UP/DOWN per item. Owner corrections active at once; inferred ones need seen ≥2 & conf ≥0.72 (Leon). Hinglish correction lexicon. |
 | Consolidation | Nightly "sleep" (03:00 or 30 min idle on AC): embed backlog → digests → extract facts (cloud, P0/P1 only) → resolve entities → bitemporal apply → directives → lessons → decay → precompile briefing → render md + backup. |
 | Embeddings | EmbeddingGemma-300M in-process (≈200 MB); `embed_model` column for later swap (Qwen3-Embedding-0.6B if Hinglish recall is weak). |
@@ -92,8 +92,8 @@ Spec: report section "Engine v0 build spec". Done when: after a restart **and** 
 | 8 | `stiti sleep --now` (steps 1, 3–6, 9, 10) | facts + USER.md appear from the day's chat; restart + model swap keeps memory |
 
 ### Phase 2 — Voice v1 — ✅ v1 built (custom loop, whisper-small, Kokoro, wake phrases); Pipecat/AEC/Smart Turn next
-Pipecat pipeline, Whisper A/B on Tejmul's voice, Kokoro + filler bank, barge-in with AEC, latency + RAM measured on M2.
-**Wake phrases (Tejmul's spec): "Stiti", "Hey Stiti", "Wake up baby girl"** → always-listening tiny local
+Pipecat pipeline, Whisper A/B on the owner's voice, Kokoro + filler bank, barge-in with AEC, latency + RAM measured on M2.
+**Wake phrases: "Stiti", "Hey Stiti", "Hi Stiti" + the owner's own (local profile)** → always-listening tiny local
 wake-word model (LiveKit WakeWord v2 / openWakeWord custom phrases, ~7 MB), chime + start listening,
 conversation mode stays awake until ~20 s of silence, "bas"/"so jao"/"go to sleep" sends it back to sleep.
 Hotkey as backup trigger.
@@ -117,7 +117,7 @@ Signed menubar `.app`, Login Item, wake word, Laya fine-tune on own decision log
 Built and tested without API keys: brain, onboarding, editable mind, backups, voice (wake/stop words, Smart Turn,
 AEC, fillers), emotion, proactivity + learned nudge gate, life OS, Mac actions, OCR, learning loops, memory eval,
 menubar app, CI. **Not yet verified:** anything that needs a cloud LLM (conversation, tool calling, night
-extraction, reflections) and anything that needs Tejmul's real voice (Hinglish STT accuracy, false-wake rate).
+extraction, reflections) and anything that needs the owner's real voice (Hinglish STT accuracy, false-wake rate).
 
 ### Phase 8 — Whiteboard tutor (D14/D15) — ✅ board, skills, voice-first player, local grading, book outline, persistence
 ✅ 2026-11-20 (D51–D53): English only · whole-sentence listening + cloud ear in lessons + steer · the coach (goal → probes →

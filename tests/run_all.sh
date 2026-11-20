@@ -70,4 +70,5 @@ run "varied wording, same honesty (D50)" tests/wording_eval.py
 run "example replies in the briefing (D50)" tests/examples_eval.py
 run "reminders saved, said, never lost" tests/reminders_regress_eval.py
 run "an answered question is never asked again" tests/asked_once_eval.py
+run "fork-safe: fresh install + privacy check"  tests/privacy_eval.py
 exit $fail

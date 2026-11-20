@@ -1,6 +1,6 @@
 """Memory eval in the LongMemEval taxonomy (retrieval side — no LLM needed).
 
-Five abilities, multi-session synthetic life of "Tejmul" across ~3 weeks, Hinglish + English:
+Five abilities, multi-session synthetic life of "Ravi" across ~3 weeks, Hinglish + English:
   extraction      — a fact said once, asked later
   multi_session   — answer needs two different sessions
   temporal        — "what did I say last Monday" (time-filtered recall)

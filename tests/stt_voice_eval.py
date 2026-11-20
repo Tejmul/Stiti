@@ -39,32 +39,32 @@ from stiti.voice import endpoint, glossary, hinglish, models, stt, stt_cloud, tt
 
 # ---------------------------------------------------------------- the brain the glossary is built from
 print("glossary (built from the brain)")
-profile.set("name", "Tejmul")
-profile.set("call_me", "Tejmul")
-(CFG.home / "USER.md").write_text("""# USER — who Tejmul is
+profile.set("name", "Tanvik")
+profile.set("call_me", "Tanvik")
+(CFG.home / "USER.md").write_text("""# USER — who Tanvik is
 
 ## About me
-- [F4] Tejmul is a final-year B.Tech student at Newton School of Technology, Rishihood University.
-- [F9] Tejmul built Zonuly, a 40+ agent system for job referrals.
-- [F10] Tejmul is a competitive programmer on Codeforces.
-- [F16] Tejmal is a final year undergrad at Newton's Club of Technology.
+- [F4] Tanvik is a final-year B.Tech student at Darwin School of Technology, Lakeview University.
+- [F9] Tanvik built Tilecraft, a 40+ agent system for job referrals.
+- [F10] Tanvik is a competitive programmer on Codeforces.
+- [F16] Tanvick is a final year undergrad at Darwin's Club of Technology.
 
 ## How to talk to me
 - [D2] Reply in English.
 """)
-q("INSERT INTO entities(kind, name, privacy) VALUES ('person','Rahul',1), ('person','Anvika',2), ('project','Zonuly',1)")
-q("INSERT INTO documents(path, title, kind, sha256) VALUES ('/x/Tejmul_Resume_Placements.pdf', "
-  "'Tejmul_Resume_Placements.pdf', 'pdf', 'x')")
+q("INSERT INTO entities(kind, name, privacy) VALUES ('person','Rahul',1), ('person','Anvika',2), ('project','Tilecraft',1)")
+q("INSERT INTO documents(path, title, kind, sha256) VALUES ('/x/Tanvik_Resume_Placements.pdf', "
+  "'Tanvik_Resume_Placements.pdf', 'pdf', 'x')")
 t0 = time.perf_counter()
 terms = glossary.build()
 build_ms = (time.perf_counter() - t0) * 1000
 names = [t.text for t in terms]
-check("owner name is the most important term (last)", names[-1] == "Tejmul", str(names))
-for want in ("Stiti", "Newton School of Technology", "Rishihood University", "Zonuly", "Codeforces", "Rahul",
+check("owner name is the most important term (last)", names[-1] == "Tanvik", str(names))
+for want in ("Stiti", "Darwin School of Technology", "Lakeview University", "Tilecraft", "Codeforces", "Rahul",
              "todos", "placements", "GitHub", "DSA", "resume", "cursor"):
     check(f"glossary has {want!r}", want in names, str(names))
-check("misheard USER.md fact doesn't teach the wrong spelling (no Tejmal / Newton's Club)",
-      not any(n in names for n in ("Tejmal", "Newton's Club of Technology", "Newton's Club")), str(names))
+check("misheard USER.md fact doesn't teach the wrong spelling (no Tanvick / Darwin's Club)",
+      not any(n in names for n in ("Tanvick", "Darwin's Club of Technology", "Darwin's Club")), str(names))
 check("no duplicates", len({n.lower() for n in names}) == len(names), str(names))
 check(f"glossary fits the prompt budget ({glossary._tokens(', '.join(names))} est. tokens)",
       glossary._tokens(", ".join(names)) <= glossary.TOKEN_BUDGET and len(names) <= glossary.MAX_TERMS)
@@ -78,25 +78,25 @@ check(f"whole prompt < 224 Whisper tokens ({glossary._tokens(full)} est.)", glos
 # ---------------------------------------------------------------- snap to glossary
 print("snap to glossary")
 G = names
-SNAP = [("My name is Tejmal.", "My name is Tejmul."),
-        ("Tajmal, what's up?", "Tejmul, what's up?"),
-        ("I study at Newton's Club of Technology.", "I study at Newton School of Technology."),
-        ("I study at Newton's Club.", "I study at Newton School."),
+SNAP = [("My name is Tanvick.", "My name is Tanvik."),
+        ("Tanwik, what's up?", "Tanvik, what's up?"),
+        ("I study at Darwin's Club of Technology.", "I study at Darwin School of Technology."),
+        ("I study at Darwin's Club.", "I study at Darwin School."),
         ("Add buy milk to my tadoos.", "Add buy milk to my todos."),
-        ("Tejmal's resume is ready", "Tejmul's resume is ready"),
+        ("Tanvick's resume is ready", "Tanvik's resume is ready"),
         ("Hey Stithi", "Hey Stiti")]
 for heard, want in SNAP:
     got = glossary.snap(heard, G)
     check(f"{heard!r} → {want!r}", got == want, got)
 KEEP = ["What are today's plans?", "The city is nice.", "Steady progress on the tattoos and orders.",
         "Kal subah 6 baje alarm laga do.", "Mera DSA ka contest kab hai?", "Currently I am preparing for placements.",
-        "Newton said gravity.", "Aaj bahut kaam tha yaar, main thak gaya hoon.", "I talked to Rahul and Raju.",
+        "Darwin said evolution.", "Aaj bahut kaam tha yaar, main thak gaya hoon.", "I talked to Rahul and Raju.",
         "Remind me at 4 to start my resume.", "Open my GitHub and check the pull requests."]
 for s in KEEP:
     check(f"ordinary words untouched: {s!r}", glossary.snap(s, G) == s, glossary.snap(s, G))
 t0 = time.perf_counter()
 for _ in range(50):
-    glossary.snap("Hey Stiti, add buy milk to my tadoos and remind Tejmal about Newton's Club.", G)
+    glossary.snap("Hey Stiti, add buy milk to my tadoos and remind Tanvick about Darwin's Club.", G)
 snap_ms = (time.perf_counter() - t0) * 1000 / 50
 check(f"snap < 2 ms per turn ({snap_ms:.2f} ms)", snap_ms < 2)
 
@@ -148,7 +148,7 @@ check("Groq turbo's 'Remind me to call mummy.' ×3 is a repeat",
       stt.prompt_copy("Remind me to call mummy. Remind me to call mummy. Remind me to call mummy.", P, G) == "repeat")
 check("unpunctuated loop is a repeat", stt.prompt_copy("call mummy call mummy call mummy", P, G) == "repeat")
 check("a list of glossary terms is a glossary echo",
-      stt.prompt_copy("Stiti, Tejmul, placements, DSA, GitHub.", P, G) == "glossary")
+      stt.prompt_copy("Stiti, Tanvik, placements, DSA, GitHub.", P, G) == "glossary")
 for s in ("Add buy milk to my todos.", "Currently I am preparing for placements.", "Mera DSA ka contest kab hai?"):
     check(f"real speech is not a copy: {s!r}", stt.prompt_copy(s, P, G) is None)
 
@@ -216,11 +216,11 @@ r = stt.transcribe_ex(speech, cloud_call=cloud("Add buy milk to my todos."))
 check("unsure turn → cloud text used", r.text == "Add buy milk to my todos." and r.source == "cloud"
       and r.escalated == "low_conf", str(r))
 check("cloud scores replace local ones (the loop no longer asks 'Sorry?')", not r.unclear and r.confident, str(r))
-check("the glossary went with it", "Tejmul" in calls[-1] and "Glossary:" in calls[-1])
+check("the glossary went with it", "Tanvik" in calls[-1] and "Glossary:" in calls[-1])
 check("… minus private terms", "Anvika" not in calls[-1])
-fake_local("Tejmal is here", 0.3, -0.7)
-r = stt.transcribe_ex(speech, cloud_call=cloud("Tejmal is here"))
-check("cloud text is snapped too (Tejmal → Tejmul)", r.text == "Tejmul is here", r.text)
+fake_local("Tanvick is here", 0.3, -0.7)
+r = stt.transcribe_ex(speech, cloud_call=cloud("Tanvick is here"))
+check("cloud text is snapped too (Tanvick → Tanvik)", r.text == "Tanvik is here", r.text)
 fake_local("Add by milk to my todos.", 0.3, -0.7)
 t0 = time.perf_counter()
 r = stt.transcribe_ex(speech, cloud_call=cloud("late", delay=2.0))
@@ -281,13 +281,13 @@ check("D52: after the lesson, a confident turn stays local again", r.source == "
 print("correction learning (personal vocabulary)")
 from stiti.voice import vocab  # noqa: E402
 
-PREV = "Hey Tejmal, add Newtons Club to my todos"
-LEARN = [("no, I said Tejmul", ("Tejmul", "Tejmal")), ("it's Stiti, not City", ("Stiti", "City")),
-         ("Tejmul, not Tejmal", ("Tejmul", "Tejmal")), ("spell it T-E-J-M-U-L", ("Tejmul", "Tejmal")),
-         ("It's spelled T E J M U L.", ("Tejmul", "Tejmal")), ("nahi, maine Tejmul bola", ("Tejmul", "Tejmal")),
-         ("Not Tejmal, Tejmul.", ("Tejmul", "Tejmal")), ("My name is Tejmul, not Tejmal.", ("Tejmul", "Tejmal")),
-         ("Newton School, not Newtons Club", ("Newton School", "Newtons Club")),
-         ("add 'Zonuly' to your vocabulary", ("Zonuly", None)), ("Add Zonuly to your dictionary.", ("Zonuly", None)),
+PREV = "Hey Tanvick, add Darwins Club to my todos"
+LEARN = [("no, I said Tanvik", ("Tanvik", "Tanvick")), ("it's Stiti, not City", ("Stiti", "City")),
+         ("Tanvik, not Tanvick", ("Tanvik", "Tanvick")), ("spell it T-A-N-V-I-K", ("Tanvik", "Tanvick")),
+         ("It's spelled T A N V I K.", ("Tanvik", "Tanvick")), ("nahi, maine Tanvik bola", ("Tanvik", "Tanvick")),
+         ("Not Tanvick, Tanvik.", ("Tanvik", "Tanvick")), ("My name is Tanvik, not Tanvick.", ("Tanvik", "Tanvick")),
+         ("Darwin School, not Darwins Club", ("Darwin School", "Darwins Club")),
+         ("add 'Tilecraft' to your vocabulary", ("Tilecraft", None)), ("Add Tilecraft to your dictionary.", ("Tilecraft", None)),
          ("remember the word Codeforces", ("Codeforces", None))]
 for said, want in LEARN:
     lr = vocab.parse(said, PREV)
@@ -296,10 +296,10 @@ for said in ("I said hello", "no, I said milk", "call Rahul not Raju", "I want t
              "no, I said add milk to my todos", "Remind me to call mummy at 7 pm."):
     check(f"not a word correction: {said!r}", vocab.parse(said, PREV) is None, str(vocab.parse(said, PREV)))
 os.environ["STITI_STT_CLOUD"] = "off"
-fake_local("Hey Tejmal, what's up?", 0.1, -0.2)
-check("before learning: 'Tejmal' snaps only if the glossary already knows Tejmul",
-      "Tejmul" in stt.transcribe_ex(speech).text)
-vocab.add("Zonuly", None, "explicit")
+fake_local("Hey Tanvick, what's up?", 0.1, -0.2)
+check("before learning: 'Tanvick' snaps only if the glossary already knows Tanvik",
+      "Tanvik" in stt.transcribe_ex(speech).text)
+vocab.add("Tilecraft", None, "explicit")
 lr = vocab.learn("no, I said Kshitij", "Call Shitij about the project")
 check("a new name is learned with its mis-hearing", lr is not None and (lr.term, lr.heard) == ("Kshitij", "Shitij"),
       str(lr))
@@ -313,7 +313,7 @@ vocab.add("Stiti", "City", "correction")
 check("an ordinary heard word ('City') is NOT rewritten everywhere", vocab.rewrite("The city is big") == "The city is big")
 glossary.invalidate()
 check("learned words survive a glossary rebuild", any(t.text == "Kshitij" for t in glossary.terms(block=True)))
-check("explicit words too", "Zonuly" in glossary.prompt_text())
+check("explicit words too", "Tilecraft" in glossary.prompt_text())
 stt._local = REAL_LOCAL
 from stiti.engine import Engine  # noqa: E402
 eng = Engine("text")
@@ -322,8 +322,8 @@ reply = eng.turn("no, I said Anshul")
 check("engine: a voice correction gets a fast local reply", reply.startswith("Got it") and eng.last_route == "fast_path",
       f"{reply!r} {eng.last_route}")
 check("engine: … and the word is learned", "Anshul" in vocab.terms())
-reply = eng.turn("add Rishihood to your vocabulary")
-check("engine: explicit 'add X to your vocabulary'", "Rishihood" in reply and "Rishihood" in vocab.terms(), reply)
+reply = eng.turn("add Lakeview to your vocabulary")
+check("engine: explicit 'add X to your vocabulary'", "Lakeview" in reply and "Lakeview" in vocab.terms(), reply)
 os.environ["STITI_STT_CLOUD"] = "on"
 stt._local, stt.voiced_ms = REAL_LOCAL, REAL_VOICED
 
@@ -376,7 +376,7 @@ if models.goonj_ready():
     v.k.create = real_create
     v.synth_on_worker("Warm up.")
     ms = []
-    for clause in ("Hey Tejmul,", "Okay yaar, I added buy milk", "Haan, note kar liya.", "Sure, setting it now.") * 3:
+    for clause in ("Hey Tanvik,", "Okay yaar, I added buy milk", "Haan, note kar liya.", "Sure, setting it now.") * 3:
         t0 = time.perf_counter()
         audio, sr = v.synth_on_worker(clause)
         ms.append((time.perf_counter() - t0) * 1000)
@@ -423,8 +423,7 @@ else:
     print("  (no Groq key / STITI_STT_LIVE=0: skipped)")
 
 # ---------------------------------------------------------------- WER regression on the research clips
-CLIPS = Path(os.getenv("STITI_STT_CLIPS", "/private/tmp/claude-501/-Users-tejmul-Desktop-Stiti/"
-                       "0e6c0a17-f92d-4e80-a621-98bf58ea090b/scratchpad/stt/clips"))
+CLIPS = Path(os.getenv("STITI_STT_CLIPS", str(Path.home() / ".stiti" / "stt_clips")))   # local recordings only
 hub = Path.home() / ".cache" / "huggingface" / "hub" / ("models--" + models.WHISPER_MAIN.replace("/", "--"))
 if (CLIPS / "meta.json").exists() and hub.exists():
     print("WER regression (research clips, local only)")

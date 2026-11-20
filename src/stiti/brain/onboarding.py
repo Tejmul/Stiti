@@ -1,4 +1,4 @@
-"""Onboarding interview: Stiti gets to know Tejmul in ~3 minutes — no LLM needed.
+"""Onboarding interview: Stiti gets to know her owner in ~3 minutes — no LLM needed.
 
 10 short questions (voice or text). Each answer is stored verbatim as a high-importance episode
 (the night job can extract more later) AND written straight into the brain deterministically:
@@ -101,7 +101,11 @@ def _apply(key: str, ans: str) -> str | None:
     if key == "name":
         name = re.sub(r"^(call me|you can call me|mujhe|i'?m|main)\s+", "", a, flags=re.I).split()[0:3]
         name = " ".join(name).strip(" ,.") or a
-        _directive(f"Call him “{name}”", "talk_style", "call_me")
+        from .. import profile
+        if not profile.get("name"):                  # a fresh install learns who it works for from the owner, locally
+            profile.set("name", name, "intake")
+        profile.set("call_me", name, "intake")
+        _directive(f"Call the owner “{name}”", "talk_style", "call_me")
         return f"what to call you ({name})"
     if key == "home":
         _self_fact("home", f"Home: {a}")
@@ -121,7 +125,7 @@ def _apply(key: str, ans: str) -> str | None:
             _self_fact("people", f"Important people: {a}")
         return f"{len(people)} people" if people else "your people"
     if key == "day":
-        _directive(f"His normal day: {a}", "routine", "routine_day")
+        _directive(f"Normal day: {a}", "routine", "routine_day")
         return "your routine"
     if key == "goals":
         goals = [g.strip(" .") for g in re.split(r"[,;\n]|\b\d[.)]\s*", a) if len(g.strip(" .")) > 2][:3]
@@ -129,7 +133,7 @@ def _apply(key: str, ans: str) -> str | None:
             _directive(f"Working towards: {g}", "goal", f"goal_{i}")
         return f"{len(goals) or 1} goal(s)"
     if key == "talk":
-        _directive(f"How he wants to be talked to: {a}", "talk_style", "talk_pref")
+        _directive(f"How to talk to the owner: {a}", "talk_style", "talk_pref")
         return "how to talk to you"
     if key == "never":
         if NOTHING_RX.match(a):
@@ -138,10 +142,10 @@ def _apply(key: str, ans: str) -> str | None:
         _directive(f"Never {rule}", "boundary", "boundary_main")
         return "what to never do"
     if key == "support":
-        _directive(f"When he's stressed or low, what helps: {a}", "preference", "support_style")
+        _directive(f"When stressed or low, what helps: {a}", "preference", "support_style")
         return "what helps when you're low"
     if key == "role":
-        _directive(f"He wants Stiti to be: {a}", "preference", "stiti_role")
+        _directive(f"Wants Stiti to be: {a}", "preference", "stiti_role")
         return "what I should be for you"
     return None
 

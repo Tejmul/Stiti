@@ -102,7 +102,7 @@ def morning_brief(now: datetime | None = None, low_energy: bool = False, name: s
     if w is not None:
         from ..connectors import weather as wx
         line = wx.one_liner(w, now)
-        parts = [f"{hi} — {line[0].lower()}{line[1:]}"]          # "Good morning, Tejmul — it's 24 and clear in Pune…"
+        parts = [f"{hi} — {line[0].lower()}{line[1:]}"]          # "Good morning, Ravi — it's 24 and clear in Pune…"
     else:
         parts = [f"{hi} — new week, fresh start." if now.weekday() == 0 else f"{hi}!"]
     try:

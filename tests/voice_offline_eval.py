@@ -7,7 +7,7 @@ from stiti.voice import stt, wake
 from stiti.voice.tts import TTS
 from stiti.voice.vad import VAD, segments
 
-LINES = [("Hey Stiti, what are my todos?", True), ("Wake up baby girl.", True), ("Stiti, set an alarm for 6 am.", True),
+LINES = [("Hey Stiti, what are my todos?", True), ("Hello Stiti.", True), ("Stiti, set an alarm for 6 am.", True),
          ("I was talking to my friend about the city.", False), ("Remind me at 7 pm to call mummy.", None)]
 t = time.perf_counter(); tts = TTS(); vad = VAD()
 print(f"load tts+vad {time.perf_counter() - t:.1f}s")

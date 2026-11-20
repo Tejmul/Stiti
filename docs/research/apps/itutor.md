@@ -406,7 +406,7 @@ App Store in-app purchase prices: https://apps.apple.com/us/app/itutor-study/id6
 | **Lesson videos (14 styles), 3D worlds, games, podcasts** (2.19) | Low | Video rendering is heavy for 8 GB; skip | iTutor's own data shows little demand (7.5%). The whiteboard plus voice already gives the "whiteboard video" experience live. |
 | **Links + web search with a "what I read" snapshot and honest failure** (2.20) | Med | Yes (MCP fetch connector) | A doubt can include a link. Fetch through an MCP connector, show a page snapshot on the whiteboard, cite it, and offer "add to this subject". Say plainly when it can't be read. |
 | **Oral exam scored per requirement, plus a retake program** (2.22) | Med | Yes | Exam mode, oral: Stiti asks spoken questions with follow-ups and scores each concept against the coach map. Failed concepts become the next study-plan block. |
-| **Subject report: solid / shaky / review next, "N checks not tied to a concept" honesty** (2.16) | High | Yes | A Memory-page card per file: mastery bands per concept, the next concept to study, and an honest count of evidence. No chat transcripts shown, per Tejmul's no-chat-history-in-UI rule. |
+| **Subject report: solid / shaky / review next, "N checks not tied to a concept" honesty** (2.16) | High | Yes | A Memory-page card per file: mastery bands per concept, the next concept to study, and an honest count of evidence. No chat transcripts shown, per the owner's no-chat-history-in-UI rule. |
 | **Teacher / LMS / SSO / SCORM / parent views** (2.23) | Low | n/a | Not relevant to a single-user local buddy. |
 
 ---
@@ -588,7 +588,7 @@ LLM) with where it lives and the UI entry point. "Exists" marks what Stiti alrea
    - *Stiti:* `tutor/coach.py` currently asks after ≤ 2 sentences. Add a pacing knob: `CHECK_EVERY` = one full
      idea (organizer → teach → worked_example), then one check. If the learner shows the "too many questions"
      signal (short "yes/ok" answers, or an annoyed tone from `voice/emotion_model.py`), stretch it to every 2
-     concepts. Keep Teach-me as Stiti's default (the opposite of iTutor's default, because Tejmul asked for a
+     concepts. Keep Teach-me as Stiti's default (the opposite of iTutor's default, because the owner asked for a
      teacher). Store the mode per learner in the user model, with "just tell me" as a Laya intent.
    - *UI:* a mode chip on the board header.
 
@@ -699,7 +699,7 @@ LLM) with where it lives and the UI entry point. "Exists" marks what Stiti alrea
 
 13. **Speaker check on answers** (their voiceprint similarity, used against cheating)
     - *Technique:* compare each answer's speaker embedding with the enrolled voice.
-    - *Stiti (exists: `voice/speaker.py`):* use it the other way round. Only count a probe answer as Tejmul's when
+    - *Stiti (exists: `voice/speaker.py`):* use it the other way round. Only count a probe answer as the owner's when
       speaker similarity passes, so TV or a roommate never updates mastery. One cosine per utterance, about 5 ms.
 
 14. **Local performance beacon** (their `/v1/public/vitals` per route/device)

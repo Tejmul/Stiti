@@ -8,7 +8,7 @@
 
 ---
 
-## 0. Hard rules from Tejmul (never break)
+## 0. Hard rules from the owner (never break)
 1. **Brain ≠ LLM.** Identity/memory/decisions live in Stiti's local Postgres brain; the LLM is a swappable cloud
    "mouth" fed a compiled briefing. No LLM fine-tuning (small local decision models like Laya may be tuned).
 2. **No local LLM, no Ollama — ever.** LLM = free cloud tiers only (D17: Groq, Z.ai GLM, Cloudflare, OpenRouter :free,
@@ -17,37 +17,39 @@
 4. **Postgres** is the store (not SQLite, not ChromaDB).
 5. **Research before building:** ≥10 papers/architectures per feature, comparison table, then decide
    (`research_notes/<topic>/`, decision in `docs/DECISIONS.md`).
-6. **Git: NO `Co-Authored-By: Claude`, no "Generated with Claude Code"** — commits authored by Tejmul only.
+6. **Git: NO `Co-Authored-By: Claude`, no "Generated with Claude Code"** — commits authored by the owner only.
    Small meaningful commits. He likes a "crazy" README. Building first; commits are secondary.
 7. Hardware: **Apple M2, 8 GB RAM**; local stuff ≤ ~3 GB. Measure RAM with `footprint -p <pid>`.
-8. Tejmul writes casual Hinglish/English — take intent over exact words. Short status updates, build fast & fully.
-9. Pronouns for Tejmul not stated → use "they" or the name. Stiti is "she" (wake phrase "wake up baby girl").
+8. The owner writes casual Hinglish/English — take intent over exact words. Short status updates, build fast & fully.
+9. Pronouns for the owner not stated → use "they" or the name. Stiti is "she".
 10. README tagline: "Your girlfriend may not understand you, but Stiti will."
 11. **One branch per feature → PR → CI → merge.** Push only when he says "push", all at once. Never push
     `backup/pre-trailer-removal`. Worktrees go in the session scratchpad, never on ~/Desktop.
-12. **Never show his conversations in any UI**; no personal data in code or the public build (names → local profile).
+12. **Never show his conversations in any UI**; no personal data in code, tests, docs or the public build (names →
+    local profile; examples use the made-up Ravi / Orbitly / Lakeview world). `python scripts/privacy_check.py`
+    checks the repo against his local profile (prints file:line only); D59.
 13. **Found a bug while working? Fix it** (own branch + test) — don't just report it. Taste/product calls still go to him.
 
 ## 1. Machine / environment
-- Repo **/Users/tejmul/Desktop/Stiti** (GitHub Tejmul/Stiti, public, `main`). Python 3.12 via **uv**; Node 26; gh CLI as `Tejmul`.
+- Repo **~/Desktop/Stiti** (GitHub, public, `main`). Python 3.12 via **uv**; Node 26; gh CLI as the owner.
 - Postgres 18 (brew `postgresql@18`) + pgvector. DBs: `stiti` (REAL brain — never put test data here), `stiti_test`.
   Schema `db/schema.sql` + `db/migrations/*.sql` (apply new migrations to BOTH DBs).
-- `~/Stiti` must become a symlink to `~/Desktop/Stiti` (Stiti.app launcher hard-codes it). Tejmul runs:
+- `~/Stiti` must become a symlink to `~/Desktop/Stiti` (Stiti.app launcher hard-codes it). The owner runs:
   `rm -r ~/Stiti/research_notes ~/Stiti/.placeholder && rmdir ~/Stiti && ln -s ~/Desktop/Stiti ~/Stiti`
 - Desktop is iCloud-synced (1.8 GB `.venv`) — undecided: move to `~/Projects` or `.venv.nosync`.
-- Untracked `actions/` (PNG assets) is Tejmul's — don't commit or delete.
+- Untracked `actions/` (PNG assets) is the owner's — don't commit or delete.
 - `.env` exists (Groq, OpenRouter, Gemini keys set 2026-11-10; Z.ai/Cloudflare/NVIDIA slots empty). Real LLM calls
   verified via the router (voice chain, P0 fallback, tutor strict JSON).
 - Claude Code MCP (`.mcp.json`): playwright, rea (reverse-engineering).
-- Gotchas: zsh doesn't word-split `$VAR` commands; force-push / deleting the working dir are blocked (ask Tejmul);
+- Gotchas: zsh doesn't word-split `$VAR` commands; force-push / deleting the working dir are blocked (ask the owner);
   CI uses `macos-latest`; `uv run stiti` with no args waits on stdin — always pass a subcommand.
 
 ## 2. Runtime layout
 `~/.stiti/` (STITI_HOME): SOUL.md, USER.md & LESSONS.md (two-way synced with Postgres), GRAPH_REPORT.md, graph.html,
 mood.html, exemplars.jsonl, onboarding/askme json, mcp.json, health.json, logs/app.log, backups/*.enc, models/.
-**Stiti.app** (~/Applications, menubar, LaunchAgent `com.tejmul.stiti`) runs `.venv/bin/python -m stiti app`; it
+**Stiti.app** (~/Applications, menubar, LaunchAgent `com.stiti.app`) runs `.venv/bin/python -m stiti app`; it
 also serves the web app on 127.0.0.1:7317 (menu: "Open Stiti (chat + memory)"). `~/.stiti/me/resume.md` = his resume
-(ingested). Owner profile set: name/call_me Tejmul, pronouns he.
+(ingested). Owner profile set locally (name, call_me, pronouns).
 Restart after code changes: `echo "---- restart $(date) ----" >> ~/.stiti/logs/app.log; pkill -f "python -m stiti app"`.
 
 ## 3. Commands (`uv run stiti …`)
@@ -91,7 +93,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Learns from normal conversation (D38, `brain/lifeupdate.py`, `brain/factstore.py`, `brain/sleep.py`) | 🟢 in-turn life updates ("I left X", "Riya is my sister", "remember that…", "actually it's X, not Y"), night/nap extraction with ends + merge + validation, honest "noted" only when saved; NOT tried on his mic/real chats | DECISIONS D38, `docs/research/learn_from_chat.md` |
 | Never repeats herself (D36, `brain/norepeat.py`) | 🟢 said-ledger, "what else?" → only new things / honest "that's all", repeat filter in code; NOT heard on the mic | DECISIONS D36, `docs/research/no_repeat.md` |
 | Desktop overlay (D26, D30, D44, D46) | 🟢 Stiti's own orb: a woven white line with three travelling points on indigo (D46; the blue reactor of D44 stays behind `STITI_ORB=reactor`), solid cards in the same colours, wake greeting "Hey <name>, what's on your mind?"; no religious/ritual motifs (his rule) | DECISIONS D26/D30/D44/D46 |
-| Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
+| Voices (D32) | 🟢 English af_jessica 1.05× (+ a say-as respelling for the name), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
 | Four languages (D34) + English first (D41) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; Telugu speech check is opt-in ("talk in Telugu" → 30 min) because it turned 1 in 5 of his English turns into Telugu script; NOT tested on his real voice | `docs/research/language_switching.md` |
 | English first: public examples, varied wording, example replies (D50) | 🟢 intent yardstick (557 public test lines, `tests/public_intent_eval.py`) 73.0% → 96.6% right, under-0.7 decisions 24% → 4% once `~/.stiti/data/public_exemplars.npz` is built (`scripts/build_exemplars.py`; no file = old behaviour); 34 fixed lines × 4–6 wordings, never twice in a row (`say.py`); `~/.stiti/EXAMPLES.md` (editable) → two style pairs per chat turn; English reply unless ≥ 2 Hindi words and ≥ ⅓ of the sentence. NOT heard on the mic; the public file is NOT built in his real home yet | DECISIONS D50, `docs/THIRD_PARTY_DATA.md`, `docs/research/behaviour_data.md` |
 
@@ -159,18 +161,18 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - Verified: `tests/web_eval.py` 19/19; a real LLM chat turn with receipts. NOT verified: browser voice input.
 - Next: browser mic → local whisper; settings view; edit people/rules from the Memory page.
 
-## 7. Tejmul's pending actions
+## 7. The owner's pending actions
 1. (Symlink no longer needed — app reinstalled to the real path.) 2. `uv run stiti backup --show-key` → save the key. 3. Add `ZAI_API_KEY` and/or
 `CLOUDFLARE_API_KEY` + `CLOUDFLARE_ACCOUNT_ID` (personal-chat backup) and optionally `NVIDIA_API_KEY`; restart Stiti. 4. Decide iCloud vs `~/Projects`. 5. Approve Playwright/rea MCP if prompted.
 6. Try `uv run stiti web` and `uv run stiti teach`. 7. Confirm the `public/actions` icon licence (looks like
 Streamline) before the repo is promoted. 8. Talk to Stiti for real: overlay pill/cards, the language switch
 (English ↔ Telugu ↔ Hindi), a lesson (one board only), "it's done" on a to-do. 9. Optional: a different English voice
-(`~/.stiti/voice_samples/english/`, note: that lineup predates the "Tej" fix). 10. Re-check goonj's licence before
+(`~/.stiti/voice_samples/english/`, note: that lineup predates the name respelling fix). 10. Re-check goonj's licence before
 any public build (trained on synthetic ElevenLabs/Fish voices). 11. After merging D39: apply `db/migrations/010_reminder_nags.sql` to
 `stiti` + `stiti_test`, then tell Stiti "my city is <your city>" once (weather + brief; until then she uses the
 timezone's city and says so).
 12. Decide: clean the junk already in his brain (both "Switch to Hindi" + "Switch to English" active, "I said shut up…"
-saved as a boundary, misheard "Newton's Club" fact) — show him the rows first. 13. Talk-test D36–D40 on the mic: "ask me
+saved as a boundary, misheard college-name fact) — show him the rows first. 13. Talk-test D36–D40 on the mic: "ask me
 questions", "what do you know about me?" → "what else?", "I live in …" → "weather?", a whiteboard lesson with a doubt
 mid-sentence (echo thresholds in `tutor/ears.py` were tuned on logs, not his room). 14. Which accounts to connect
 (GitHub PAT, Gmail) for "doing things".
@@ -189,6 +191,9 @@ history; until then lessons still run, the map shows no heatmap). Try `stiti tea
 19. After merging D58: apply `db/migrations/014_asked_questions.sql` to `stiti` + `stiti_test`, restart Stiti (until then
 questions are not remembered — everything else works). Try: "remind me at <a time 3 min ahead> to stretch", say "bye",
 wait — she should say it out loud.
+20. After merging D59 (fork-safe): `uv run stiti migrate-local --wake "<your old wake phrase>"` once (moves the login
+item to `com.stiti.app`, keeps the app's mic/Calendar/Reminders grants, saves the phrase locally), then restart Stiti.app.
+Optional: `python scripts/privacy_check.py --install-hook`.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-12/14 — mic, whiteboard asks, Jarvis gaps (D36–D40, PRs: one per branch, stacked):** mic follows macOS
@@ -226,12 +231,12 @@ wait — she should say it out loud.
   Kokoro/whisper threads (Kokoro's 700 ms new-thread cost), early STT in the pause, Smart Turn re-checks, warm-up on
   start/wake, instant acks + fillers, warm goodbyes. Web chat streams too. Simulated: ~0.85–1.0 s voice→first audio
   (was ~2.3 s). `tests/speed_eval.py` 24/24. NOT verified: a real mic session (echo cancellation + barge-in mid-stream).
-- **2026-11-10 — free LLM providers (D17):** Tejmul added Groq/OpenRouter/Gemini keys. Researched 17 free providers,
+- **2026-11-10 — free LLM providers (D17):** the owner added Groq/OpenRouter/Gemini keys. Researched 17 free providers,
   measured latency live (Groq Qwen3.8-27B ~190 ms first token). Router: per-provider `max_privacy`, Z.ai/Cloudflare/
   NVIDIA added, Gemini `models/` ID bug + dead OpenRouter model fixed, OpenRouter `data_collection: deny` on P1.
   NOT verified: Z.ai/Cloudflare/NVIDIA (no keys yet); full chat turn through Engine with the LLM.
 - **2026-11-10 — whiteboard tutor + web app:** created this HANDOFF + session protocol in CLAUDE.md. Built the
-  tutor (§6, D15) then Tejmul switched priority to "normal chat features" → built `stiti web` (§6b, D16) with a
+  tutor (§6, D15) then the owner switched priority to "normal chat features" → built `stiti web` (§6b, D16) with a
   sub-agent doing the landing page. New: migration 006 (applied to stiti + stiti_test), router `schema=` strict
   JSON + `tutor_plan` chain, engine fast path for tutor phrases, voice loop quiet during lessons, tests
   `tutor_eval.py` 27/27 + `web_eval.py` 12/12; full suite 8/8 green.
@@ -241,7 +246,7 @@ wait — she should say it out loud.
 ---
 
 ## END-OF-SESSION PROTOCOL (mandatory, every session, every model)
-When Tejmul says "push" / "I'm ending" / "wrap up" (or the session's work is clearly done):
+When the owner says "push" / "I'm ending" / "wrap up" (or the session's work is clearly done):
 1. Update this file: "Last updated", §5 status table, §6 (or the relevant feature section), §7 pending actions,
    and add a ≤10-line entry to §8 (what was built, what's verified vs NOT verified, exact next steps).
 2. Update `docs/BUILD_LOG.md` / `docs/PLAN.md` / `docs/DECISIONS.md` only for things that changed.

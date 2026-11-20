@@ -1,6 +1,6 @@
 # Hinglish voice: speaking and hearing code-mixed Hindi-English (research, 2026-11-10)
 
-**Question:** Tejmul speaks Hinglish ("Haan, note kar liya. Aaj ka interview kaisa raha?"), mostly in Roman script.
+**Question:** the owner speaks Hinglish ("Haan, note kar liya. Aaj ka interview kaisa raha?"), mostly in Roman script.
 Today Kokoro (`af_heart`, `en-us`) reads it with American phonemes, so it sounds foreign, and whisper-small q4
 sometimes returns nonsense on his real voice ("Chuk chaa saan baat kare kale"). What is the smallest fix that stays
 free, local-first, inside the ~3 GB model budget, with TTS first chunk around 200–400 ms and STT under ~400 ms?
@@ -30,7 +30,7 @@ checks whether the words are clear, not whether the voice sounds nice. Synthesis
 - The `voices-v1.0.bin` Stiti already downloads includes `hf_alpha`, `hf_beta`, `hm_omega`, `hm_psi`, so this needs
   **no new download and no extra RAM**. Listen-test samples (before and after) are in the session scratchpad
   (`samples/0_today_af_heart.wav` vs `samples/0_new_hf_alpha.wav`). Kokoro rates its Hindi voices grade C, so
-  Tejmul's ear is the final judge.
+  The owner's ear is the final judge.
 
 **STT, on clean synthetic Hinglish (Kokoro Hindi voices speaking 4 commands):**
 | Model / setting | Latency | Output |
@@ -43,7 +43,7 @@ checks whether the words are clear, not whether the voice sounds nice. Synthesis
 
 Today's `en` + prompt setup already works on **clean** speech. So the garbage comes from real-mic conditions
 (accent, speed, room noise, and possibly VAD clipping the start), where whisper-small's weak Hindi breaks down. The
-fix needs a test set of **Tejmul's own recorded clips**, not synthetic audio. I could not measure Groq here; check it
+fix needs a test set of **the owner's own recorded clips**, not synthetic audio. I could not measure Groq here; check it
 in that A/B.
 
 ## (A) Hinglish / Hindi TTS (≥10 options)
@@ -98,14 +98,14 @@ replies keep `af_heart`. Make the voice a setting (`STITI_VOICE=hf_alpha`). **Ne
 Roman words found in neither the lexicon nor `/usr/share/dict/words`. **Then:** export goonj-1-82M to ONNX for
 Indian-English accents with the same runtime and RAM.
 
-**STT: first measure, then make the smallest swap.** (1) Record 20–30 of Tejmul's real Hinglish commands. Check
+**STT: first measure, then make the smallest swap.** (1) Record 20–30 of the owner's real Hinglish commands. Check
 `segments()` for VAD clipping, and log `avg_logprob`. (2) A/B on that set: today's whisper-small `en`+prompt vs
 **Oriserve Hindi2Hinglish-Swift**. Swift is whisper-base sized, needs a one-time conversion to MLX, outputs Roman
 Hinglish, and is smaller and faster than small, so it costs nothing to try. Pick the winner by WER and fast-path
 intent accuracy. (3) Add **Groq whisper-large-v3-turbo as an escalation lane**: only re-transcribe a turn when local
 confidence is low (`avg_logprob < -0.8` or Laya can't parse an intent). Most turns stay local and fast; hard turns cost
 ~0.5 s more and use a small part of the 8 h/day free quota. Groq doesn't train on API data, but audio leaves the Mac,
-so let Tejmul switch it off. Don't use `language=None` (it adds a 250 ms detection pass) or `language="hi"` (it gives
+so let the owner switch it off. Don't use `language=None` (it adds a 250 ms detection pass) or `language="hi"` (it gives
 Devanagari and is worse in our test).
 
 ## Sources
