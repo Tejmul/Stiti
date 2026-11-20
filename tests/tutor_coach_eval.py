@@ -169,5 +169,45 @@ for fr, es in by_frame.items():
                 over += 1
 check("board: nothing on a page overlaps anything else", over == 0, f"{over} overlaps")
 
+# ------------------------------------------------------------------ D42 for the coach: board first, voice ∥ reading
+print("\nopens fast: board first, her voice and reading his file at the same time")
+import stiti.tutor as T  # noqa: E402
+from stiti.tutor import audio as AU  # noqa: E402
+from stiti.tutor import server as SV  # noqa: E402
+
+marks: list[tuple[str, float]] = []
+t0 = time.time()
+
+
+def mark(n, wait=0.0):
+    marks.append((n, time.time() - t0))
+    time.sleep(wait)
+
+
+class _A:
+    def close(self):
+        pass
+
+
+real = (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_browser, SV.BoardServer.stop)
+AU.make = lambda mode, events, debug=False, scale=1.0: (mark("voice loading", 0.5), _A())[1]
+C.concept_map = lambda *a, **k: (mark("reading file", 0.5), [])[1]
+C.Coach.run = lambda self: (self._future.result(), mark("session running"),
+                            {"finished": True, "checks_right": 0, "checks_graded": 0, "questions": 0})[2]
+SV.BoardServer.start = lambda self: (self.connected.set(), mark("board started"), self)[2]
+SV.BoardServer.open_browser = lambda self: mark("browser opened")
+SV.BoardServer.stop = lambda self: None
+try:
+    t0 = time.time()
+    T._teach(["compilers", "--silent"])
+finally:
+    AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_browser, SV.BoardServer.stop = real
+at = dict(marks)
+check("the board is on screen before anything slow starts", at.get("browser opened", 9) < 0.3
+      and at["browser opened"] <= min(at.get("voice loading", 9), at.get("reading file", 9)), str(marks))
+check("voice loading and reading his file overlap (not one after the other)",
+      abs(at.get("voice loading", 0) - at.get("reading file", 9)) < 0.3 and at.get("session running", 9) < 0.9,
+      str(marks))
+
 print(f"tutor coach: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
