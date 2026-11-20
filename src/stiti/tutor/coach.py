@@ -611,7 +611,8 @@ class Coach:
         if self.goal["mode"] == "day":
             mins = self.goal.get("hours", DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
         else:
-            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (self.goal.get("days") or 9) <= 1 else LEARN_MINUTES
+            days = self.goal.get("days")                # 0 = today: an exam today is ≤ 1 day too
+            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (9 if days is None else days) <= 1 else LEARN_MINUTES
         self.goal["minutes"] = mins
         mapper.join(0.1)
         if mapper.is_alive():
