@@ -91,6 +91,33 @@ def recent_turns(session_id: int, n: int = 6) -> list[dict]:
     return list(reversed(rows))
 
 
+TOLD_WINDOW_MIN = 90      # "this conversation" for "what did I tell you?"
+TOLD_CHARS = 3200         # ≈ 800 tokens of his own words; the newest win when there is more
+
+
+def told_this_conversation(session_id: int, *, exclude: int | None = None, max_privacy: int = 1) -> list[str]:
+    """What HE said in this conversation, oldest first: statements only (no questions / commands / "ok"), cut-off
+    half sentences folded into the full one. For "what did I tell you till now?" (D48) — the 10-line RECENT window
+    gave him back only the ending."""
+    from . import norepeat
+    rows = q("""SELECT id, speaker, text FROM episodes
+                WHERE session_id = %s AND speaker = 'user' AND privacy <= %s
+                  AND occurred_at > now() - make_interval(mins => %s) ORDER BY id""",
+             (session_id, max_privacy, TOLD_WINDOW_MIN))
+    rows = norepeat.collapse_fragments([r for r in rows if r["id"] != exclude])
+    out = [" ".join(r["text"].split()) for r in rows
+           if len(r["text"].split()) >= 4 and not norepeat.is_ask(r["text"]) and not _command_like(r["text"])]
+    while out and sum(len(x) for x in out) > TOLD_CHARS:
+        out.pop(0)
+    return out
+
+
+def _command_like(text: str) -> bool:
+    import re
+    return bool(re.match(r"^\W*(?:(?:hey|hi|ok(?:ay)?|so|please|stiti)\W+)*(?:remind me|set (?:an? )?(?:alarm|timer|reminder)|add\b|"
+                         r"talk in|speak in|open\b|play\b|stop\b|teach me|search\b|find\b|read\b|bye\b|good ?night)", text, re.I))
+
+
 def touch(episode_ids: list[int]) -> None:
     """After the reply (never on the hot path): access stats + MemoryBank-style strength bump."""
     if episode_ids:

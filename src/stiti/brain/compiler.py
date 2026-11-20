@@ -99,7 +99,8 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
           memories: list[dict], facts: list[dict], lessons: list[dict], open_loops: str | None,
           talk_directives: list[str], mvd: bool, docs: list[dict] | None = None, strategy=None,
           rule_saved: bool = False, wins: list[str] | None = None, markers: bool = False,
-          said=None, more: bool = False, saved: list[str] | None = None) -> tuple[str, int]:
+          said=None, more: bool = False, saved: list[str] | None = None,
+          told: list[str] | None = None) -> tuple[str, int]:
     """markers=True (voice turns): the reply must open with a turn-completion marker ● ◐ ○ (turnmark.py, D29).
     said = norepeat.Ledger (what she already said this conversation), more = he asked "what else?" (D36): every line
     she already covered is left out and an ALREADY-SAID block tells the LLM to bring only new things."""
@@ -145,6 +146,9 @@ def build(*, text: str, now: datetime, privacy: int, emotion_hint: str, tone: st
                  f"[WHO YOU ARE]\n{soul}",
                  f"[WHO YOU'RE TALKING TO — {who}, {profile.p('subj')}/{profile.p('obj')}]\n{prof}",
                  f"[RIGHT NOW]\n{now:%A %I:%M %p} · {emotion_hint} · suggested tone: {tone}"]
+        if told:                                     # D48: his own words of this conversation, all of them, in order
+            parts.append("[WHAT HE TOLD YOU IN THIS CONVERSATION — his words as heard, oldest first]\n"
+                         + "\n".join(f"{i}. {x}" for i, x in enumerate(told, 1)))
         if rec:
             parts.append("[RECENT CONVERSATION]\n" + "\n".join(rec))
         if loops:

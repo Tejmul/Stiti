@@ -63,6 +63,27 @@ QUESTION_RX = re.compile(r"\?\s*$|^(what|who|when|where|why|how|which|is|are|do|
 MEMORY_CUE_RX = re.compile(r"\b(remember|recall|yaad hai|yaad h|last time|pichli baar|that time|kya bola tha|"
                            r"what did i (say|tell)|did i (tell|say|mention)|when did i|i told you|maine bataya|bataya tha|"
                            r"you know (about|what)|previously|earlier)\b", re.I)
+# "what did I tell you till now?" — he wants his own words of THIS conversation back, all of them (D48)
+RECAP_RX = re.compile(r"\bwhat (?:all )?(?:did|have|had) i (?:just |already )?(?:tell|told|say|said|explain|explained|share|shared)\b|"
+                      r"\bwhat i (?:just )?(?:told|said|explained) (?:you )?(?:till now|so far|until now|just now)\b|"
+                      r"\b(?:repeat|recap|summari[sz]e|sum up|tell me)\b.{0,30}\bwhat i (?:just )?(?:told|said|explained)\b|"
+                      r"\b(?:did you|have you) (?:get|got|understand|understood|follow|catch|caught) (?:all (?:of )?)?(?:that|this|it|everything|what i (?:said|told))\b|"
+                      r"\bmaine (?:abhi tak )?kya (?:bola|kaha|bataya)\b|\babhi tak (?:maine )?kya\b", re.I)
+RECAP_PAST_RX = re.compile(r"\b(last (?:week|month|time|night|year)|yesterday|the other day|earlier (?:today|this week)|"
+                           r"days? ago|weeks? ago|kal|parso|pichl\w+)\b", re.I)
+
+
+def wants_recap(text: str) -> bool:
+    """He wants THIS conversation's words back — not a memory from another day ("what did I say last week")."""
+    return bool(RECAP_RX.search(text)) and not RECAP_PAST_RX.search(text)
+
+
+RECAP_LINE = ("He asks what he has told you in this conversation. Retell EVERY point in [WHAT HE TOLD YOU IN THIS "
+              "CONVERSATION], in the same order, as short statements to him (\"You're in your final year…\"). Leave "
+              "nothing out and add nothing. If a part reads like it was misheard, say that part wasn't clear.")
+RECAP_WORDS = 130
+RECAP_NONE = {"english": "You haven't told me anything yet in this conversation. Go ahead, I'm listening.",
+              "hinglish": "Is baar abhi tak tumne kuch bataya nahi. Bolo, sun rahi hoon."}
 PUSHBACK_RX = re.compile(r"\b(\d+|five|ten|paanch|das|ek|one|two|do) (more )?(min(ute)?s?|minat)( more| aur)?\b|"
                          r"\bone more\b|\bjust (a|one|this)\b|\bthoda aur\b|\bbas (thoda|ek)\b|\bafter this\b|\blet me finish\b|"
                          r"\bi'?ll sleep\b|\bin a bit\b|\bsoon\b", re.I)

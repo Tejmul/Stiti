@@ -44,6 +44,10 @@ def _name_hit(word: str) -> bool:
     return len(w) >= 4 and SequenceMatcher(None, w, "stiti").ratio() >= 0.8
 
 
+WAKE_START = 2     # a wake phrase must begin within his first 2 words (D48): talking ABOUT her is not calling her
+LEAD_IN = {"hey", "hi", "hello", "ok", "okay", "so", "and", "yo", "arre", "are", "suno", "listen", "oye", "uh", "um", "well"}
+
+
 def detect(transcript: str) -> tuple[bool, str]:
     """Returns (woke, remainder_after_wake_phrase) — remainder keeps the original text (numbers, a.m.)."""
     if is_stop(transcript):          # "bye Stiti" contains her name but is a goodbye, never a wake
@@ -61,13 +65,13 @@ def detect(transcript: str) -> tuple[bool, str]:
     # multi-word phrases (fuzzy over sliding windows)
     for ph in WAKE_PHRASES:
         n = len(ph.split())
-        for i in range(0, max(1, len(words) - n + 1)):
-            window = " ".join(words[i:i + n])
+        for i in range(0, min(WAKE_START, max(1, len(words) - n + 1))):   # only at the START of what he says:
+            window = " ".join(words[i:i + n])                             # "…explained it to Stiti in detail" woke her
             if SequenceMatcher(None, window, ph).ratio() >= 0.82:
                 return True, rest(i + n)
     # the name alone, in the first 4 words ("Stiti, what are my todos")
-    for i, w in enumerate(words[:4]):
-        if _name_hit(w):
+    for i, w in enumerate(words[:WAKE_START]):       # her name first, or right after "so" / "okay" / "listen"
+        if _name_hit(w) and (i == 0 or words[0] in LEAD_IN):
             return True, rest(i + 1)
     return False, ""
 
