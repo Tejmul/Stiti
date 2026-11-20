@@ -8,6 +8,7 @@ STITI_DB=postgresql:///stiti_test STITI_HOME=<tmp> uv run python tests/tutor_lau
 from __future__ import annotations
 
 import os
+os.environ.setdefault("STITI_BOARD_FIXED", "0")     # tests: random ports, no waiting for a board tab
 import subprocess
 import sys
 

@@ -3,6 +3,9 @@ fallback), course math, prerequisite ordering, diagnostics, FSRS revision, voice
 optional live planning check (runs only with an LLM key)."""
 from __future__ import annotations
 
+import os
+os.environ.setdefault("STITI_BOARD_FIXED", "0")     # tests: random ports, no waiting for a board tab
+
 import sys
 import tempfile
 from datetime import datetime, timedelta, timezone

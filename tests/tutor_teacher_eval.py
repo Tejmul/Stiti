@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+os.environ.setdefault("STITI_BOARD_FIXED", "0")     # tests: random ports, no waiting for a board tab
 import queue
 import sys
 import threading
