@@ -58,4 +58,5 @@ run "remembers all he told her (D48)" tests/recap_eval.py
 run "notices what matters, asks once, books it (D49)" tests/important_things_eval.py
 run "varied wording, same honesty (D50)" tests/wording_eval.py
 run "example replies in the briefing (D50)" tests/examples_eval.py
+run "fork-safe: fresh install + privacy check"  tests/privacy_eval.py
 exit $fail
