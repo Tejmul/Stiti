@@ -17,7 +17,12 @@ SCHED = Scheduler(desired_retention=0.9, learning_steps=(timedelta(minutes=10), 
                   enable_fuzzing=True)
 
 
-def rating_for(verdict: str | None, hints: int = 0, confidence: int | None = None) -> Rating:
+def rating_for(verdict: str | None, hints: int = 0, confidence: int | None = None, rung: int | None = None) -> Rating:
+    """rung (Feature 5 hint ladder: 0 none · 1 nudge · 2 hint · 3 worked example · 4 answer) wins when given."""
+    if rung is not None:
+        from .pacing import rung_rating
+        return {"again": Rating.Again, "hard": Rating.Hard, "good": Rating.Good,
+                "easy": Rating.Easy}[rung_rating(verdict, rung, confidence)]
     if verdict not in ("correct", "partial"):
         return Rating.Again
     if verdict == "partial" or hints or (confidence is not None and confidence <= 2):

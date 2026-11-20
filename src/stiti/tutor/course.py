@@ -351,7 +351,8 @@ class Night:
         res = self._run(_quiz_lesson("Checkpoint", "Quick checkpoint from earlier, no peeking.", items))
         for r in res.get("results") or []:
             if r.get("segment", "").startswith("c"):
-                srs.review(int(r["segment"][1:]), srs.rating_for(r.get("verdict"), r.get("hints", 0), r.get("confidence")))
+                srs.review(int(r["segment"][1:]), srs.rating_for(r.get("verdict"), r.get("hints", 0),
+                                                                 r.get("confidence"), rung=r.get("rung")))
 
     def lesson(self, i: int) -> None:
         L = self.plan["lessons"][i]
@@ -383,7 +384,8 @@ class Night:
             for r in res.get("results") or []:
                 if r.get("segment", "").startswith("c"):
                     srs.review(int(r["segment"][1:]),
-                               srs.rating_for(r.get("verdict"), r.get("hints", 0), r.get("confidence")))
+                               srs.rating_for(r.get("verdict"), r.get("hints", 0), r.get("confidence"),
+                                              rung=r.get("rung")))
         style = {"green": "green", "amber": "warm", "red": "red", "skip": "green"}
         lines = [(x["title"], style.get(x["status"] if x["depth"] != "skip" else "skip", "muted"))
                  for x in self.plan["lessons"]]
