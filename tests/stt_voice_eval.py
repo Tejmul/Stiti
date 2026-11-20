@@ -107,11 +107,15 @@ for s, want in [("Kal subah 6 baje alarm laga do.", "hinglish"), ("Meri todos ky
                 ("I want to do it so fast.", "en"), ("Talk to me in English or Hindi?", "en"),
                 ("आज का दिन कैसा रहा?", "hinglish")]:
     check(f"{s!r} → {want}", hinglish.language(s) == want, hinglish.language(s))
+os.environ["STITI_LANGS"] = "mirror"          # D34 mirror mode: both example blocks, ordered by the prior
 pe, ph = stt.build_prompt("en"), stt.build_prompt("hinglish")
-check("English prior: English examples come first", pe.index(stt.EN_LINES) < pe.index(stt.HI_LINES))
-check("Hinglish prior: Hinglish examples come first", ph.index(stt.HI_LINES) < ph.index(stt.EN_LINES))
-check("both blocks always present (English-only prompts translate Hinglish: 63% WER)",
+check("mirror mode — English prior: English examples come first", pe.index(stt.EN_LINES) < pe.index(stt.HI_LINES))
+check("mirror mode — Hinglish prior: Hinglish examples come first", ph.index(stt.HI_LINES) < ph.index(stt.EN_LINES))
+check("mirror mode — both blocks present (English-only prompts translate Hinglish: 63% WER)",
       all(x in pe and x in ph for x in (stt.EN_LINES, stt.HI_LINES)))
+del os.environ["STITI_LANGS"]
+check("D51 English only (default): no Hinglish example lines in the prompt — they made Whisper write English as "
+      "Roman Hindi", stt.HI_LINES not in stt.build_prompt("en") and stt.EN_LINES in stt.build_prompt("hinglish"))
 
 # ---------------------------------------------------------------- previous-utterance context
 print("previous utterance (Wispr prev_asr_text)")
@@ -133,7 +137,9 @@ stt.reset_context()
 
 # ---------------------------------------------------------------- prompt-copy rejection
 print("prompt-copy rejection")
+os.environ["STITI_LANGS"] = "mirror"          # these checks use the Hinglish example lines (mirror-mode prompt)
 P = stt.build_prompt("en")
+del os.environ["STITI_LANGS"]
 check("noise → prompt sentence ('Aaj ka plan kya hai?') is a prompt copy",
       stt.prompt_copy("Aaj ka plan kya hai?", P, G) == "prompt")
 check("old turbo echo 'Aaj bahut kaam tha yaar.' vs the old prompt",
