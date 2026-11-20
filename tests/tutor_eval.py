@@ -105,7 +105,7 @@ class FakeSrv:
         put = lambda x: threading.Timer(0.03, lambda: ev.put(x)).start()  # noqa: E731
         first = lambda cid: m.get("cue_id") == cid and sum(x.get("cue_id") == cid for x in sent) == 1  # noqa: E731
         if m["type"] == "check" or (m["type"] == "status" and str(m.get("caption", "")).startswith(
-                ("Not quite", "No worries", "Good start", "Quick one"))):
+                ("Not quite", "Not that one", "No worries", "Good start", "Quick one"))):
             put({"type": "text", "text": next(answers)})
         if m["type"] == "cue" and first("s3c2"):
             put({"type": "voice", "text": "wait what is a token?"})
@@ -121,8 +121,10 @@ t = Tutor(L, audio=SilentAudio(0.005), events=ev, server=FakeSrv(), persist=True
 res = t.run()
 verdicts = [x["verdict"] for x in res["results"]]
 check("scripted lesson finishes", res["finished"], str(res))
-check("checks: predict + 4 correct (hint ladder used)", verdicts == ["predict", "correct", "correct", "correct", "correct"]
-      and res["results"][1]["hints"] == 1, str(verdicts))
+check("checks: predict + 4 correct (hint ladder: a nudge after a miss, a hint after 'I don't know')",
+      verdicts == ["predict", "correct", "correct", "correct", "correct"]
+      and res["results"][1]["ladder"] == ["nudge"] and res["results"][2]["ladder"] == ["hint"],
+      str([(x["verdict"], x["hints"], x.get("ladder")) for x in res["results"]]))
 check("confidence recorded on quiz checks", [x["confidence"] for x in res["results"][3:]] == [4, 5])
 check("question answered locally + resumed", res["questions"] == 1 and any(
     m["type"] == "status" and "back to" in str(m.get("caption")).lower() for m in sent))

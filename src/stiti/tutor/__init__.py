@@ -8,7 +8,7 @@
     uv run stiti book book.pdf             # just show the book's outline
 Flags: --type (speakers + keyboard, no mic) · --silent (no sound) · --no-board (voice only, no screen)
        --minutes N · --debug
-Coach (his file or a topic): --focus "A and B" · --ptt · --classic (old lesson) ·
+Coach (his file or a topic): --focus "A and B" · --ptt · --blurt (free-recall test after each topic) · --classic ·
        --goal-mode learn|exam|day [--days N] [--hours H]  (goal already known, e.g. from the web Lessons page:
        the coach skips "is this for an exam?")
 Review: --review [<file or topic>] [--key <mastery key>] [--limit N] [--ptt]
@@ -354,7 +354,8 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
     try:
         for _ in range(4):                           # at most a few re-plans in one sitting
             coach = Coach(book_path or target, audio=audio, events=events, server=srv, book_path=book_path,
-                          unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")))
+                          unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")),
+                          blurt="--blurt" in args)          # Feature 5: "test me with Blurt" (Lessons page)
             fut = None                               # a re-plan (other unit) maps again
             holder["t"] = coach.t
             coach.t.ptt_mode = "--ptt" in args          # hold-to-talk from the start (noisy room)
@@ -503,7 +504,7 @@ def _course_session(args: list[str], target: str | None, audio, events, srv, sto
             for r in res.get("results") or []:
                 if r.get("segment", "").startswith("c"):
                     srs.review(int(r["segment"][1:]), srs.rating_for(r.get("verdict"), r.get("hints", 0),
-                                                                        r.get("confidence")))
+                                                                        r.get("confidence"), rung=r.get("rung")))
             print(f"\n✅ Revision: {res['checks_right']}/{res['checks_graded']} right. Next reviews scheduled.")
             return res
         if "--resume-course" in args:

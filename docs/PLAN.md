@@ -132,6 +132,9 @@ append-only `mastery_events`, Lessons page Review card + Map (Strong / Focus / N
 ✅ 2026-11-20 (D60): cited doubts — his file as page-tagged chunks (migration 015), hybrid retrieval + score gate,
 "Page 42 says: …" only for a quote verified in code, "your notes don't cover that" → general answer on a yes, answer
 bank, source card on the board (click → whole passage).
+✅ 2026-11-20 (D61): hint ladder (nudge → hint → worked example → answer, rung → FSRS + mastery), one check per full
+idea + sparser when he's fed up, never the same question twice, Blurt free recall (`--blurt` / "test me"), goal
+remembered per file.
 LLM lesson planner written (strict JSON) but unverified until a key exists. Next: FSRS review sessions, offline
 Excalidraw bundle, word-timed TTS, real-voice test on the big monitor.
 

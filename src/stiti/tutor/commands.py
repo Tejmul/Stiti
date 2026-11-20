@@ -27,6 +27,11 @@ RULES: list[tuple[str, re.Pattern]] = [(k, re.compile(p)) for k, p in [
                r"( please| na| stiti)?$"),
     ("confused", r"(samajh nahi aaya|samjha nahi|samjhi nahi|didn'?t (get|understand)|don'?t (get|understand)|"
                  r"not clear|confus|explain (it )?again|explain differently|kuch samajh nahi)"),
+    # Feature 5: he wants fewer checks ("skip the questions", "just teach") / to be tested now ("let me blurt")
+    ("fewer", r"\b((skip|stop|no more|less|fewer|too many|enough( of)?|without)( the| these| your| with the)? "
+              r"(questions|checks|quiz(zes|zing)?)|stop (asking|quizzing)( me)?|don'?t (ask|quiz) me|"
+              r"^just (teach|explain)( me)?( it| please)?$|^(you )?just teach)\b"),
+    ("blurt", r"\b(let me blurt|blurt( it| time)?|test me|quiz me|let me (tell|say) (you )?everything( i remember)?)\b"),
     ("hindi", r"(hindi mein|in hindi|hinglish mein)"),
     ("english", r"(english mein|in english)"),
 ]]
@@ -73,8 +78,8 @@ def correction(text: str) -> str | None:
 
 
 def classify(text: str, *, answering: bool = False) -> str:
-    """-> correct | end | pause | repeat | back | next | slower | faster | resume | confused | hindi | english |
-          steer | question | answer | other.  While a check is open, plain sentences are answers — but a request
+    """-> correct | end | pause | repeat | back | next | slower | faster | resume | confused | fewer | blurt | hindi |
+          english | steer | question | answer | other.  While a check is open, plain sentences are answers — but a request
           to change the lesson ("I don't need the basics", "exam tomorrow") is never taken as his answer."""
     t = _N(text)
     if not t:
@@ -83,13 +88,13 @@ def classify(text: str, *, answering: bool = False) -> str:
         return "correct"
     if len(t.split()) <= 6:
         for name, rx in RULES:
-            if name in ("confused", "hindi", "english"):
+            if name in ("confused", "hindi", "english", "fewer", "blurt"):
                 continue
             if rx.search(t):
                 if answering and name == "resume" and t in ("yes", "no", "haan", "ha", "han"):
                     return "answer"
                 return name
-    for name in ("confused", "hindi", "english"):
+    for name in ("fewer", "blurt", "confused", "hindi", "english"):
         if dict(RULES)[name].search(t):
             return name
     if len(t.split()) >= 3 and STEER.search(t):

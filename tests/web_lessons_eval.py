@@ -170,6 +170,12 @@ r = start({"target": str(older), "mode": "exam", "days": 3, "focus": "page table
 exam_args = spawned[0] if spawned else []
 check("exam in 3 days + focus + hold-to-talk",
       exam_args == [str(older), "--goal-mode", "exam", "--days", "3", "--focus", "page tables and TLB", "--ptt"], str(exam_args))
+r = start({"target": "how DNS works", "mode": "learn", "blurt": True})
+blurt_args = spawned[0] if spawned else []
+check("'test me with Blurt' on the Start card → --blurt", r.status_code == 200
+      and blurt_args == ["how DNS works", "--goal-mode", "learn", "--blurt"], str(spawned))
+r = start({"target": "how DNS works", "mode": "learn", "blurt": "yes"})
+check("…a non-boolean Blurt value is refused", r.status_code == 400 and not spawned, r.text[:120])
 r = start({"target": "TCP/IP basics", "mode": "learn"})
 check("a topic with a slash that isn't a path is fine", r.status_code == 200 and spawned[0][0] == "TCP/IP basics", r.text)
 
@@ -239,18 +245,21 @@ real = (AU.make, C.concept_map, C.Coach.run)
 AU.make = lambda mode, events, debug=False, scale=1.0: _A()
 C.concept_map = lambda *a, **k: []
 C.Coach.run = lambda self: (got.append({"goal": dict(self.goal or {}), "focus": self.focus, "ptt": self.t.ptt_mode,
-                                        "source": self.source, "book": self.book_path}),
+                                        "source": self.source, "book": self.book_path, "blurt": self.blurt}),
                             {"finished": True, "checks_right": 0, "checks_graded": 0, "questions": 0})[1]
 try:
     T._teach(day_args + ["--silent", "--no-board"])        # the exact argv the page spawned
     T._teach(exam_args + ["--silent", "--no-board"])
+    T._teach(blurt_args + ["--silent", "--no-board"])
 finally:
     AU.make, C.concept_map, C.Coach.run = real
 check("`stiti teach <file> --goal-mode day --hours 6` → Coach(goal=day, 6 h) on his file",
       len(got) >= 1 and got[0]["goal"] == {"mode": "day", "days": 0, "hours": 6.0, "hours_said": True} and got[0]["book"] == str(big), str(got[:1]))
 check("exam args → Coach(goal=exam, 3 days), focus split, hold-to-talk on",
-      len(got) == 2 and got[1]["goal"] == {"mode": "exam", "days": 3} and got[1]["focus"] == ["page tables", "TLB"]
-      and got[1]["ptt"] is True, str(got[1:]))
+      len(got) >= 2 and got[1]["goal"] == {"mode": "exam", "days": 3} and got[1]["focus"] == ["page tables", "TLB"]
+      and got[1]["ptt"] is True and got[1]["blurt"] is False, str(got[1:2]))
+check("the Lessons page's Blurt flag reaches the coach (Coach(blurt=True))",
+      len(got) == 3 and got[2]["blurt"] is True and got[0]["blurt"] is False, str(got[2:]))
 
 # a real (silent, typed) session with the goal preset: she never asks the goal question
 from stiti.tutor.audio import SilentAudio  # noqa: E402

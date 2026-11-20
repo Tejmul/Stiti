@@ -33,7 +33,8 @@ def card_check(c: dict) -> Check:
     if kind == "mcq" and not opts:
         kind = "recall"
     return Check(kind=kind, prompt=str(c.get("front") or spec.get("prompt") or ""), options=opts, expectations=exps,
-                 hints=hints, reveal=str(spec.get("reveal") or c.get("back") or ""), on_correct="Yes, that's it.")
+                 hints=hints, reveal=str(spec.get("reveal") or c.get("back") or ""), on_correct="Yes, that's it.",
+                 example=[str(x) for x in spec.get("example") or [] if x][:4])   # the ladder's worked-example rung
 
 
 def build(cards: list[dict]) -> Lesson:
@@ -78,10 +79,13 @@ class Review:
         if not c or rec.get("verdict") not in ("correct", "partial", "wrong", "idk"):
             return                                    # skipped / ended: the card stays due, mastery unchanged
         from . import srs
-        rating = srs.rating_for(rec["verdict"], rec.get("hints", 0), rec.get("confidence"))
+        from .pacing import mastery_verdict
+        # Feature 5: the hint-ladder rung he needed decides both the FSRS rating and the mastery evidence
+        rating = srs.rating_for(rec["verdict"], rec.get("hints", 0), rec.get("confidence"), rung=rec.get("rung"))
         due = srs.review(c["id"], rating)
         m = self._mastery.get(c["source"]) or self._mastery.setdefault(c["source"], Mastery(c["source"]))
-        p = m.update(c["concept_id"], rec["verdict"], origin="review", hints=rec.get("hints", 0))
+        p = m.update(c["concept_id"], mastery_verdict(rec["verdict"], rec.get("rung", 0)), origin="review",
+                     hints=rec.get("hints", 0))
         self.done.append({"card": c["id"], "concept": c.get("concept"), "verdict": rec["verdict"],
                           "hints": rec.get("hints", 0), "rating": rating.name, "due": due, "p": p})
         self.log(f"   [review] card {c['id']} {rec['verdict']} (hints {rec.get('hints', 0)}) → {rating.name}, "

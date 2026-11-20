@@ -63,6 +63,7 @@ class Check:
     reveal: str = ""
     on_correct: str = ""
     confidence: bool = False                    # quiz: ask "1–5, kitna sure?"
+    example: list[str] = field(default_factory=list)   # worked-example lines: the ladder's third rung (Feature 5)
 
 
 @dataclass

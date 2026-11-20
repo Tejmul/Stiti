@@ -301,6 +301,11 @@ def build_args(body: dict) -> tuple[list[str], str]:
         raise Invalid("Bad hold-to-talk value.")
     if ptt:
         args.append("--ptt")
+    blurt = body.get("blurt", False)               # Feature 5: "test me with Blurt at the end of each topic"
+    if not isinstance(blurt, bool):
+        raise Invalid("Bad Blurt value.")
+    if blurt:
+        args.append("--blurt")
     return args, label
 
 

@@ -555,5 +555,144 @@ check("with hold-to-talk on, a room voice is ignored (not answered, not graded)"
       and any("not holding the talk key" in x for _, x in r["logs"]), str(qs))
 check("…and what he says while holding the key is answered", any("spaces between tokens" in q for q in qs), str(qs))
 
+# ------------------------------------------------------------------ Feature 5: the hint ladder, owned by code
+print("\nthe hint ladder: nudge → hint → worked example → answer; the rung reached is kept → rating")
+from stiti.tutor.audio import SilentAudio                                # noqa: E402
+
+
+def ladder_run(answers, *, example=True, hints=True, kind="recall", options=None, exps=None):
+    """One check; after the check prompt and every ladder line, his next answer."""
+    les = LS.from_dict({"title": "Lexers", "topic": "lexers", "segments": [
+        {"id": "t1", "type": "teach", "title": "Longest match", "cues": [
+            {"say": "The scanner keeps reading while the characters still fit a token.", "ops": []}],
+         "check": {"kind": kind, "prompt": "Which match does the scanner take when two tokens fit?",
+                   "options": options, "expectations": exps or ["the longest match"],
+                   "hints": ["Think about how much it reads."] if hints else [],
+                   "reveal": "The longest match wins."}}]})
+    if example:
+        les.segments[0].check.example = ["'iffy' could be 'if' + 'fy'", "but 'iffy' is longer", "so: one name"]
+    ev, logs, todo = queue.Queue(), [], list(answers)
+    started = [False]
+
+    def log(line):
+        logs.append(line)
+        if line.startswith("Stiti: Which match does the scanner"):
+            started[0] = True
+        if started[0] and line.startswith("Stiti: ") and todo and not line.startswith(("Stiti: Here's the answer",
+                                                                                       "Stiti: Close. ", "Stiti: Yes")):
+            a = todo.pop(0)
+            threading.Timer(0.05, lambda: ev.put({"type": "text", "text": a})).start()
+    t = Tutor(les, audio=SilentAudio(scale=0.01), events=ev, server=FakeSrv(), planner=None, persist=False, log=log,
+              pace=0.02, idle_resume_s=0.2, check_timeout_s=3)
+    res = t.run()
+    said = [x[len("Stiti: "):] for x in logs if x.startswith("Stiti: ")]
+    return res["results"][0] if res.get("results") else {}, said
+
+
+rec, said = ladder_run(["the first one it sees", "the shortest possible", "no idea", "still no clue"])
+check("four misses climb every rung in order: nudge → hint → worked example → answer",
+      rec.get("ladder") == ["nudge", "hint", "example", "answer"] and rec.get("rung") == 4, str(rec))
+i_n = next((i for i, s in enumerate(said) if s.startswith("Not quite. Think about")), 99)
+i_h = next((i for i, s in enumerate(said) if "Hint: Think about how much" in s), 99)
+i_e = next((i for i, s in enumerate(said) if s.startswith("Let me show you one step: 'iffy'")), 99)
+i_a = next((i for i, s in enumerate(said) if s.startswith("Here's the answer. The longest match")), 99)
+check("…said in that order, the worked step is ONE line of the example (no LLM)", i_n < i_h < i_e < i_a < 99,
+      str(said))
+check("…and the record rates it 'again' (FSRS)", rec.get("rating") == "again" and rec.get("verdict") == "wrong", str(rec))
+rec, said = ladder_run(["the first one", "the longest match"])
+check("right after the nudge → rung 'nudge', rated hard", rec.get("verdict") == "correct" and rec.get("rung") == 1
+      and rec.get("rating") == "hard", str(rec))
+rec, said = ladder_run(["the longest match"])
+check("right at once → rung none, rated good", rec.get("rung") == 0 and rec.get("rating") == "good", str(rec))
+rec, said = ladder_run(["I don't know", "the longest match"])
+check("'I don't know' skips the pump: straight to the hint", rec.get("ladder") == ["hint"]
+      and any(s.startswith("No worries. Hint:") for s in said), str(said))
+rec, said = ladder_run(["no idea", "no idea", "no idea"], example=False, hints=False)
+check("no hint and no example → the worked step is the start of the answer", rec.get("ladder") == ["example", "answer"]
+      and any(s.startswith("Here's how it starts: The longest") for s in said), str(said))
+rec, said = ladder_run(["the longest", "the longest"], exps=["the longest match", "it is read left to right"])
+check("a partial answer's nudge points at what's missing without giving it away",
+      any(s.startswith("Good start, you've got part of it.") and "What else?" in s and "left to right" not in s
+          for s in said), str(said))
+rec, said = ladder_run(["A", "A"], kind="mcq", options=[{"text": "the first match", "correct": False},
+                                                         {"text": "the longest match", "correct": True},
+                                                         {"text": "the shortest match", "correct": False}],
+                       example=False, hints=False)
+check("MCQ: the worked step rules out a wrong option", any(s.startswith("Here's a step: it's not") for s in said),
+      str(said))
+
+# never the same question twice — a plain lesson too
+print("\nnever the same question twice in a session")
+les = LS.from_dict({"title": "Dup", "topic": "dup", "segments": [
+    {"id": f"t{i}", "type": "teach", "title": f"Part {i}", "cues": [{"say": f"Sentence number {i}.", "ops": []}],
+     "check": {"kind": "recall", "prompt": "Quick one: What does a lexer produce?" if i else "What does a lexer produce?",
+               "expectations": ["tokens"], "hints": [], "reveal": "Tokens."}} for i in range(2)]})
+ev2: queue.Queue = queue.Queue()
+lg2: list[str] = []
+
+
+def log2(line):
+    lg2.append(line)
+    if "lexer produce" in line and line.startswith("Stiti: "):
+        threading.Timer(0.05, lambda: ev2.put({"type": "text", "text": "tokens"})).start()
+
+
+r2 = Tutor(les, audio=SilentAudio(scale=0.01), events=ev2, server=FakeSrv(), planner=None, persist=False, log=log2,
+           pace=0.02, idle_resume_s=0.2).run()
+check("the same question (after normalising) is asked once, the repeat is skipped",
+      sum(1 for x in lg2 if x.startswith("Stiti:") and "lexer produce" in x) == 1
+      and any("skipped a repeated question" in x for x in lg2) and r2["finished"], str(lg2[-6:]))
+
+les = LS.from_dict({"title": "Few", "topic": "few", "segments": [
+    {"id": f"t{i}", "type": "teach", "title": f"Part {i}", "cues": [{"say": f"This is teaching sentence {i}.", "ops": []}],
+     "check": {"kind": "recall", "prompt": f"Question number {i}?", "expectations": ["x"], "hints": [],
+               "reveal": "X."}} for i in range(2)]})
+ev4: queue.Queue = queue.Queue()
+lg4: list[str] = []
+
+
+def log4(line):
+    lg4.append(line)
+    if line.startswith("Stiti: This is teaching sentence 0") and not any("just teach" in x for x in lg4):
+        threading.Timer(0.05, lambda: ev4.put({"type": "text", "text": "just teach"})).start()
+
+
+r4 = Tutor(les, audio=SilentAudio(scale=0.01), events=ev4, server=FakeSrv(), planner=None, persist=False, log=log4,
+           pace=0.02, idle_resume_s=0.2).run()
+said4 = [x[len("Stiti: "):] for x in lg4 if x.startswith("Stiti: ")]
+check("a plain lesson too: 'just teach' → 'Okay, fewer questions.' once, and the quick checks are held back",
+      said4.count("Okay, fewer questions.") == 1 and not any(s.startswith("Question number") for s in said4)
+      and r4["finished"], str(said4))
+
+# speech he starts while she is still asking is his answer; speech from before the question is not
+print("\nlisten(): drop only speech that started before her question")
+fa = FakeAudio()
+ev3: queue.Queue = queue.Queue()
+lg3: list[str] = []
+t3 = Tutor(make_lesson(), audio=fa, events=ev3, server=FakeSrv(), planner=None, persist=False, log=lg3.append, pace=0.1)
+now = time.monotonic()
+ev3.put(voice("my exam is on friday I think", at=now - 6.0))          # said before the question
+ev3.put({"type": "text", "text": "typed before the question"})
+ev3.put(voice("tomorrow I have the exam", at=now + 0.05))              # started as she started asking
+got = t3.listen("Is this for an exam, and when?", timeout=4)
+check("speech that started while she asked is kept as his answer (not 'dropped, said before the question')",
+      got is not None and "tomorrow I have the exam" in got, f"{got!r} {[x for x in lg3 if 'dropped' in x]}")
+check("…speech and typing from before the question are still dropped",
+      sum("dropped, said before the question" in x for x in lg3) == 2 and "friday" not in (got or ""), str(lg3))
+lg3.clear()
+
+
+def late():
+    time.sleep(0.1)
+    ev3.put(voice("this is old speech from before", at=time.monotonic() - 8.0))   # in flight when she asked
+    time.sleep(0.15)
+    ev3.put(voice("it is next week on monday", at=time.monotonic() - 0.1))
+
+
+threading.Thread(target=late, daemon=True).start()
+got = t3.listen("When is it?", timeout=6)
+check("old speech still in flight when she asked is not taken as the answer; the real one is",
+      got is not None and "next week" in got and "old speech" not in got, f"{got!r} {lg3}")
+
 print(f"tutor teacher: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)

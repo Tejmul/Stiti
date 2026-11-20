@@ -1522,3 +1522,30 @@ A syllabus / topic list (`book.is_outline`) is not quoted; topics without a file
 only the 3–4 passages for one doubt go to the free LLM.
 **Not yet:** a reranker, the tail-error guard for long outputs, citations in lesson segments (not only doubts),
 a real-book quote rate measurement with live free models (the "≥ 90 % carry a real quote" check).
+
+## D61: The hint ladder, check pacing and Blurt — feature 5 (2026-11-20)
+*(research: docs/research/apps/itutor.md "Techniques for Stiti" #1 + the code-owned hint ladder;
+docs/research/apps/coconote.md T4 Blurt)* The owner's two complaints pull both ways — "it keeps on saying, saying"
+and "it asks the same questions again and again" — so pacing is owned by code (`tutor/pacing.py`, no LLM):
+1. **Hint ladder** (player `_run_check`): a miss climbs nudge → hint → worked example (`Check.example`, the step's own
+   example lines) → the answer; "I don't know" skips the empty nudge; a rung with nothing to show is skipped. The rung
+   he needed is kept on the record and decides BOTH the FSRS rating (`srs.rating_for(…, rung=)`: unaided → Good/Easy,
+   nudge or hint → Hard, worked example or answer → Again) and the mastery evidence (`pacing.mastery_verdict`: right
+   after a nudge/hint = partial, after the worked example = wrong) — for coached checks (`Coach._on_check` → mastery
+   event origin `check` + `Coach._card`), review sessions (`Review._on_check`, origin `review`) and course quizzes.
+2. **Pacing:** about one check per full idea (≥ 3 spoken sentences; coach steps are 2–3 sentences now, was ≤ 2), a
+   concept still gets its one check, a known concept's quick check is always asked. Fed up — "skip the questions" /
+   "just teach" (`commands` kind `fewer`), curt answers, a stressed voice on a curt answer — → sparser checks for the
+   rest of the session, said once ("Okay, fewer questions."). Never the same question twice in a session, nor one
+   answered right in the last 3 days (`asked` in the mastery JSON); probes and doubt checks go through the same filter.
+3. **Blurt:** `--blurt` (Lessons page toggle) → "tell me everything you remember about X" after each topic (day mode:
+   per unit), or "test me" / "let me blurt" any time (`commands` kind `blurt`); graded per key point locally
+   (recalled / partial / missed), a free-LLM second opinion only on partial points; a Blurt page on the board, mastery
+   per concept (event origin `blurt`), missed points re-taught once; a "Blurt" section in his notes.
+4. **Goal memory:** the goal is kept per file (`goal` in the mastery JSON, ≤ 14 days; an exam until its date, which
+   also fills D57's `exam` for the map) → the next lesson says "Still the exam on Friday? Carrying on." instead of
+   asking again; `parse_goal` understands "no exam, just learn it".
+5. **Listening fix:** speech that started before her question is dropped, but speech that started while she was still
+   asking is his answer (it used to be dropped, so she asked again).
+**Tests:** `tutor_coach_eval`, `tutor_teacher_eval`, `tutor_grade_eval`, `tutor_eval`, `web_lessons_eval` extended;
+`review_map_eval` unchanged in intent.
