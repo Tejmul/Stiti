@@ -48,6 +48,8 @@ class Op:
     nodes: list[dict] | None = None
     edges: list[dict] | None = None
     rows: list[list[str]] | None = None
+    src: str | None = None              # D53 image op: a data: URL (downscaled picture, e.g. from Wikimedia Commons)
+    size: tuple[int, int] | None = None  # its pixel size
 
 
 @dataclass
