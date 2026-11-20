@@ -284,8 +284,14 @@ class Tutor:
     def _apply(self, ops: list[Op], k: int, say: str = "", ms: int = 0) -> list[dict]:
         before = set(self.board.els)
         acts = []
-        for op in ops:
+        # D53 "it should look like real time": ops without their own word cue are spread across the sentence, so she
+        # writes while she talks instead of everything popping in at 0 ms (a page title still comes first)
+        loose = [i for i, op in enumerate(ops) if op.type != "new_page" and (op.at in (None, "", "start"))]
+        for i, op in enumerate(ops):
             at = resolve_at(op.at, say, ms) if ms else 0
+            if ms and i in loose:
+                j = loose.index(i)
+                at = int(ms * (0.08 + 0.8 * j / max(1, len(loose))))
             for a in self.board.apply(op):
                 acts.append({**a, "at_ms": at + a.get("dt", 0)})
         for iid in set(self.board.els) - before:
