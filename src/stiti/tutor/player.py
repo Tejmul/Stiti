@@ -380,6 +380,8 @@ class Tutor:
                 if seg.type == "summary" and ci == 0 and self.predict and not self._hook_done:
                     self._revisit_hook()
                 ev = self._play_cue(self.k)
+                if ev is None and seg.type == "break" and not self.ended:   # day mode: wait for him to come back
+                    self._pause("Say continue when you're back.")
                 self.cue_open = ev is not None        # she was cut mid-sentence: a doubt now resumes THIS cue
                 if ev is not None:
                     self._handle(ev)

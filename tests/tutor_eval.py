@@ -8,6 +8,9 @@ and voice phrases that launch the tutor.
 """
 from __future__ import annotations
 
+import os
+os.environ.setdefault("STITI_BOARD_FIXED", "0")     # tests: random ports, no waiting for a board tab
+
 import asyncio
 import json
 import queue
@@ -157,6 +160,21 @@ srv.stop()
 check("board WS: right origin+token → reset; wrong origin/token refused", r1 == "reset" and r2 != "reset" and r3 != "reset",
       f"{r1} {r2} {r3}")
 check("board page: Host check + CSP", h1 == 200 and h2 == 400 and "frame-ancestors 'none'" in csp, f"{h1} {h2}")
+
+# ---------------------------------------------------------------- one board address for every lesson
+from stiti.tutor import server as SVM  # noqa: E402
+os.environ["STITI_BOARD_PORT"] = str(SVM.free_port())
+a = BoardServer(fixed=True)
+b = BoardServer(fixed=True)
+check("fixed board: every lesson gets the SAME address (port + saved token) — one tab, not tabs on tabs",
+      a.fixed and b.fixed and a.url == b.url and SVM.board_token() == a.token, f"{a.url} {b.url}")
+srv2 = BoardServer(fixed=True).start()
+opened = []
+srv2.open_browser = lambda: opened.append(1)
+srv2.connected.set()                                  # a tab is already showing the board
+check("an open board tab is reused: no new browser tab", srv2.open_if_no_tab() is False and not opened)
+srv2.stop()
+del os.environ["STITI_BOARD_PORT"]
 
 # ---------------------------------------------------------------- book: printed contents parser
 pages = ["TABLE OF CONTENTS\n1 Introduction 1\n1.1 Language Processors ........ 1\n1.2 The Structure of a Compiler ..... 4\n"

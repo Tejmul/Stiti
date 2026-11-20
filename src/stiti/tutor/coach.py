@@ -13,6 +13,7 @@ Concepts are written by the free cloud LLM one at a time while he works, so the 
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -81,7 +82,8 @@ words), "figure" (ONE small diagram: kind graph with ≤5 nodes + edges, or tabl
 "example" (one worked-example step, ≤8 words); check = one question the learner answers out loud right after
 (kind recall / apply / explain_why, or mcq with 3 options); expectations (1–2 points a right answer must contain),
 2 hints that don't give it away, reveal (the answer in one sentence). Step 1 explains and MUST draw one "figure"
-(e.g. a DFA as a graph of states with labelled edges, a phase pipeline, a small table); a second step is a worked
+(e.g. a flow of steps, a labelled diagram of parts, a cycle, states with labelled arrows, a small comparison
+table — whatever fits the subject); a second step is a worked
 example with 2–4 "example" items, one per step of the working. remember = the one line to write in the "Remember" box (≤12 words). Facts only from SOURCES if given."""
 _BOARD_ITEM = {"type": "object", "additionalProperties": False,
                "required": ["slot", "kind", "text", "nodes", "edges", "rows"],
@@ -238,9 +240,20 @@ def focus_split(text: str | None) -> list[str]:
 
 
 # ------------------------------------------------------------------------------------------------ the queue
+DAY_RX = re.compile(r"\b((whole|entire|full|complete|all (of )?the|all my) (syllabus|book|course|portion|portions|notes|"
+                    r"thing|subject|units?|chapters?)|in (a|one) day|today itself|by tonight|whole day|all day)\b")
+HOURS_RX = re.compile(r"\b(\d{1,2}(?:\.5)?)\s*(?:hours?|hrs?|h)\b")
+DAY_DEFAULT_H = 6.0       # "the whole syllabus today" with no hours said
+BREAK_EVERY_MIN = 45      # day mode: a 5-minute break about this often (he says "continue" to come back)
+
+
 def parse_goal(text: str) -> dict:
-    """'exam tomorrow' → {mode: exam, days: 1}; 'just want to understand it' → {mode: learn}."""
+    """'exam tomorrow' → {mode: exam, days: 1}; 'just want to understand it' → {mode: learn};
+    'teach me the whole syllabus today (in 6 hours)' → {mode: day, hours: 6}."""
     t = (text or "").lower()
+    if DAY_RX.search(t):
+        m = HOURS_RX.search(t)
+        return {"mode": "day", "days": 0, "hours": float(m.group(1)) if m else DAY_DEFAULT_H}
     exam = bool(re.search(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b", t))
     days = None
     if re.search(r"\b(today|tonight|in (a few|some) hours)\b", t):
@@ -265,7 +278,10 @@ def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> lis
     then new ones by exam weight, known ones last as one quick check each — all within the time budget."""
     def lvl(c):
         return m.level(c.id)
-    if mode == "exam":
+    if mode == "day":                                # the whole syllabus: new + shaky by importance, known as checks
+        q = sorted([c for c in concepts if lvl(c) != "known"], key=lambda c: (-c.weight, c.unit_idx)) + \
+            [c for c in concepts if lvl(c) == "known"]
+    elif mode == "exam":
         shaky = [c for c in concepts if lvl(c) == "shaky"]
         new = sorted([c for c in concepts if lvl(c) == "new"], key=lambda c: (-c.weight, c.unit_idx))
         known = [c for c in concepts if lvl(c) == "known"]
@@ -279,7 +295,7 @@ def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> lis
             continue
         out.append(c)
         spent += cost
-    if mode == "exam":                               # teach in book order within what fits (easier to follow)
+    if mode in ("exam", "day"):                      # teach in book order within what fits (easier to follow)
         out.sort(key=lambda c: (c.unit_idx, concepts.index(c)))
     return out
 
@@ -393,6 +409,12 @@ class Coach:
         self.after_probes: dict[str, float] = {}
         self._future = concepts_future               # D42: the map started while her voice was still loading
         self.focus = focus or []                     # "teach me SDD and AST": only these concepts
+        # the subject in plain words (any subject: "The Compiler Notebook" → "Compiler", "photosynthesis" → itself),
+        # for the picture search and the ear — nothing in the engine is about one subject
+        self.subject = " ".join(w for w in re.findall(r"[A-Za-z][A-Za-z0-9+#-]*", title)
+                                if w.lower() not in {"the", "notebook", "notes", "book", "my", "a", "an", "of", "for",
+                                                     "and", "final", "draft", "pdf", "html", "unit", "chapter"})[:60]
+        self.pictures = os.getenv("STITI_TUTOR_PICTURES", "on") != "off"
         self.t.before_end = self._before_end
         self.revisited: set[str] = set()
         self.checked: set[str] = set()               # concepts he answered something on this session
@@ -535,16 +557,40 @@ class Coach:
 
     def _writer(self):
         """Write each concept's steps while he works on the previous one (first one ready in seconds)."""
+        since_break = 0.0
         for i, c in enumerate(self.queue):
             if self.t.ended:
                 break
             lvl = self.mastery.level(c.id)
+            if self.goal["mode"] == "day" and since_break >= BREAK_EVERY_MIN and i:
+                since_break = 0.0                    # a real break: she stops and waits for "continue"
+                self.L.segments.append(Segment(id=f"brk{i}", type="break", title="Break", cues=[Cue(
+                    id=f"brk{i}c1", say="Break time, five minutes. Stand up, drink some water, look away from the screen.",
+                    ops=[Op(type="new_page", text="Break · 5 min"),
+                         Op(type="text", text="Stand up · water · look far away", region="points"),
+                         Op(type="text", text=f"Next: {c.name}", region="remember")])]))
+            since_break += CONCEPT_MIN[lvl]
+            pic = None
+            if self.pictures and lvl != "known":         # the best real picture, looked up while the steps are written
+                from concurrent.futures import ThreadPoolExecutor
+                from .pictures import picture_op
+                pic = ThreadPoolExecutor(1).submit(picture_op, c.name, context=self.subject)
             try:
                 segs = concept_segments(c, i, lvl, self.goal["mode"], self._concept_sources(c), len(self.queue),
                                         call=self.call)
             except Exception as e:
                 self.log(f"   [coach] {c.name}: {type(e).__name__}: {str(e)[:100]}")
                 continue
+            if pic is not None and segs:
+                try:
+                    op = pic.result(timeout=8)
+                except Exception:
+                    op = None
+                if op is not None:                       # top of the figure slot; the drawn diagram follows below
+                    ops = segs[0].cues[0].ops
+                    at = next((k for k, o in enumerate(ops) if o.region == "figure"), len(ops))
+                    ops.insert(at, op)
+                    self.log(f"   [coach] picture for {c.name}: {op.text}")
             for s in segs:
                 self.seg_concept[s.id] = c.id
             self.L.segments.extend(segs)
@@ -555,14 +601,17 @@ class Coach:
         t = self.t
         mapper = threading.Thread(target=self._build_map, daemon=True)
         mapper.start()
-        t.ears_on(["exam", "tomorrow", "syllabus", "unit", "lexer", "parser", "compiler", "grammar"] + self.focus)
+        t.ears_on(["exam", "tomorrow", "syllabus", "unit", "chapter", "test"] + self.focus + self.subject.split()[:6])
         t.status("playing", "starting")
         if self.goal is None:
             ans = t.listen("Hi! Before I start: what do you need? Is this for an exam, and when is it?")
             if ans is None:
                 return False
             self.goal = parse_goal(ans)
-        mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (self.goal.get("days") or 9) <= 1 else LEARN_MINUTES
+        if self.goal["mode"] == "day":
+            mins = self.goal.get("hours", DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
+        else:
+            mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (self.goal.get("days") or 9) <= 1 else LEARN_MINUTES
         self.goal["minutes"] = mins
         mapper.join(0.1)
         if mapper.is_alive():
@@ -613,7 +662,15 @@ class Coach:
             t.say({"correct": "Nice, you know that.", "partial": "Partly there."}.get(v, "Okay, we'll cover that."),
                   interruptible=False)
         self.after_probes = dict(self.mastery.p)     # where he started (reports, tests)
-        self.queue = order(self.concepts, self.mastery, self.goal["mode"], mins)
+        pool = self.concepts
+        if self.goal["mode"] == "day":               # stopped and came back today: carry on with what's left
+            done_today = {c.id for c in pool if time.time() - self.mastery.seen.get(c.id, 0) < 14 * 3600
+                          and self.mastery.level(c.id) != "new"}
+            if done_today and len(done_today) < len(pool):
+                pool = [c for c in pool if c.id not in done_today]
+                t.say(f"{len(done_today)} topics done today already. Let's do the other {len(pool)}.",
+                      interruptible=False)
+        self.queue = order(pool, self.mastery, self.goal["mode"], mins)
         self._show_plan()
         return True
 
@@ -631,8 +688,11 @@ class Coach:
         first = q[0].name
         n = len(q)
         exam = self.goal["mode"] == "exam"
+        day = self.goal["mode"] == "day"
+        hrs = round(sum(CONCEPT_MIN[self.mastery.level(c.id)] for c in q) / 60, 1)
         t.say(f"Here's the plan: {n} topic{'s' if n != 1 else ''}"
-              f"{', most important first for your exam' if exam else ''}, starting with {first}. "
+              f"{', most important first for your exam' if exam else ''}"
+              f"{f', about {hrs:g} hours with short breaks' if day else ''}, starting with {first}. "
               "Stop me any time with a doubt.", interruptible=False)
 
     def run(self) -> dict:

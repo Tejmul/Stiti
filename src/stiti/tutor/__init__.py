@@ -227,9 +227,9 @@ def _teach(args: list[str]) -> dict:
     # looked at nothing for ~19 s: voice models (13 s), then the plan (5 s), and only then the board — in a row.
     if srv:
         srv.start()
-        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
+        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (your open board tab picks it up; otherwise it opens now — press F for full screen)\n")
         if "--no-open" not in args:
-            srv.open_browser()
+            threading.Thread(target=srv.open_if_no_tab, daemon=True).start()
     planned: dict = {}
 
     def plan():
@@ -320,9 +320,9 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
     goal = None
     if srv:
         srv.start()
-        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
+        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (your open board tab picks it up; otherwise it opens now — press F for full screen)\n")
         if "--no-open" not in args:
-            srv.open_browser()
+            threading.Thread(target=srv.open_if_no_tab, daemon=True).start()
     from concurrent.futures import ThreadPoolExecutor
 
     from .coach import concept_map, focus_split
@@ -404,9 +404,9 @@ def _open_board(srv, args) -> None:
         return
     if srv:
         srv.start()
-        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
+        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (your open board tab picks it up; otherwise it opens now — press F for full screen)\n")
         if "--no-open" not in args:
-            srv.open_browser()
+            threading.Thread(target=srv.open_if_no_tab, daemon=True).start()
         srv.connected.wait(15)
 
 
