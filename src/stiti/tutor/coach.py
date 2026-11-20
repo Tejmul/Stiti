@@ -241,22 +241,38 @@ def focus_split(text: str | None) -> list[str]:
 
 # ------------------------------------------------------------------------------------------------ the queue
 DAY_RX = re.compile(r"\b((whole|entire|full|complete|all (of )?the|all my) (syllabus|book|course|portion|portions|notes|"
-                    r"thing|subject|units?|chapters?)|in (a|one) day|today itself|by tonight|whole day|all day)\b")
-HOURS_RX = re.compile(r"\b(\d{1,2}(?:\.5)?)\s*(?:hours?|hrs?|h)\b")
+                    r"thing|subject|units?|chapters?)|everything (today|tonight)|in (a|one) day|today itself|"
+                    r"by tonight|whole day|all day)\b")
+# speech-to-text writes "4 hours" or "four hours"; "ah" / "a h" must never read as an hour (words need a space)
+_NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
+              "ten": 10, "eleven": 11, "twelve": 12, "an": 1, "a": 1, "a couple of": 2, "a few": 3, "some": 3}
+HOURS_RX = re.compile(r"\b(?:(\d{1,2}(?:\.\d)?)\s*|(" + "|".join(sorted(_NUM_WORDS, key=len, reverse=True))
+                      + r")\s+)(and a half\s+)?(?:hours?|hrs?|h)\b( and a half)?")
 DAY_DEFAULT_H = 6.0       # "the whole syllabus today" with no hours said
 BREAK_EVERY_MIN = 45      # day mode: a 5-minute break about this often (he says "continue" to come back)
+EXAM_RX = re.compile(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b")
+
+
+def _hours(t: str) -> float | None:
+    """'in 4 hours' → 4 · 'four and a half hours' → 4.5 · 'an hour and a half' → 1.5 · none → None (0.5–14)."""
+    m = HOURS_RX.search(t)
+    if not m:
+        return None
+    h = float(m.group(1)) if m.group(1) else float(_NUM_WORDS[m.group(2)])
+    h += 0.5 if (m.group(3) or m.group(4)) else 0
+    return min(14.0, max(0.5, h))
 
 
 def parse_goal(text: str) -> dict:
     """'exam tomorrow' → {mode: exam, days: 1}; 'just want to understand it' → {mode: learn};
-    'teach me the whole syllabus today (in 6 hours)' → {mode: day, hours: 6}."""
+    'teach me the whole syllabus today (in 6 hours)' / 'cover it in 4 hours' → {mode: day, hours: 6 / 4}."""
     t = (text or "").lower()
-    if DAY_RX.search(t):
-        m = HOURS_RX.search(t)
-        return {"mode": "day", "days": 0, "hours": float(m.group(1)) if m else DAY_DEFAULT_H}
-    exam = bool(re.search(r"\b(exams?|tests?|viva|quiz|paper|mid ?sem|end ?sem|finals?|interview)\b", t))
+    hours = _hours(t)
+    exam = bool(EXAM_RX.search(t))
+    if DAY_RX.search(t) or (hours is not None and not exam):    # his whole syllabus, or a few hours he has today
+        return {"mode": "day", "days": 0, "hours": hours or DAY_DEFAULT_H, "hours_said": hours is not None}
     days = None
-    if re.search(r"\b(today|tonight|in (a few|some) hours)\b", t):
+    if re.search(r"\b(today|tonight)\b", t) or hours is not None:
         days = 0
     elif re.search(r"\btomorrow\b", t):
         days = 1
@@ -270,7 +286,10 @@ def parse_goal(text: str) -> dict:
             pass
     if days is not None and not exam and re.search(r"\b(on|by|before|in \d+ days?)\b", t):
         exam = True
-    return {"mode": "exam" if exam else "learn", "days": days}
+    out = {"mode": "exam" if exam else "learn", "days": days}
+    if hours is not None:                            # "exam in 3 hours": the plan must fit in them
+        out["hours"] = hours
+    return out
 
 
 def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> list[Concept]:
@@ -608,11 +627,14 @@ class Coach:
             if ans is None:
                 return False
             self.goal = parse_goal(ans)
-        if self.goal["mode"] == "day":
-            mins = self.goal.get("hours", DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
+        day = self.goal["mode"] == "day"
+        if day:
+            mins = (self.goal.get("hours") or DAY_DEFAULT_H) * 60 * 0.85    # minus breaks
         else:
             days = self.goal.get("days")                # 0 = today: an exam today is ≤ 1 day too
             mins = EXAM_MINUTES if self.goal["mode"] == "exam" and (9 if days is None else days) <= 1 else LEARN_MINUTES
+            if self.goal.get("hours"):                  # "exam in 2 hours": never plan more than he has
+                mins = min(mins, self.goal["hours"] * 60 * 0.85)
         self.goal["minutes"] = mins
         mapper.join(0.1)
         if mapper.is_alive():
