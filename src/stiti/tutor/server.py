@@ -1,6 +1,7 @@
 """Local board server: Starlette + uvicorn (already in uv.lock via mcp — no new dependency, ~38 MB).
 
-127.0.0.1 on a random free port. Security (research §4): per-session token in the URL *fragment*
+127.0.0.1:7318 for every lesson (one tab that reconnects; a random port only if 7318 is busy or in tests).
+Security (research §4): a token in the URL *fragment* (kept in ~/.stiti/board.token, owner-only)
 (never sent in HTTP requests or logs), Host check on every request (DNS rebinding), Host + Origin +
 token check on the WebSocket handshake (cross-site WebSocket hijacking), strict CSP.
 
@@ -26,6 +27,36 @@ WEB = Path(__file__).parent / "web"
 CDN = "https://esm.sh"
 
 
+BOARD_PORT = 7318          # ONE fixed address for every lesson (he: "creating tabs on tabs"); free_port() if busy
+TAB_WAIT_S = 6.0           # an open board tab reconnects within ~5 s (board.js backoff caps at 5 s)
+
+
+def _port_free(port: int) -> bool:
+    with socket.socket() as s:
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+
+
+def board_token() -> str:
+    """A token kept in ~/.stiti/board.token (owner-only): the board URL stays the same across lessons, so the tab he
+    already has open reconnects instead of a new tab per lesson. Still a secret in the URL fragment (never sent)."""
+    try:
+        from ..config import CFG
+        f = CFG.home / "board.token"
+        if f.exists() and len(f.read_text().strip()) >= 24:
+            return f.read_text().strip()
+        tok = secrets.token_urlsafe(24)
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text(tok)
+        f.chmod(0o600)
+        return tok
+    except Exception:
+        return secrets.token_urlsafe(24)
+
+
 def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
@@ -33,9 +64,15 @@ def free_port() -> int:
 
 
 class BoardServer:
-    def __init__(self, on_connect: Callable[[], list[dict]] | None = None, port: int | None = None):
-        self.port = port or free_port()
-        self.token = secrets.token_urlsafe(24)
+    def __init__(self, on_connect: Callable[[], list[dict]] | None = None, port: int | None = None,
+                 fixed: bool | None = None):
+        import os
+        if fixed is None:                            # the real lessons use the fixed address; tests keep random ports
+            fixed = os.getenv("STITI_BOARD_FIXED", "1") != "0" and port is None
+        want = int(os.getenv("STITI_BOARD_PORT", BOARD_PORT))
+        self.fixed = bool(fixed and _port_free(want))
+        self.port = port or (want if self.fixed else free_port())
+        self.token = board_token() if self.fixed else secrets.token_urlsafe(24)
         self.hosts = {f"127.0.0.1:{self.port}", f"localhost:{self.port}"}
         self.origins = {f"http://{h}" for h in self.hosts}
         self.events: queue.Queue[dict] = queue.Queue()
@@ -139,6 +176,16 @@ class BoardServer:
     def open_browser(self) -> None:
         import webbrowser
         webbrowser.open(self.url)
+
+    def open_if_no_tab(self) -> bool:
+        """Open the board only when no tab is already showing it: on the fixed address an open tab reconnects by
+        itself within TAB_WAIT_S. -> True when a new tab was opened."""
+        if self.fixed and self.connected.wait(TAB_WAIT_S):
+            return False
+        if self.connected.is_set():
+            return False
+        self.open_browser()
+        return True
 
     # ------------------------------------------------------------ messaging
     def send(self, msg: dict) -> None:
