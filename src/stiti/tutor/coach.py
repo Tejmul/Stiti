@@ -80,8 +80,9 @@ concrete example before the jargon); board = 1–3 notes for the board, each wit
 words), "figure" (ONE small diagram: kind graph with ≤5 nodes + edges, or table ≤4 rows, or formula, or box) or
 "example" (one worked-example step, ≤8 words); check = one question the learner answers out loud right after
 (kind recall / apply / explain_why, or mcq with 3 options); expectations (1–2 points a right answer must contain),
-2 hints that don't give it away, reveal (the answer in one sentence). Step 1 explains; a second step is a worked
-example. remember = the one line to write in the "Remember" box (≤12 words). Facts only from SOURCES if given."""
+2 hints that don't give it away, reveal (the answer in one sentence). Step 1 explains and MUST draw one "figure"
+(e.g. a DFA as a graph of states with labelled edges, a phase pipeline, a small table); a second step is a worked
+example with 2–4 "example" items, one per step of the working. remember = the one line to write in the "Remember" box (≤12 words). Facts only from SOURCES if given."""
 _BOARD_ITEM = {"type": "object", "additionalProperties": False,
                "required": ["slot", "kind", "text", "nodes", "edges", "rows"],
                "properties": {"slot": {"type": "string", "enum": ["point", "figure", "example"]},
@@ -337,7 +338,7 @@ def concept_segments(c: Concept, idx: int, level: str, mode: str, sources: list[
 class Coach:
     def __init__(self, source: str, *, audio, events, server=None, book_path: str | None = None,
                  unit: str | None = None, goal: dict | None = None, log=print, call=None, persist: bool = True,
-                 planner=None, **tutor_kw):
+                 planner=None, concepts_future=None, **tutor_kw):
         from .player import Tutor
         self.source, self.book_path, self.unit = source, book_path, unit
         self.goal, self.log, self.call = goal, log, call
@@ -357,6 +358,7 @@ class Coach:
         self._map_err: Exception | None = None
         self._sources: dict[str, list[dict]] = {}
         self.after_probes: dict[str, float] = {}
+        self._future = concepts_future               # D42: the map started while her voice was still loading
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
@@ -378,7 +380,10 @@ class Coach:
 
     def _build_map(self):
         try:
-            self.concepts = concept_map(self.source, book_path=self.book_path, unit=self.unit, call=self.call)
+            if self._future is not None:
+                self.concepts = self._future.result(timeout=180)
+            else:
+                self.concepts = concept_map(self.source, book_path=self.book_path, unit=self.unit, call=self.call)
         except Exception as e:
             self._map_err = e
 
