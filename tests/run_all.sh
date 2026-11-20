@@ -46,6 +46,7 @@ run "intent: life updates are chat" tests/intent_eval.py
 run "intent: public yardstick (D50)" tests/public_intent_eval.py
 run "one lesson at a time (tutor launch)" tests/tutor_launch_eval.py
 run "web Lessons page (files, notes, start a lesson)" tests/web_lessons_eval.py
+run "background jobs + live progress (D56)" tests/jobs_eval.py
 run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
