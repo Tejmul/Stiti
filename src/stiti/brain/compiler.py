@@ -66,7 +66,10 @@ def can_do(max_privacy: int = 1) -> str:
     return ("You CAN: read his todos, alarms and reminders, calendar and mail (read-only), " + docs +
             ", live news and the web; set reminders, alarms, timers and todos; teach any topic on a whiteboard (it opens "
             "only when he says \"teach me <topic> on the whiteboard\" — this turn did NOT open it, so never say you opened "
-            "it and never say you can't). Never claim you can't see his files.")
+            "it and never say you can't). Never claim you can't see his files. "
+            "You CANNOT yet: book, buy, order or pay for anything, send email, or sign in to his accounts on websites "
+            "(Amazon, GitHub…). Asked for one of those, say so in your first words (\"I can't book flights yet\"), "
+            "then offer what you really can do: look it up on the web, or set a reminder.")
 
 
 def tokens(s: str) -> int:

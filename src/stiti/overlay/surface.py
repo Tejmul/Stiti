@@ -1,9 +1,10 @@
-"""Shared AppKit pieces: colours, accessibility settings, the non-activating panel recipe, the glass surface.
+"""Shared AppKit pieces: colours, accessibility settings, the non-activating panel recipe, the HUD surface.
 
 Main thread only. Gotchas from the research prototypes (docs/research/desktop_overlay.md):
 - setFloatingPanel_(True) resets the level to 3, so the status level is set AFTER it;
 - borderless + NonactivatingPanel + orderFrontRegardless never activates Stiti or steals his keyboard;
-- glass is a real NSGlassEffectView (macOS 26), NSVisualEffectView before that, solid paper under Reduce Transparency.
+- the surface is a solid dark navy layer (D44), not glass: see-through glass went muddy over whatever was behind it
+  and the text lost contrast. Reduce Transparency makes it fully opaque, Increase Contrast brightens its border.
 """
 from __future__ import annotations
 
@@ -73,61 +74,89 @@ def make_panel(cls, w: float, h: float):
     return p
 
 
-def make_surface(w: float, h: float, radius: float, acc: Access, host_cls=None):
-    """(outer view for the panel, host view to draw into). White liquid glass, or the fallbacks."""
-    host_cls = host_cls or AppKit.NSView
-    frame = ((0, 0), (w, h))
-    flex = AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable
-    host = host_cls.alloc().initWithFrame_(frame)
+def surface_alpha(base: float, acc: Access) -> float:
+    return 1.0 if acc.reduce_transparency else base
+
+
+def hairline(acc: Access, alpha: float = M.HAIR_A):
+    """The 1 pt SKY border of the orb and the cards (near-solid under Increase Contrast)."""
+    return cg(M.HAIR, 0.95 if acc.increase_contrast else alpha)
+
+
+def text_alpha(base: float, acc: Access) -> float:
+    """White text alphas (0.96 / 0.90 / 0.50): Increase Contrast lifts the dim ones."""
+    return min(1.0, base + 0.25) if acc.increase_contrast else base
+
+
+_SCALE: list[float] = []
+
+
+def crisp(layer):
+    """Shape / gradient layers are rasterised at contentsScale: use the sharpest display's (he may drag between)."""
+    if not _SCALE:
+        _SCALE.append(max([float(s.backingScaleFactor()) for s in (AppKit.NSScreen.screens() or [])] or [2.0]))
+    layer.setContentsScale_(_SCALE[0])
+    return layer
+
+
+def still(layer, *keys):
+    """No implicit animation for these properties (the layer follows its window / the level, frame by frame)."""
+    layer.setActions_({k: AppKit.NSNull.null() for k in (keys or ("bounds", "position", "frame"))})
+    return layer
+
+
+def make_hud(w: float, h: float, radius: float, acc: Access, host_cls=None, alpha: float = M.CARD_A):
+    """A card's surface: solid navy, continuous corners, SKY hairline. Returns the view to draw into (flipped or
+    not is the host class's business)."""
+    host = (host_cls or AppKit.NSView).alloc().initWithFrame_(((0, 0), (w, h)))
     host.setWantsLayer_(True)
-    host.setAutoresizingMask_(flex)
-    if acc.reduce_transparency:
-        outer = AppKit.NSView.alloc().initWithFrame_(frame)
-        outer.setWantsLayer_(True)
-        outer.layer().setBackgroundColor_(cg(M.PAPER, 0.98))
-        outer.layer().setCornerRadius_(radius)
-        outer.addSubview_(host)
-    elif hasattr(AppKit, "NSGlassEffectView"):      # macOS 26 Liquid Glass
-        outer = AppKit.NSGlassEffectView.alloc().initWithFrame_(frame)
-        outer.setCornerRadius_(radius)
-        outer.setTintColor_(AppKit.NSColor.colorWithWhite_alpha_(1.0, 0.55))
-        outer.setContentView_(host)
-    else:                                            # macOS < 26
-        outer = AppKit.NSVisualEffectView.alloc().initWithFrame_(frame)
-        outer.setMaterial_(AppKit.NSVisualEffectMaterialPopover)
-        outer.setBlendingMode_(AppKit.NSVisualEffectBlendingModeBehindWindow)
-        outer.setState_(AppKit.NSVisualEffectStateActive)
-        outer.setWantsLayer_(True)
-        outer.layer().setCornerRadius_(radius)
-        outer.layer().setMasksToBounds_(True)
-        outer.addSubview_(host)
-    outer.setAutoresizingMask_(flex)
-    if acc.increase_contrast:
-        host.layer().setBorderWidth_(1.0)
-        host.layer().setBorderColor_(cg(M.NAVY, 0.9))
-        host.layer().setCornerRadius_(radius)
-    return outer, host
+    host.setAutoresizingMask_(AppKit.NSViewWidthSizable | AppKit.NSViewHeightSizable)
+    lay = host.layer()
+    lay.setBackgroundColor_(cg(M.CARD, surface_alpha(alpha, acc)))
+    lay.setCornerRadius_(radius)
+    if hasattr(lay, "setCornerCurve_"):
+        lay.setCornerCurve_("continuous")
+    lay.setBorderWidth_(1.0)
+    lay.setBorderColor_(hairline(acc))
+    lay.setMasksToBounds_(True)
+    return host
 
 
-def label(text: str, font, colour, *, kern: float | None = None, strike: bool = False):
+def label(text: str, font, colour, *, kern: float | None = None, lines: int = 1):
+    """A one-line label that truncates with an ellipsis (lines=2: wraps once, then truncates)."""
     f = AppKit.NSTextField.labelWithString_("")
-    set_text(f, text, font, colour, kern=kern, strike=strike)
-    f.setLineBreakMode_(AppKit.NSLineBreakByTruncatingTail)
-    f.setMaximumNumberOfLines_(1)
     f.setSelectable_(False)
+    f.setMaximumNumberOfLines_(lines)
+    f.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping if lines > 1 else AppKit.NSLineBreakByTruncatingTail)
+    if lines > 1:
+        f.cell().setWraps_(True)
+        f.cell().setTruncatesLastVisibleLine_(True)
+    set_text(f, text, font, colour, kern=kern, wrap=lines > 1)
     return f
 
 
-def set_text(f, text: str, font, colour, *, kern: float | None = None, strike: bool = False) -> None:
+def text_attrs(font, colour, *, kern: float | None = None, wrap: bool = False) -> dict:
     attrs = {AppKit.NSFontAttributeName: font, AppKit.NSForegroundColorAttributeName: colour}
     if kern:
         attrs[AppKit.NSKernAttributeName] = kern
-    if strike:
-        attrs[AppKit.NSStrikethroughStyleAttributeName] = AppKit.NSUnderlineStyleSingle
     para = AppKit.NSMutableParagraphStyle.alloc().init()
-    para.setLineBreakMode_(AppKit.NSLineBreakByTruncatingTail)
+    para.setLineBreakMode_(AppKit.NSLineBreakByWordWrapping if wrap else AppKit.NSLineBreakByTruncatingTail)
     attrs[AppKit.NSParagraphStyleAttributeName] = para
-    f.setAttributedStringValue_(AppKit.NSAttributedString.alloc().initWithString_attributes_(text, attrs))
+    return attrs
+
+
+def set_text(f, text: str, font, colour, *, kern: float | None = None, wrap: bool = False) -> None:
+    f.setAttributedStringValue_(AppKit.NSAttributedString.alloc().initWithString_attributes_(
+        text, text_attrs(font, colour, kern=kern, wrap=wrap)))
+
+
+def text_lines(text: str, font, width: float, most: int = 2) -> int:
+    """How many lines the text needs at this width (1..most)."""
+    s = AppKit.NSAttributedString.alloc().initWithString_attributes_(text, text_attrs(font, AppKit.NSColor.whiteColor(),
+                                                                                     wrap=True))
+    one = s.size().height or 1.0
+    r = s.boundingRectWithSize_options_((width, 10000.0), AppKit.NSStringDrawingUsesLineFragmentOrigin)
+    return max(1, min(most, int(r.size.height / one + 0.5)))
 
 
 def symbol(name: str, size: float, colour, weight=None):
@@ -192,7 +221,7 @@ def out_ease():
     return ease(OUT_EASE)
 
 
-def state_ease():                                    # 100 ms state transitions
+def state_ease():                                    # state cross-fades
     return ease(M.STATE_EASE)
 
 
@@ -202,7 +231,7 @@ def frame_rate(anim, fps: float) -> None:
 
 
 def pointer_screen():
-    """The display the mouse pointer is on (or nearest to): the pill follows him across displays."""
+    """The display the mouse pointer is on (or nearest to): the orb follows him across displays."""
     screens = list(AppKit.NSScreen.screens() or [])
     if not screens:
         return AppKit.NSScreen.mainScreen()
@@ -217,7 +246,7 @@ def screen_key(s) -> tuple:
 
 
 def screen_anchor(s=None) -> tuple[float, float]:
-    """(centre x, top y) for the pill on a screen: under the menu bar, or hugging a notch."""
+    """(centre x, top y) for the orb on a screen: under the menu bar, or hugging a notch."""
     s = s or pointer_screen()
     f, vf = s.frame(), s.visibleFrame()
     inset = s.safeAreaInsets().top if hasattr(s, "safeAreaInsets") else 0

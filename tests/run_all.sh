@@ -37,7 +37,7 @@ run "turn-taking"                   tests/turn_eval.py
 run "STT his words + Indian voice (D27)" tests/stt_voice_eval.py
 run "personal emotion + recorder (D28)" tests/emotion_learning_eval.py
 run "real-time reply (D29)"         tests/realtime_eval.py
-run "desktop overlay (pill + cards)" tests/overlay_eval.py
+run "desktop overlay (orb + cards)" tests/overlay_eval.py
 run "never says it twice (D36)"     tests/no_repeat_eval.py
 run "never claims what it didn't do" tests/honest_actions_eval.py
 run "whole sentences (no missing words)" tests/whole_sentence_eval.py
@@ -52,4 +52,5 @@ run "mic watchdog (dead mic → reopen)" tests/mic_watchdog_eval.py
 run "learns from normal conversation (D38)" tests/learn_from_chat_eval.py
 run "ask me questions (get to know you)" tests/ask_me_eval.py
 run "anticipating him (weather, brief, heads-up, nags)" tests/anticipate_eval.py
+run "fetch first, then speak (D43)" tests/fetch_first_eval.py
 exit $fail

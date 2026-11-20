@@ -3,13 +3,15 @@
     PYTHONPATH=src .venv/bin/python -m stiti.overlay.demo [--hold S] [--shots DIR] [--measure] [--all]
 
 Cycles idle → listening (fake mic) → thinking → "Checking calendar" → speaking (fake voice) + to-do card →
-speech ends → "✓ Added" confirmation → hidden, in ~15 s. Ticking a row in the card only prints (no DB write).
+speech ends → a to-do added on the card → "✓ Added" in the orb's capsule → hidden, in ~17 s. Ticking a row in the card only prints (no DB write).
 --hold S      seconds per phase (default 1.6–3 s; use 6 for steadier CPU numbers)
---shots DIR   screencapture the top-centre region in each phase (overlay-<phase>.png)
+--shots DIR   screencapture the top-centre region in each phase (overlay-<phase>.png) plus a tight crop of the
+              orb, three per phase so its motion shows (orb-<phase>-<n>.png; native pixels: 2x on a Retina display)
 --measure     print CPU % (this process + WindowServer) and memory (phys_footprint) per phase
---all         also show the reminders and headlines cards
+--all         also show the reminders and headlines cards and a to-do card with long titles
 --motion      only the card motion: a to-do added → one finished (✓, strike, folds away) → a reminder set → one
               cancelled; with --shots, a burst of frames through each animation (overlay-<phase>-<ms>.png)
+--screen N    show it on display N (NSScreen.screens() index) instead of the one the pointer is on
 """
 from __future__ import annotations
 
@@ -27,6 +29,9 @@ import AppKit
 from PyObjCTools import AppHelper
 
 from .. import overlay
+from . import model as M
+from . import model
+from .surface import pointer_screen, screen_anchor
 
 TODOS = {"kind": "todos", "title": "5 things to do", "ts": time.time(), "items": [
     {"id": 1, "text": "Finish the resume draft", "meta": "due today, 4 PM"},
@@ -48,7 +53,15 @@ CANCELLED = dict(REMINDERS, focus={"op": "cancelled", "ids": [2]})
 NEWS = {"kind": "news", "title": "AI updates", "ts": time.time(), "items": [
     {"id": None, "text": "A new open model tops the small-model leaderboard", "meta": "Hacker News"},
     {"id": None, "text": "Apple ships a Core ML update for on-device speech", "meta": "The Verge"},
-    {"id": None, "text": "Researchers show faster retrieval for long memories", "meta": "arXiv"}]}
+    {"id": None, "text": "Faster retrieval for long memories", "meta": "arXiv"}]}
+LONG = {"kind": "todos", "title": "9 things to do", "ts": time.time(), "items": [
+    {"id": 1, "text": "Finish the resume draft and send it to the placement cell before the deadline",
+     "meta": "due today, 4 PM"},
+    {"id": 2, "text": "Reply to the placement cell about the interview slot", "meta": "due tomorrow, 10:30 AM"},
+    {"id": 3, "text": "Revise graph algorithms", "meta": ""},
+    {"id": 4, "text": "Buy a notebook", "meta": "due Sat"},
+    {"id": 5, "text": "Call home", "meta": ""},
+    {"id": 6, "text": "Gym", "meta": ""}]}
 
 
 class FakeAudio(threading.Thread):
@@ -107,13 +120,16 @@ class Demo:
         except Exception:
             pass
         h = args.hold
-        phases = [("idle", h * 0.5 or 0.8, lambda: overlay.set_state("idle")),
+        phases = [("greeting", h * 0.5 or 1.8, lambda: (overlay.set_state("listening"),
+                                                        overlay.note(M.greeting("Sam"), 1.6))),
+                  ("idle", h * 0.5 or 1.2, lambda: overlay.set_state("idle")),
                   ("listening", h or 3.0, self._listen),
                   ("thinking", h * 0.6 or 1.5, self._think),
                   ("doing", h * 0.6 or 1.5, lambda: overlay.set_state("thinking", "calendar")),
                   ("speaking-card", h or 3.0, self._speak_card),
                   ("card-after-speech", h * 0.8 or 2.5, self._speech_end),
-                  ("confirm", h * 0.8 or 2.6, self._confirm)]
+                  ("added", h * 0.8 or 2.6, self._added),
+                  ("confirm", h * 0.5 or 2.0, self._confirm)]
         if args.motion:
             show = lambda c: (lambda: (overlay.hide_card(), overlay.show_card(c, speaking=False)))  # noqa: E731
             phases = [("idle", 0.8, lambda: overlay.set_state("idle")),
@@ -121,8 +137,9 @@ class Demo:
                       ("reminder-set", 3.0, show(SET)), ("reminder-cancelled", 3.2, show(CANCELLED))]
         elif args.all:
             phases += [("reminders", h or 2.5, lambda: overlay.show_card(REMINDERS, speaking=False)),
-                       ("news", h or 2.5, lambda: overlay.show_card(NEWS, speaking=False))]
-        phases += [("hidden", 1.2, self._sleep)]
+                       ("news", h or 2.5, lambda: overlay.show_card(NEWS, speaking=False)),
+                       ("long", h or 2.5, lambda: overlay.show_card(LONG, speaking=False))]
+        phases += [("hidden", max(1.2, h * 0.5), self._sleep)]      # with --measure --hold: the machine's own baseline
         self.phases = phases
 
     def _listen(self):
@@ -134,6 +151,7 @@ class Demo:
         overlay.set_state("thinking")
 
     def _speak_card(self):
+        overlay.set_state("listening")                         # a new turn: "Checking calendar" belongs to the last one
         overlay.set_state("speaking")
         self.audio.mode = "out"
         overlay.show_card(TODOS)
@@ -143,9 +161,14 @@ class Demo:
         overlay.speech_ended()
         overlay.set_state("listening")
 
-    def _confirm(self):
+    def _added(self):
         overlay.hide_card()
         overlay.show_card(ADDED, speaking=False)
+
+    def _confirm(self):                                        # the one-line ✓ in the orb's capsule (no card)
+        overlay.hide_card()
+        overlay.show_card({"kind": "todo_added", "title": "Added", "ts": time.time(),
+                           "items": [{"id": 6, "text": "Start the resume", "meta": "due today, 4 PM"}]}, speaking=False)
 
     def _sleep(self):
         overlay.set_state("hidden")
@@ -164,12 +187,15 @@ class Demo:
         r0, w0 = self._cpu(), _cputime(self.ws) if (self.args.measure and self.ws) else None
         t0 = time.monotonic()
         fn()
-        if self.args.shots and self.args.motion and name != "idle":
+        if self.args.shots and self.args.motion and name not in ("idle", "hidden"):
             for ms in (150, 450, 800, 1100, 1500, 2000, 2700):
                 if ms / 1000 < secs:
                     AppHelper.callLater(ms / 1000, self._shot, f"{name}-{ms:04d}")
         elif self.args.shots:
             AppHelper.callLater(min(secs * 0.6, secs - 0.2), self._shot, name)
+            if name != "hidden":
+                for n, at in enumerate((0.35, 0.6, 0.85), 1):
+                    AppHelper.callLater(secs * at, self._shot, f"{name}-{n}", True)
         AppHelper.callLater(secs, self._end_phase, i, name, t0, r0, w0)
 
     def _end_phase(self, i, name, t0, r0, w0):
@@ -188,13 +214,24 @@ class Demo:
         u = resource.getrusage(resource.RUSAGE_SELF)
         return u.ru_utime + u.ru_stime
 
-    def _shot(self, name):
-        s = AppKit.NSScreen.mainScreen().frame()
-        w, h = 460, 400
-        x = int(s.size.width / 2 - w / 2)
-        path = os.path.join(self.args.shots, f"overlay-{name}.png")
-        threading.Thread(target=subprocess.run, args=(["screencapture", "-x", f"-R{x},0,{w},{h}", path],),
-                         daemon=True).start()
+    def _shot(self, name, orb=False):
+        """The top-centre of the display the overlay is on (screencapture wants top-left-origin global points).
+        orb=True: a tight crop of the orb / its capsule only."""
+        scr = pointer_screen()
+        cx, top = screen_anchor(scr)
+        f = scr.frame()
+        flip = AppKit.NSScreen.screens()[0].frame().size.height      # Cocoa y is up from the primary display's bottom
+        if orb:                                                # the orb's own panel (disc or capsule) + a margin
+            ui = overlay._ui
+            pf = ui.orb.panel.frame() if ui is not None else None
+            w, h = (pf.size.width if pf else model.ORB) + 24, int(model.ORB + 40)
+            y = flip - top + model.TOP_GAP - 20
+        else:
+            w, h = 480, 520
+            y = flip - (f.origin.y + f.size.height)
+        path = os.path.join(self.args.shots, f"{'orb' if orb else 'overlay'}-{name}.png")
+        threading.Thread(target=subprocess.run, daemon=True,
+                         args=(["screencapture", "-x", f"-R{int(cx - w / 2)},{int(y)},{int(w)},{int(h)}", path],)).start()
 
     def _finish(self):
         if self.args.measure:
@@ -214,6 +251,7 @@ def main():
     ap.add_argument("--measure", action="store_true")
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--motion", action="store_true")
+    ap.add_argument("--screen", type=int, default=None)
     args = ap.parse_args()
     front = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
     app = AppKit.NSApplication.sharedApplication()
@@ -221,6 +259,12 @@ def main():
     if args.shots:
         os.makedirs(args.shots, exist_ok=True)
         os.environ["STITI_OVERLAY_DEMO_CAPTURE"] = "1"   # demo cards hold fake data; the real app is never captured
+    if args.screen is not None:                           # demo only: pin the overlay (and the shots) to one display
+        from . import ui
+        screens = list(AppKit.NSScreen.screens() or [])
+        pick = lambda: screens[min(max(args.screen, 0), len(screens) - 1)]   # noqa: E731
+        ui.pointer_screen = pick
+        globals()["pointer_screen"] = pick
     demo = Demo(args)
 
     def go():
@@ -230,11 +274,13 @@ def main():
             demo.base_mb = _footprint(demo.pid)
         ok = overlay.init(respect_lock=False, tick_todo=lambda tid, done: print(f"[demo] tick todo {tid} → "
                                                                                   f"{'done' if done else 'open'}") or True,
-                          on_click=lambda: print("[demo] pill clicked → stop her"))
+                          on_click=lambda: print("[demo] orb clicked → stop her"))
         if not ok:
             print("[demo] overlay unavailable (no display / AppKit)")
             AppHelper.stopEventLoop()
             return
+        if args.shots and overlay._ui is not None:    # he may be working while this runs: a click of his elsewhere
+            overlay._ui._click_away = lambda event: None   # would close the card before its shot (shots only)
         demo.start()
     AppHelper.callLater(0.3, go)
     AppHelper.runEventLoop(installInterrupt=True)

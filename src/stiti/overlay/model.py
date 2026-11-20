@@ -1,28 +1,39 @@
-"""Pure logic of the desktop overlay (no AppKit): states, level smoothing, card layout, dismiss timing.
+"""Pure logic of the desktop overlay (no AppKit): states, looks, level smoothing, orb geometry, card layout,
+dismiss timing.
 
 Everything here is plain Python so it can be unit-tested headless (tests/overlay_eval.py). The AppKit side
-(pill.py, card.py, ui.py) only *draws* what these objects decide. Design: docs/research/desktop_overlay.md, D26.
+(orb.py, card.py, ui.py) only *draws* what these objects decide. Design: docs/research/desktop_overlay.md, D26, D44.
 """
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
-# ---------------------------------------------------------------- palette (Stiti's look)
-PAPER = (0xEC, 0xEB, 0xF2)        # lavender paper #ecebf2
-NAVY = (0x26, 0x2B, 0x57)         # #262b57
+# ---------------------------------------------------------------- palette (always dark: it sits over any window)
+DISC = (0x0A, 0x0F, 0x24)         # the orb's disc, navy #0a0f24
+CARD_NAVY = (0x0B, 0x10, 0x26)    # card panel with the reactor orb, navy #0b1026
+CARD = (0x12, 0x10, 0x32)         # card panel now (indigo #121032, the knot orb's; apply_theme() sets it)
 BLUE = (0x46, 0x56, 0xD6)         # #4656d6
 MID = (0x62, 0x84, 0xE3)          # between blue and sky
 SKY = (0x7F, 0xB2, 0xF0)          # #7fb2f0
-AMBER = (0xB4, 0x53, 0x1F)        # offline / error dot
-DOT_COLOURS = [NAVY, BLUE, MID, SKY, MID, BLUE, NAVY]
+WHITE = (0xFF, 0xFF, 0xFF)
+AMBER = (0xB4, 0x53, 0x1F)        # offline / error only
+DISC_A, CARD_A = 0.94, 1.0        # solid: at 96 % a page of white text behind a card was still readable through it
+TEXT_A, ROW_A, META_A = 0.96, 0.90, 0.50      # white: titles / rows / meta
+HAIR_A, BEAM_A = 0.30, 0.95       # SKY hairline border; the bright beam on a card's top edge
+SEP_A, HOVER_A = 0.07, 0.06       # white: row separators, hover wash
 
 # ---------------------------------------------------------------- geometry (points)
-PILL_W, PILL_H, PILL_MAX_W = 168.0, 40.0, 320.0
-N_DOTS, DOT, DOT_GAP = 7, 6.0, 7.0
-DOTS_W = N_DOTS * DOT + (N_DOTS - 1) * DOT_GAP           # 84 pt
+ORB = 64.0                        # the disc's diameter
+HALO = 8.0                        # room around the disc inside its panel for the glow
+ORB_MAX_W = 340.0                 # widest capsule ("Checking calendar" / "✓ Start resume · today, 4 PM")
+R_CORE, R_INNER, R_MID, R_TICK, R_OUTER = 7.0, 13.0, 18.0, 21.5, 28.5    # radii, centre outward
+INNER_ARCS, INNER_ARC_DEG = 3, 80.0                      # inner ring: three arc segments
+MID_DASHES = 24                                          # mid ring: dashes around the circle
+N_TICKS, TICK_W, TICK_LEN, TICK_MAX = 36, 1.4, 2.4, 4.6  # tick ring: a circular equaliser (rest → loudest length)
+OUTER_ARC_DEG = 300.0                                    # outer arc, its gap points down at the card
 TOP_GAP = 8.0                                            # under the menu bar
-CARD_GAP = 8.0                                           # card drops this far below the pill
+CARD_GAP = 10.0                                          # card drops this far below the orb
 FPS = 30.0
 FPS_LOW_POWER = 15.0
 
@@ -35,21 +46,41 @@ DOING_LABELS = {"calendar": ("calendar", "Checking calendar"), "mail": ("envelop
 
 @dataclass(frozen=True)
 class Look:
-    """What the pill should look like in a state (decided here, drawn by pill.py)."""
+    """What the orb should look like in a state (decided here, drawn by orb.py). Periods are seconds, 0 = off."""
     visible: bool
     timer: bool            # needs the 30 Hz level timer (mic / voice reactive)
-    source: str | None     # "mic" | "out" | None: which level drives the dots
-    anim: str | None       # render-server animation: "shimmer" | "wave" | None
+    source: str | None     # "mic" | "out" | None: which level drives the ticks + core
     click_through: bool    # True: clicks pass to the window underneath
+    glow: float = 0.0      # outer glow strength 0..1
+    rim: float = 0.0       # alpha of the SKY hairline rim
+    ticks: float = 0.0     # opacity of the tick ring
+    spin: float = 0.0      # inner ring: one clockwise turn takes this long
+    counter: float = 0.0   # mid ring: one counter-clockwise turn
+    breathe: float = 0.0   # core breathing period
+    comet: float = 0.0     # the comet's lap around the outer arc
+    wave: float = 0.0      # travelling wave on the ticks (render server, per-tick delays)
+    gain: float = 0.0      # level → tick length / core size
+    pulse: float = 0.0     # Reduce Motion only: a calm opacity pulse instead of the comet
 
 
 LOOKS = {
-    "hidden": Look(False, False, None, None, True),
-    "idle": Look(True, False, None, "shimmer", True),
-    "listening": Look(True, True, "mic", "shimmer", True),
-    "thinking": Look(True, False, None, "wave", False),     # click = stop her (detail → "Checking calendar")
-    "speaking": Look(True, True, "out", None, False),       # click = stop her
+    "hidden": Look(False, False, None, True),
+    "idle": Look(True, False, None, True, glow=0.30, rim=0.28, ticks=0.32, spin=14.0, counter=30.0, breathe=3.0),
+    "listening": Look(True, True, "mic", True, glow=0.55, rim=0.40, ticks=0.80, spin=6.0, counter=16.0, breathe=2.4,
+                      gain=1.0),
+    "thinking": Look(True, False, None, False, glow=0.70, rim=0.46, ticks=0.85, spin=1.6, counter=5.0,   # click = stop her
+                     breathe=0.8, comet=0.9, wave=0.9),
+    "speaking": Look(True, True, "out", False, glow=0.95, rim=0.55, ticks=1.0, spin=3.5, counter=9.0,    # click = stop her
+                     gain=1.3),
 }
+
+
+def look_for(state: str, reduce_motion: bool = False) -> Look:
+    """The look to draw. Reduce Motion: nothing rotates or travels: static rings, level + opacity only."""
+    look = LOOKS[state]
+    if not reduce_motion:
+        return look
+    return replace(look, spin=0.0, counter=0.0, breathe=0.0, comet=0.0, wave=0.0, pulse=1.8 if look.comet else 0.0)
 
 
 @dataclass
@@ -62,8 +93,8 @@ class Transition:
     detail: str | None = None
 
 
-class PillState:
-    """The pill's state machine. Unknown states are refused; repeated states are no-ops (cheap to call often)."""
+class OrbState:
+    """The orb's state machine. Unknown states are refused; repeated states are no-ops (cheap to call often)."""
 
     def __init__(self):
         self.state = "hidden"
@@ -93,7 +124,7 @@ def doing_label(kind: str | None) -> tuple[str, str] | None:
 
 # ---------------------------------------------------------------- level meter (Wispr Flow's level path, our numbers)
 class LevelMeter:
-    """RMS (per 40 ms block) → 0..1 dot swell. Behaviour learnt from Wispr Flow's bar (docs/research/re_wispr_flow.md §1):
+    """RMS (per 40 ms block) → 0..1 level (tick length, core size). Behaviour learnt from Wispr Flow's bar (docs/research/re_wispr_flow.md §1):
     dBFS → adaptive floor (starts −60 dB, follows the quietest level heard, creeps up slowly) with a 20 dB range →
     150 ms average → frame-rate-independent smoothing 0.85^(dt/16.7 ms) → slew limit 1.6/s → 0.01 steps.
     Floats + a tiny window only; called from the 30 Hz main-thread tick, never from the audio callback."""
@@ -142,40 +173,78 @@ METER = {"mic": dict(floor_min=-75.0, floor_max=-35.0),      # his AEC-cleaned m
          "out": dict(floor_min=-40.0, floor_max=-25.0)}      # her TTS is digital silence between words
 
 
-def bulge(i: int, n: int = N_DOTS) -> float:
-    """Centre-bulge weight 1 − d²/48 (Wispr's 10 bars), d stretched so our 7 dots fall off like their 10."""
-    d = abs(i - (n - 1) / 2) * (4.5 / ((n - 1) / 2))
-    return 1.0 - d * d / 48.0
+# ---------------------------------------------------------------- the orb's moving parts (pure maths)
+WAVES = 3                    # crests around the tick ring
+WAVE_HZ = 1.1                # a tick swells and falls this often while a level drives it
+CORE_SWELL = 0.6             # the core grows 1.0 → 1.6 with the level
 
 
-def dot_scales(level: float, n: int = N_DOTS, gain: float = 1.2) -> list[float]:
-    """Round dots swell evenly (bars would squash the caps), the middle ones most."""
-    return [1.0 + level * gain * bulge(i, n) for i in range(n)]
+def tick_angle(i: int, n: int = N_TICKS) -> float:
+    """Radians clockwise from 12 o'clock."""
+    return 2 * math.pi * i / n
 
 
-SHIMMER_KEYS = [1.0, 1.2, 1.5, 1.1, 1.3, 1.0]                # idle shimmer, 1 s loop
-SHIMMER_TIMES = [0.0, 0.2, 0.4, 0.8, 0.9, 1.0]
-SHIMMER_STAGGER = 0.1                                        # s per dot, from the centre outward
+def tick_phase(i: int, n: int = N_TICKS, waves: int = WAVES) -> float:
+    """Where tick i is in the wave's cycle (0..1). It rises with i, so the crests travel clockwise."""
+    return (waves * i / n) % 1.0
 
 
-def shimmer(i: int, n: int = N_DOTS) -> tuple[list[float], float]:
-    """Keyframe scales for dot i (bulge-weighted) and its start delay."""
-    w = bulge(i, n)
-    return [1.0 + (k - 1.0) * w for k in SHIMMER_KEYS], SHIMMER_STAGGER * abs(i - (n - 1) / 2)
+def tick_scales(level: float, t: float, gain: float = 1.0, n: int = N_TICKS) -> list[float]:
+    """Length of each tick (× its rest length) at time t: the level sets how far, the per-tick phase makes a wave
+    travel around the circle. Silence = every tick at rest, exactly 1.0 (nothing to commit)."""
+    a = min(1.0, max(0.0, level * gain))
+    if a <= 0.0:
+        return [1.0] * n
+    top = TICK_MAX / TICK_LEN - 1.0
+    return [round(1.0 + a * top * (0.3 + 0.7 * (0.5 + 0.5 * math.sin(2 * math.pi * (WAVE_HZ * t - tick_phase(i, n))))), 2)
+            for i in range(n)]
 
 
-STATE_S, STATE_EASE = 0.1, (0.05, 0.6, 0.4, 0.95)           # state transitions (Flow's default morph)
-MORPH_S, MORPH_EASE = 0.25, (0.4, 0.0, 0.2, 1.0)             # larger morphs (pill width)
+def tick_delay(i: int, period: float, n: int = N_TICKS, waves: int = WAVES) -> float:
+    """Thinking: every tick plays the same render-server loop, started this much later than tick 0."""
+    return period * tick_phase(i, n, waves)
+
+
+def core_scale(level: float, gain: float = 1.0) -> float:
+    return round(1.0 + CORE_SWELL * min(1.0, max(0.0, level * gain)), 2)
+
+
+def sine_values(lo: float, hi: float, n: int = 24) -> list[float]:
+    """One smooth lo → hi → lo cycle as n+1 keyframes (linear between them is smooth enough at this size)."""
+    return [lo + (hi - lo) * (0.5 - 0.5 * math.cos(2 * math.pi * k / n)) for k in range(n + 1)]
+
+
+def sine_phase(value: float, lo: float, hi: float) -> float:
+    """Where in that cycle (0..0.5, rising half) the value sits: a new loop starts from where the old one was."""
+    if hi <= lo:
+        return 0.0
+    x = min(1.0, max(0.0, (value - lo) / (hi - lo)))
+    return math.acos(1.0 - 2.0 * x) / (2 * math.pi)
+
+
+def dash_pattern(r: float, n: int = MID_DASHES, duty: float = 0.4) -> tuple[float, float]:
+    """(dash, gap) so exactly n dashes fit the circle of radius r (no seam where the ring closes)."""
+    period = 2 * math.pi * r / n
+    return period * duty, period * (1 - duty)
+
+
+STATE_S, STATE_EASE = 0.2, (0.16, 1.0, 0.3, 1.0)            # a state cross-fades in 200 ms, ease-out
+LABEL_S = 0.12                                               # the capsule's label fades this fast
+MORPH_S, MORPH_EASE = 0.25, (0.4, 0.0, 0.2, 1.0)             # disc ↔ capsule
 
 
 def changed(a: float, b: float, eps: float = 0.01) -> bool:
-    """Skip a Core Animation commit when the swell moved less than this (WindowServer cost)."""
+    """Skip a Core Animation commit when the value moved less than this (WindowServer cost)."""
     return abs(a - b) >= eps
+
+
+def changed_any(a: list[float], b: list[float], eps: float = 0.01) -> bool:
+    return len(a) != len(b) or any(abs(x - y) >= eps for x, y in zip(a, b))
 
 
 # ---------------------------------------------------------------- shapes + displays (pure geometry)
 def in_round_rect(x: float, y: float, w: float, h: float, r: float) -> bool:
-    """Point inside a rounded rect (the pill capsule / card). Outside = transparent corner = not ours."""
+    """Point inside a rounded rect (the orb's capsule / a card). Outside = transparent corner = not ours."""
     if not (0 <= x <= w and 0 <= y <= h):
         return False
     r = min(r, w / 2, h / 2)
@@ -198,13 +267,21 @@ def screen_index(frames: list[tuple[float, float, float, float]], p: tuple[float
 FOLLOW_S = 0.4                                               # re-check the pointer's display while visible
 
 
-# ---------------------------------------------------------------- pill width (doing / confirmation)
-def pill_width(label_w: float, *, with_dots: bool = True, symbol: bool = True) -> float:
-    """Compact pill is 168 pt; with a label it widens to fit, up to 320 pt."""
+def in_orb(x: float, y: float, w: float = ORB) -> bool:
+    """Point inside the orb: a circle of diameter ORB, or the capsule of width w it morphs into (x, y from the
+    shape's own corner, not the panel's: the glow around it is not clickable)."""
+    return in_round_rect(x, y, max(w, ORB), ORB, ORB / 2)
+
+
+# ---------------------------------------------------------------- capsule width (doing / confirmation)
+CAP_GAP, CAP_SYM, CAP_PAD = 6.0, 24.0, 24.0                  # orb | gap | icon | label | right padding
+
+
+def capsule_width(label_w: float, *, symbol: bool = True) -> float:
+    """The disc alone is ORB wide; with a label it grows to the right to fit it, up to ORB_MAX_W."""
     if label_w <= 0:
-        return PILL_W
-    w = 18 + (DOTS_W + 14 if with_dots else 0) + (22 if symbol else 0) + label_w + 20
-    return max(PILL_W, min(PILL_MAX_W, math.ceil(w)))
+        return ORB
+    return max(ORB, min(ORB_MAX_W, math.ceil(ORB + CAP_GAP + (CAP_SYM if symbol else 0) + label_w + CAP_PAD)))
 
 
 def confirm_text(card: dict, max_chars: int = 38) -> str:
@@ -224,12 +301,16 @@ def _clip(s: str, n: int) -> str:
 
 # ---------------------------------------------------------------- card layout
 CARD_KINDS = ("todos", "reminders", "news")      # open a card
-CONFIRM_KINDS = ("todo_added", "reminder_set")   # widen the pill instead
+CONFIRM_KINDS = ("todo_added", "reminder_set")   # the orb widens into a one-line ✓ instead
 MAX_ROWS = 6
 CARD_W = {"news": 380.0}
-CARD_W_DEFAULT = 360.0
-PAD, EYEBROW_H, TITLE_H, ROW_H, NEWS_ROW_H, MORE_H, EMPTY_H = 16.0, 16.0, 26.0, 36.0, 46.0, 24.0, 8.0
-HEADER_GAP = 10.0
+CARD_W_DEFAULT = 380.0                           # every card is the same width: one column under the orb
+CARD_RADIUS = 20.0
+PAD, PAD_BOTTOM, EYEBROW_H, TITLE_H, ROW_H, MORE_H, EMPTY_H = 18.0, 12.0, 16.0, 26.0, 34.0, 24.0, 6.0
+NEWS_ROW_H, NEWS_LINE_H = 48.0, 19.0             # a headline over its source; a second headline line adds NEWS_LINE_H
+NEWS_LINE_CHARS = 42                             # headless guess of what fits on one line (card.py measures for real)
+HEADER_GAP = 8.0
+ROW_INSET, ROW_PAD, LEAD_W = 10.0, 8.0, 24.0     # row inside the card; content inside the row; checkbox / bell / 01 column
 
 
 @dataclass
@@ -242,6 +323,7 @@ class Row:
     tickable: bool
     done: bool = False
     op: str | None = None  # what this turn did to it: added | done | removed | set | cancelled | moved
+    lines: int = 1         # news: a long headline wraps onto a second line
 
 
 @dataclass
@@ -266,8 +348,19 @@ def _count_from_title(title: str) -> int | None:
     return int(w[0]) if w and w[0].isdigit() else None
 
 
-def layout(card: dict) -> CardLayout | None:
-    """A card dict from cards.py → what to draw. None for kinds that don't open a card."""
+def headline_lines(text: str) -> int:
+    return 1 if len(text) <= NEWS_LINE_CHARS else 2
+
+
+def row_meta(kind: str, meta: str) -> str:
+    """The eyebrow already says TO-DO, so "due today, 4 PM" is shown as "today, 4 PM" (shorter, never clipped)."""
+    meta = " ".join(meta.split())
+    return meta[4:] if kind == "todos" and meta.startswith("due ") else meta
+
+
+def layout(card: dict, measure=None) -> CardLayout | None:
+    """A card dict from cards.py → what to draw. None for kinds that don't open a card.
+    measure(text) → 1 or 2: how many lines a headline really needs (card.py asks AppKit; headless we guess)."""
     kind = card.get("kind")
     if kind not in CARD_KINDS:
         return None
@@ -286,23 +379,28 @@ def layout(card: dict) -> CardLayout | None:
     if kind == "todos" and shown:
         title = "You have these to complete"         # the owner's words; the count is in the eyebrow
     w = CARD_W.get(kind, CARD_W_DEFAULT)
-    rh = NEWS_ROW_H if kind == "news" else ROW_H
     y = PAD + EYEBROW_H + TITLE_H + HEADER_GAP
     rows = []
     for it in shown:
         tid = it.get("id")
-        rows.append(Row(tid if isinstance(tid, int) else None, _clip(str(it["text"]), 90 if kind == "news" else 60),
-                        _clip(str(it.get("meta") or ""), 26), y, rh,
+        text = _clip(str(it["text"]), 90 if kind == "news" else 60)
+        lines = min(2, max(1, int((measure or headline_lines)(text)))) if kind == "news" else 1
+        rh = NEWS_ROW_H + (lines - 1) * NEWS_LINE_H if kind == "news" else ROW_H
+        rows.append(Row(tid if isinstance(tid, int) else None, text,
+                        _clip(row_meta(kind, str(it.get("meta") or "")), 26), y, rh,
                         tickable=kind == "todos" and isinstance(tid, int),
-                        op=fop if (fop and tid in fids) else None))
+                        op=fop if (fop and tid in fids) else None, lines=lines))
         y += rh
     more = max(0, total - len(shown))
     more_y = y
     if more:
         y += MORE_H
-    if not rows:
-        y = PAD + EYEBROW_H + TITLE_H + EMPTY_H
-    return CardLayout(kind, eyebrow, title, w, y + PAD, rows, more, more_y, total)
+    return CardLayout(kind, eyebrow, title, w, _card_height(y, bool(rows)), rows, more, more_y, total)
+
+
+def _card_height(y: float, has_rows: bool) -> float:
+    """Rows carry their own air, so the card ends PAD_BOTTOM under the last one; a header-only card ends PAD under it."""
+    return y + PAD_BOTTOM if has_rows else PAD + EYEBROW_H + TITLE_H + EMPTY_H + PAD
 
 
 def eyebrow_text(kind: str, total: int) -> str:
@@ -349,9 +447,9 @@ def collapse(lay: CardLayout, gone: set[int]) -> CardLayout:
     rows = []
     for i, r in enumerate(lay.rows):
         if i in gone:
-            rows.append(Row(r.id, r.text, r.meta, r.y, 0.0, r.tickable, r.done, r.op))
+            rows.append(replace(r, h=0.0))
             continue
-        rows.append(Row(r.id, r.text, r.meta, y, r.h, r.tickable, r.done, r.op))
+        rows.append(replace(r, y=y))
         y += r.h
     more_y = y
     if lay.more:
@@ -359,10 +457,10 @@ def collapse(lay: CardLayout, gone: set[int]) -> CardLayout:
     left = sum(1 for i in range(lay.n) if i not in gone)
     title = lay.title
     if not left and not lay.more:
-        y = PAD + EYEBROW_H + TITLE_H + EMPTY_H
         title = "All clear" if lay.kind == "todos" else "Nothing coming up"
     total = max(0, lay.total - sum(1 for i in gone if lay.rows[i].op in LEAVING))
-    return CardLayout(lay.kind, eyebrow_text(lay.kind, total), title, lay.width, y + PAD, rows, lay.more, more_y, total)
+    return CardLayout(lay.kind, eyebrow_text(lay.kind, total), title, lay.width, _card_height(y, bool(left or lay.more)),
+                      rows, lay.more, more_y, total)
 
 
 def row_at(lay: CardLayout, y: float) -> int | None:
@@ -389,7 +487,7 @@ def dismiss_after(kind: str, n_items: int) -> float:
 
 
 class DismissTimer:
-    """When a card (or the pill's confirmation) goes away. The clock starts when her SPEECH ends, not when the card
+    """When a card (or the orb's confirmation) goes away. The clock starts when her SPEECH ends, not when the card
     appears; hovering pauses it. `now` is passed in (monotonic seconds) so tests need no sleeping."""
 
     def __init__(self, kind: str, n_items: int, now: float, speaking: bool = True):
@@ -426,3 +524,83 @@ class DismissTimer:
 
     def remaining(self, now: float) -> float | None:
         return None if self.deadline is None else max(0.0, self.deadline - now)
+
+
+# ---------------------------------------------------------------- the "knot" orb (preview, 2026-11-18)
+# He found the blue reactor "a perfect Jarvis, but this is not Jarvis" and asked to see the woven-line design from the
+# design board in the real overlay. One closed line woven over and under itself, three points travelling along it.
+INDIGO = (0x14, 0x12, 0x3A)       # the knot orb's disc
+RICE = (0xFB, 0xF6, 0xEC)         # its line
+AMBER = (0xF4, 0xB4, 0x00)        # glow, dashed ring, two of the points
+CORAL = (0xD7, 0x26, 0x3D)        # the third point
+R_KNOT = 21.5                     # the knot's outer radius inside the 64 pt disc
+R_KNOT_RING = 28.0                # the dashed ring around it
+KNOT_N = 360                      # points on the line
+KNOT_LAP = 1.6                    # one lap of a point = the state's spin period × this
+KNOT_SWELL = 0.07                 # the knot grows this much at full level
+BEAD_R, BEAD_SWELL = 1.9, 0.9     # a point's radius, and how much it grows at full level
+
+
+def orb_style() -> str:
+    """"reactor" (D44) or "knot". STITI_ORB wins; else the owner_profile key "orb"."""
+    import os
+    v = os.getenv("STITI_ORB")
+    if not v:
+        try:
+            from .. import profile
+            v = profile.get("orb")
+        except Exception:
+            v = None
+    return "reactor" if (v or "").lower() == "reactor" else "knot"     # D46: the knot is Stiti's own orb
+
+
+# The cards follow the orb. Knot (default): amber on indigo, rice-white hairlines. Reactor: the D44 blues.
+CARD_KNOT = (0x12, 0x10, 0x32)    # card panel with the knot orb, indigo #121032
+ACCENT, ACCENT_DEEP, HAIR = AMBER, AMBER, RICE
+
+
+def apply_theme(style: str | None = None) -> str:
+    """Set the colours the cards / hairlines / capsule icon use for this orb style. Called once before the UI is built."""
+    global ACCENT, ACCENT_DEEP, HAIR, CARD
+    style = style or orb_style()
+    if style == "reactor":
+        ACCENT, ACCENT_DEEP, HAIR, CARD = SKY, BLUE, SKY, CARD_NAVY
+    else:
+        ACCENT, ACCENT_DEEP, HAIR, CARD = AMBER, AMBER, RICE, CARD_KNOT
+    return style
+
+
+def greeting(name: str | None) -> str:
+    """The line the orb shows when he wakes her."""
+    return f"Hey {name}, what's on your mind?" if name and name.lower() != "you" else "Hey, what's on your mind?"
+
+
+def knot_points(n: int = KNOT_N) -> list[tuple[float, float]]:
+    """A trefoil, as n points on a closed line inside the unit circle (y up)."""
+    out = []
+    for i in range(n):
+        u = 2 * math.pi * i / n
+        out.append(((math.sin(u) + 2 * math.sin(2 * u)) / 3.0, (math.cos(u) - 2 * math.cos(2 * u)) / 3.0))
+    return out
+
+
+def knot_overs(pts: list[tuple[float, float]] | None = None, half: int = 9) -> list[tuple[int, int]]:
+    """Index ranges (start, end) of the three stretches that pass OVER at the crossings: the line crosses itself three
+    times, each crossing is visited twice, and along the line the visits alternate over / under."""
+    pts = pts or knot_points()
+    n = len(pts)
+
+    def cross(i: int, j: int) -> bool:               # do segments i→i+1 and j→j+1 intersect?
+        (ax, ay), (bx, by), (cx, cy), (dx, dy) = pts[i], pts[(i + 1) % n], pts[j], pts[(j + 1) % n]
+        d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax)
+        d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax)
+        d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx)
+        d4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx)
+        return d1 * d2 < 0 and d3 * d4 < 0
+    visits: list[int] = []
+    for i in range(n):
+        for j in range(i + 2, n):
+            if (i - j) % n > 1 and cross(i, j):
+                visits += [i, j]
+    order = sorted(visits)
+    return [(v - half, v + half) for k, v in enumerate(order) if k % 2 == 0]
