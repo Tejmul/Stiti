@@ -104,7 +104,8 @@ class StitiApp(rumps.App):
             threading.Thread(target=telegram.TelegramBot(Engine).run, args=(self.stop,), daemon=True).start()
         self.loop = VoiceLoop(Engine("voice"), aec=os.getenv("STITI_AEC", "on") != "off")
         self.loop.ack_control = self._ack_voice           # "ok / got it" stops a nagging reminder (D39)
-        self._set_status("Say “Hey Stiti” or “Wake up baby girl”")
+        from .voice import wake
+        self._set_status(f"Say {wake.hint()}")
         self._voice_alive = True
         try:
             self.loop.run(self.stop)

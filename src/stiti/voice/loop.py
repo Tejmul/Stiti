@@ -1,7 +1,7 @@
 """Always-on voice loop: SLEEPING ⇄ AWAKE, full-duplex with WebRTC echo cancellation.
 
 SLEEPING  mic (AEC-cleaned) → VAD → speech segment → whisper → wake phrase?
-          "Stiti" / "Hi/Hey/Hello Stiti" / "Wake up baby girl" / "uth jao Stiti" → rising chime → AWAKE
+          "Stiti" / "Hi/Hey/Hello Stiti" / "uth jao Stiti" / the owner's own phrases → rising chime → AWAKE
 AWAKE     segment → whisper → engine.turn() → Kokoro, sentence-streamed through the duplex stream.
 STOP      "shut up" / "chup" / "bas" / "stop" (alone) → she stops at once, falling chime, NO talking — and stays
           silent (her voice nudges too) until a wake phrase. "bye" / "chalo bye" / "good night" → she says a
@@ -231,7 +231,7 @@ class VoiceLoop:
         self._resume = None
         self.awake, self.silenced = False, True
         self._chime(up=False)
-        print("🤫 (stopped — say “Hi Stiti” or “Wake up baby girl” when you need me)")
+        print(f"🤫 (stopped — say {wake.hint()} when you need me)")
 
     # ---------- behaviour ----------
     def _wait_work(self) -> None:
@@ -394,7 +394,7 @@ class VoiceLoop:
 
     def run(self, stop: threading.Event | None = None):
         stop = stop or threading.Event()
-        print("🎙️  Listening for “Stiti”, “Hi Stiti” or “Wake up baby girl”…  (stop her anytime: “shut up”, “bye”, “chalo”)")
+        print(f"🎙️  Listening for “Stiti” or {wake.hint()}…  (stop her anytime: “shut up”, “bye”, “chalo”)")
         print(f"   echo cancellation {'ON — interrupt her anytime' if self.aec else 'OFF — half-duplex'}")
         threading.Thread(target=self._segmenter, args=(stop,), daemon=True).start()
         overlay.set_click_handler(lambda: self._on_event(("stop",)))   # click the pill = stop her

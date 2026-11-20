@@ -106,9 +106,19 @@ for t in ("bro, I even explained every bit of the thing to Stiti in detail", "I 
           "and then hey Stiti came up in the talk", "what I told Stiti was right"):
     check(f"does not wake: {t!r}", not wake.detect(t)[0])
 for t, rest in (("Hey Stiti", ""), ("Stiti, what are my todos", "what are my todos"), ("okay hey Stiti tell me", "tell me"),
-                ("so Stiti listen", "listen"), ("hi stiti how are you", "how are you"), ("Wake up baby girl", "")):
+                ("so Stiti listen", "listen"), ("hi stiti how are you", "how are you")):
     w = wake.detect(t)
     check(f"wakes: {t!r}", w[0] and w[1] == rest, str(w))
+
+print("the owner's own wake phrase lives in the local profile, not in the code")
+check("a personal phrase does not wake her by default", not wake.detect("Wake up sunshine")[0])
+print("  " + wake.add_phrase("Wake up sunshine"))
+check("… once added, it does", wake.detect("Wake up sunshine, what's next") == (True, "what's next"), str(wake.detect("Wake up sunshine, what's next")))
+check("… Whisper is primed with it", "Wake up sunshine." in stt.wake_line(), stt.wake_line())
+check("… and the status hint names it", "Wake up sunshine" in wake.hint(), wake.hint())
+check("adding it twice changes nothing", "already" in wake.add_phrase("wake up sunshine") and len(wake.extra_phrases()) == 1)
+print("  " + wake.remove_phrase("wake up sunshine"))
+check("removed → back to the defaults", wake.phrases() == wake.DEFAULT_PHRASES and not wake.detect("Wake up sunshine")[0])
 
 print(f"\n{passed}/{total} passed")
 sys.exit(0 if passed == total else 1)

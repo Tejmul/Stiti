@@ -1,4 +1,7 @@
-"""Wake & sleep phrases (Tejmul's spec): "Stiti", "Hey Stiti", "Wake up baby girl".
+"""Wake & sleep phrases: "Stiti", "Hey Stiti", "Hi Stiti" — plus the owner's own phrases.
+
+Defaults are the same for every user. Extra, personal wake phrases live in the local profile (owner_profile key
+`wake_phrases`, a JSON list), set with `stiti wake add "<phrase>"` — never in the code.
 
 ASR keyword spotting: whisper-base (biased with a wake prompt) runs only on VAD speech segments
 while asleep; fuzzy match tolerates mishearings ("Stuti", "Steeti", "Sti ti").
@@ -10,10 +13,11 @@ import re
 from difflib import SequenceMatcher
 
 NAME_VARIANTS = ["stiti", "stithi", "stuti", "steeti", "stety", "sthiti", "stiti's", "stitty", "stii"]
-WAKE_PHRASES = ["wake up baby girl", "wake up baby", "hey stiti", "hi stiti", "hello stiti", "ok stiti", "suno stiti",
-                "uth jao stiti", "stiti uth jao"]
+DEFAULT_PHRASES = ["hey stiti", "hi stiti", "hello stiti", "ok stiti", "suno stiti", "uth jao stiti", "stiti uth jao"]
+WAKE_PHRASES = DEFAULT_PHRASES          # kept for old imports; detect() uses phrases() (defaults + the owner's own)
+PROFILE_KEY = "wake_phrases"
 SLEEP_RX = re.compile(r"\b(so jao|soja|go to sleep|sleep now|bas itna hi|bye stiti|good ?night stiti|chup ho jao)\b", re.I)
-# Tejmul's stop words: the WHOLE utterance is just one of these (optionally + "Stiti") -> stop + sleep.
+# the owner's stop words: the WHOLE utterance is just one of these (optionally + "Stiti") -> stop + sleep.
 # "okay, set an alarm…" is a command, not a stop.
 STOP_ONLY = re.compile(
     r"^(shut up|chup|chup karo|chup ho jao|okay|ok|ok bye|okay bye|chalo|chalo bye|chalo theek hai|bye|bye bye|"
@@ -24,6 +28,86 @@ BACKCHANNEL = re.compile(r"^(haan|han|ha|hmm+|hm+|acha|achha|accha|right|yeah|ye
 
 def _norm(t: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9\s']", " ", t.lower()).split())
+
+
+def extra_phrases() -> list[str]:
+    """The owner's own wake phrases from the local profile (owner_profile.wake_phrases, JSON list). [] if none."""
+    import json
+    try:
+        from .. import profile
+        raw = profile.get(PROFILE_KEY)
+    except Exception:
+        return []
+    if not raw:
+        return []
+    try:
+        items = json.loads(raw)
+    except ValueError:
+        items = re.split(r"[|\n]", raw)
+    out: list[str] = []
+    for it in items if isinstance(items, list) else []:
+        n = _norm(str(it))
+        if n and n not in out and n not in DEFAULT_PHRASES:
+            out.append(n)
+    return out
+
+
+def phrases() -> list[str]:
+    """Every phrase that wakes her: the owner's own first (longer, more specific), then the defaults."""
+    return extra_phrases() + DEFAULT_PHRASES
+
+
+def _save_extra(items: list[str]) -> None:
+    import json
+    from .. import profile
+    profile.set(PROFILE_KEY, json.dumps(items, ensure_ascii=False), source="wake")
+
+
+def add_phrase(phrase: str) -> str:
+    n = _norm(phrase)
+    if len(n.split()) < 2:
+        return "A wake phrase needs at least two words (her name alone already wakes her)."
+    cur = extra_phrases()
+    if n in cur or n in DEFAULT_PHRASES:
+        return f"“{n}” already wakes her."
+    _save_extra(cur + [n])
+    return f"Saved: “{n}” now wakes her (restart Stiti.app to pick it up)."
+
+
+def remove_phrase(phrase: str) -> str:
+    n = _norm(phrase)
+    cur = extra_phrases()
+    if n not in cur:
+        return f"“{n}” isn't one of your own wake phrases."
+    _save_extra([x for x in cur if x != n])
+    return f"Removed “{n}”."
+
+
+def spoken(phrase: str) -> str:
+    """'hey stiti' → 'Hey Stiti' (for prompts and hints)."""
+    return " ".join(w.capitalize() if w.startswith("stiti") else w for w in phrase.split()).capitalize()
+
+
+def hint() -> str:
+    """'“Hey Stiti”' or '“Hey Stiti” or “<the owner's first own phrase>”' — for status lines."""
+    extra = extra_phrases()
+    return "“Hey Stiti”" + (f" or “{spoken(extra[0])}”" if extra else "")
+
+
+def cli(args: list[str]) -> None:
+    """`stiti wake` lists · `stiti wake add "<phrase>"` · `stiti wake remove "<phrase>"`."""
+    sub = args[1] if len(args) > 1 else ""
+    phrase = " ".join(args[2:])
+    if sub == "add" and phrase:
+        print(add_phrase(phrase))
+    elif sub in ("remove", "rm") and phrase:
+        print(remove_phrase(phrase))
+    elif sub in ("", "list"):
+        print("Defaults: " + ", ".join(spoken(p) for p in DEFAULT_PHRASES))
+        extra = extra_phrases()
+        print("Your own: " + (", ".join(spoken(p) for p in extra) if extra else "(none — stiti wake add \"<phrase>\")"))
+    else:
+        print('usage: stiti wake [list | add "<phrase>" | remove "<phrase>"]')
 
 
 def near_miss(transcript: str) -> bool:
@@ -63,7 +147,7 @@ def detect(transcript: str) -> tuple[bool, str]:
     def rest(j: int) -> str:
         return " ".join(orig[j:]).lstrip(" ,.!?-")
     # multi-word phrases (fuzzy over sliding windows)
-    for ph in WAKE_PHRASES:
+    for ph in phrases():
         n = len(ph.split())
         for i in range(0, min(WAKE_START, max(1, len(words) - n + 1))):   # only at the START of what he says:
             window = " ".join(words[i:i + n])                             # "…explained it to Stiti in detail" woke her
