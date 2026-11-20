@@ -99,6 +99,11 @@ class StitiApp(rumps.App):
             web.serve_in_thread()
         except Exception as e:
             print(f"[web] {e}")
+        try:                                      # background jobs (D56): "Prepare" on the Lessons page, resumes
+            from . import jobs                    # what was running before a restart
+            jobs.start_worker()
+        except Exception as e:
+            print(f"[jobs] {e}")
         from .connectors import telegram
         if telegram.token():
             threading.Thread(target=telegram.TelegramBot(Engine).run, args=(self.stop,), daemon=True).start()
@@ -443,6 +448,11 @@ class StitiApp(rumps.App):
 
     def quit(self, _):
         self.stop.set()
+        try:                                      # a running job stays 'running'; the next start resumes it
+            from . import jobs
+            jobs.stop_worker(timeout=1.0)
+        except Exception:
+            pass
         overlay.set_state("hidden")
         time.sleep(0.3)
         rumps.quit_application()
