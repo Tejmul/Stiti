@@ -654,7 +654,10 @@ def _launch(topic: str | None, resume: bool, mode: str | None) -> str:
         return msg
     from .lesson import demos
     args = ["--resume"] if resume else ([topic] if topic else [])
-    if topic and topic not in demos():
+    book = find_book(topic) if topic and not resume and topic not in demos() else None
+    if book:                                        # "teach me the compiler notebook" → HIS file, not the topic (D53)
+        args = [book]
+    if topic and topic not in demos() and not book:
         from .. import router
         if not any(s["key"] for s in router.status()):
             if "compil" in topic.lower():
@@ -662,6 +665,8 @@ def _launch(topic: str | None, resume: bool, mode: str | None) -> str:
             else:
                 return "Right now I can only teach my compilers lesson. Say: teach me compilers."
     _spawn(args)
+    if book:
+        return f"Opening the whiteboard with {Path(book).stem[:40]}. First, a couple of quick questions."
     return "Opening the whiteboard. Give me a few seconds." if not resume else "Opening your lesson where we stopped."
 
 
