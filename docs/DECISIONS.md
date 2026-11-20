@@ -1342,3 +1342,23 @@ wherever it wants." Research and plan: `docs/research/tutor_agent.md` (15 source
 **Not yet:** heard on his real voice; a mastery-gated re-teach (a concept still wrong after its steps comes back
 later in the session); notes export ("save my notes"); Smart Turn tuned for the tutor; confirm-when-unsure hearing.
 **Tests:** `tutor_coach_eval` (22, new), `tutor_teacher_eval` 112, `tutor_eval` 27, `tutor_launch_eval` 63.
+
+## D54: Fair grading of spoken answers — local first, a free-LLM second opinion on doubt (2026-11-20)
+A right spoken answer, paraphrased or mis-heard by speech-to-text ("the FA" for DFA, "see oh two" for CO2), was marked
+"not quite" by the local grader — the most frustrating tutor mistake. Research + measurements:
+`docs/research/tutor_grading.md` (13 approaches; 72 labelled spoken answers in `tests/fixtures/tutor_grade_cases.json`).
+1. **Local verdict first** (`grade.grade`, unchanged): correct / idk / predict / an MCQ option he picked / < 3 words /
+   no expectations are final and never leave the Mac.
+2. **Second opinion only on doubt** (FrugalGPT-style cascade): local wrong/partial on ≥ 3 words → one strict-JSON
+   call (`planner._call`, route `tutor_answer`, reasoning low, temperature 0; schema verdict + missing expectation
+   numbers + reason), told the text is speech recognition output and to be fair, not lenient.
+3. **Never blocks**: daemon thread + future, hard 2 s deadline (`grade.LLM_TIMEOUT_S`); down / slow / malformed →
+   the local verdict. `STITI_TUTOR_LLM_GRADE=off` switches it off.
+4. **Wired** into the player's checks and doubt checks (only with a real cloud `Planner`) and the coach's probes.
+   New result keys: `source`, `local_verdict`, `missing_text` (for a targeted hint), `llm_ms`, `reason`.
+5. Local fix on the way: "the one that builds the tree" no longer picks MCQ option one.
+**Result** (72 labelled spoken answers, real free models): accuracy 73.6 % → **93.5 %** (mean of 3 runs: 94.4 /
+91.7 / 94.4); right answers marked not-right 12 → 1–2; the LLM is asked on 32/72 answers, median 300–400 ms, p90
+≈ 700 ms, 0 timeouts when spaced like a lesson (burst: some hit the 2 s cap and kept the local verdict).
+**Not yet:** local false "correct" on topic-similar wrong answers (never reaches the LLM); targeted hints from
+`missing_text`; real-voice transcripts. **Tests:** `tutor_grade_eval` (new, offline).
