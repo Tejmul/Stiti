@@ -406,6 +406,51 @@ class Board:
         self.log.extend(acts)
         return acts
 
+    def source_card(self, c: dict, region: str = "side") -> list[dict]:
+        """Feature 2: where the answer comes from — a lavender card with 'P. 42 · UNIT 2' and the verified quote, on
+        the doubt board while she answers (region "side") and in the page's doubts strip afterwards ("doubts"). A
+        click on it opens the whole passage (the "source" action carries it; the boards keep it by element id).
+        c = a verified quote from tutor/cite.py: {quote, page, unit, passage, q_start, q_end}."""
+        strip = region == "doubts"
+        keep = self.frame
+        if strip:
+            self.frame = (self.col, 0)
+        w = 330 if strip else REGIONS["side"][2]
+        fs, lfs, pad = (15, 12, 14) if strip else (17, 13, 18)
+        per_line = max(16, int((w - pad * 2 - 8) / (fs * CH)))
+        lines = textwrap.wrap(f"“{c['quote']}”", per_line) or [""]
+        cap = 2 if strip else 5
+        if len(lines) > cap:
+            lines = lines[:cap]
+            lines[-1] = lines[-1][:max(1, per_line - 1)].rstrip(" ,.;:”") + "…”"
+        qtxt = "\n".join(lines)
+        ref = f"p. {c['page']}" + (f" · {c['unit']}" if c.get("unit") else "")
+        lab = ref.upper() if len(ref) <= per_line + 6 else ref[:per_line + 5].upper() + "…"
+        qh = len(lines) * fs * 1.25
+        h = pad + lfs * 1.3 + 8 + qh + pad
+        x, y, reg = self._place(w, h, None, None, region)
+        iid = self._new_id(None, "src")
+        gid = iid + ".g"
+        kids = [iid + ".bar", iid + ".lab", iid + ".q"]
+        self._register(iid, "source", x, y, w, h, reg, label=f"{ref}: {c['quote'][:60]}", children=kids)
+        self.frame = keep
+        els = [
+            _base(type="rectangle", id=iid, x=x, y=y, width=w, height=h, backgroundColor="#f3f1ff",
+                  strokeColor="#c9c3f2", strokeWidth=1, roughness=0, roundness={"type": 3}, groupIds=[gid]),
+            _base(type="line", id=kids[0], x=x + 1, y=y + 12, points=[[0, 0], [0, h - 24]], strokeColor=INDIGO,
+                  strokeWidth=4, roughness=0, groupIds=[gid]),
+            _base(type="text", id=kids[1], x=x + pad, y=y + pad, text=lab, fontSize=lfs, fontFamily=LABEL_FONT,
+                  strokeColor=INDIGO, groupIds=[gid]),
+            _base(type="text", id=kids[2], x=x + pad, y=y + pad + lfs * 1.3 + 8, text=qtxt, fontSize=fs,
+                  fontFamily=LABEL_FONT, strokeColor="#1d1b33", groupIds=[gid]),
+        ]
+        acts = [{"do": "add", "anim": "fade", "els": els},
+                {"do": "source", "id": iid, "ids": [iid, *kids], "page": str(c["page"]), "unit": c.get("unit") or "",
+                 "quote": c["quote"], "passage": c.get("passage") or c["quote"],
+                 "q_start": int(c.get("q_start") or 0), "q_end": int(c.get("q_end") or 0)}]
+        self.log.extend(acts)
+        return acts
+
     def summary(self) -> str:
         """'id | type | text' lines — what the LLM gets instead of a screenshot (ChalkTalk)."""
         out = []
