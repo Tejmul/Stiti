@@ -24,8 +24,8 @@ from pathlib import Path
 
 CHUNK_MIN, CHUNK_MAX = 400, 800        # chars, sentence-aligned, never across a page (one page label per chunk)
 EMBED_BATCH = 16
-# Calibrated on EmbeddingGemma-300M (q4) with a fake textbook + off-topic questions (tests/cite_eval.py): on-topic
-# doubts score ≥ ~0.55 cosine on their passage, off-topic ones ≤ ~0.42. A keyword hit lowers the bar a little.
+# Calibrated on EmbeddingGemma-300M (q4) with a test textbook (D56, tests/cite_eval.py): on-topic doubts reach cosine
+# 0.39–0.75 on their passage (the low ones hold all the question's words), off-topic ones ≤ 0.43 with ≤ 1/3 of them.
 GATE_COS = 0.50                        # covered when a passage's cosine is at least this …
 GATE_COS_KW = 0.33                     # … or at least this AND it holds most of the question's words:
 GATE_COVER = 0.6                       #     share of the question's stemmed words found in the passage
