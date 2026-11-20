@@ -123,6 +123,8 @@ extraction, reflections) and anything that needs Tejmul's real voice (Hinglish S
 ✅ 2026-11-20 (D51–D53): English only · whole-sentence listening + cloud ear in lessons + steer · the coach (goal → probes →
 mastery → exam triage → ≤ 2 sentences then his turn → notes pages → doubts with stuck_at + check). Next: re-teach a
 concept still wrong, notes export, real-voice test.
+✅ 2026-11-20 (D56): background jobs + live progress — Postgres queue (SKIP LOCKED, park on 429, resume after a
+restart) → NOTIFY → `/api/events`; "Prepare" a file on the Lessons page builds its concept map ahead of the lesson.
 LLM lesson planner written (strict JSON) but unverified until a key exists. Next: FSRS review sessions, offline
 Excalidraw bundle, word-timed TTS, real-voice test on the big monitor.
 
