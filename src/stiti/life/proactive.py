@@ -8,6 +8,8 @@ Candidates (checked every minute):
   evening_wrap  — once, ~9 PM, if he's at the Mac
   followup      — "interview kal hai" → next day "How did the interview go?" (intents kind='checkin')
   habit         — habit with a cue time
+  noticed       — "there's a mail from X about Y on <date>. Is that important?" (D49, life/important.py): once per
+                  thing, at most two a day, never in a call; no coin-flip, but quiet hours and the budget apply
 Gate (report §Nudges): daily budget, quiet hours 23:00–08:00, never mid-conversation, and a
 Beta-Bernoulli bandit per kind (Thompson sampling) learned from accept / dismiss / ignore.
 "don't remind me about breaks" → that kind is disabled for good. User-set alarms bypass all of this.
@@ -25,7 +27,7 @@ from ..config import CFG
 from ..db import one, q
 
 QUIET = (23, 8)
-KINDS = ["meeting_soon", "deadline", "break", "evening_wrap", "followup", "habit"]
+KINDS = ["meeting_soon", "deadline", "break", "evening_wrap", "followup", "habit", "noticed"]
 DISMISS_RX = re.compile(r"^\s*(not now|baad mein|later|stop|no|nahi|mat|chup|leave it|chhodo|skip)\b", re.I)
 DISABLE_RX = re.compile(r"\b(don'?t|do not|stop|mat|band karo)\b.*\b(remind|nudge|bolo|batana|yaad)\w*\b.*"
                         r"\b(break|meeting|deadline|wrap|follow|habit)", re.I)
@@ -255,6 +257,13 @@ def candidates(p: Presence, now: datetime | None = None) -> list[tuple[str, str,
                 key = f"habit:{h['id']}:{now:%Y%m%d}"
                 if key not in sent:
                     out.append(("habit", f"Time for {h['name']}.", {"key": key}))
+    # a dated thing she noticed in mail / a document / his own words and hasn't asked about yet (D49)
+    try:
+        from . import important
+        if (c := important.candidate(p.present, now)) is not None and c[1]["key"] not in sent:
+            out.append(("noticed", c[0], c[1]))
+    except Exception as e:
+        print(f"[important] {type(e).__name__}: {e}"[:160], flush=True)
     return out
 
 
@@ -278,13 +287,16 @@ def tick(p: Presence, deliver, busy: bool = False, now: datetime | None = None) 
             continue
         if urgent and _arm(kind)["disabled"]:      # facts (meeting soon, deadline): no coin-flip, only his "stop"
             continue
-        if not urgent and not want(kind):
-            continue
+        if not urgent and kind != "noticed" and not want(kind):
+            continue                               # (a noticed thing is asked once anyway: no coin-flip either)
         channel = deliver(text, kind, p.present)
         if channel:
             nid = record(kind, payload)
             q("UPDATE nudges SET channel=%s WHERE id=%s", (channel, nid))
             sent.append((nid, kind, text))
+            if kind == "noticed":
+                from . import important
+                important.mark_asked(payload["noticed_id"], now, channel)   # asked once — then it waits in the list
             if not urgent:
                 break               # at most one non-urgent nudge per pass
     return sent

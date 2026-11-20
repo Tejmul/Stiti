@@ -258,6 +258,8 @@ class StitiApp(rumps.App):
                     if time.time() - last_wx >= 30 * 60 and 5 <= datetime.now(CFG.tz).hour < 23:
                         last_wx = time.time()
                         weather.refresh_async()       # the morning brief reads this cache, never the network
+                    from .life import important
+                    important.background_scan()       # D49: unread mail → the noticed list (off-thread, read-only)
                     pres = tracker.sample()
                     present = bool(getattr(pres, "present", True))
                     busy = self.loop is not None and (self.loop.awake or (self.loop.duplex and self.loop.duplex.playing))

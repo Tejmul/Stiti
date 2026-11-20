@@ -38,6 +38,12 @@ def _awaiting_label() -> bool:
     return alarms.awaiting_label()
 
 
+def _important_hint(text: str) -> bool:
+    """Pure read: would life/important.py take this turn? (D49)"""
+    from .life import important
+    return important.hint(text)
+
+
 def _tutor_request(text: str):
     from .tutor import voice_request
     return voice_request(text)
@@ -398,6 +404,8 @@ class Engine:
             return "action"                         # weather fast path / "my city is …" (D39)
         if _nag_ack_pending(t):
             return "action"                         # "ok" right after a reminder stops its repeats (D39)
+        if _important_hint(t):
+            return "action"                         # a dated thing to ask about / his answer to her question (D49)
         checks = (HOLD_RX.match(t), strategy.is_crisis(t), learning.UNDO_RX.match(t), learning.SHORTER_RX.search(t),
                   strategy.CONFUSION_RX.search(t), NOTHING_RX.match(t), is_stop(t), bye.is_bye(t),
                   proactive.DISABLE_RX.search(t), self.INTRO_OFF_RX.search(t), self.INTRO_ON_RX.search(t),
@@ -590,7 +598,13 @@ class Engine:
 
         strat = pick(domain)
         from . import farewell as bye
-        from .life import alarms
+        from .life import alarms, important
+        imp_turn = False                        # this turn was about a noticed thing (D49)
+        # his VOICE says he's upset → not the moment for a calendar question (the text label alone calls any
+        # sentence with "exams" in it stressed; upset WORDS are checked in important.from_turn)
+        calm = not (emo.voice_label in ("angry", "stressed", "sad", "tired") and emo.voice_conf >= 0.5)
+        imp_free = not (crisis or self._spec or in_ask or self.onboarding is not None or self.chunker is not None
+                        or self.woop is not None or self.pending is not None)
         if crisis:
             reply = strategy.crisis_reply(strat.lang)
             self.crisis_at = time.time()
@@ -603,6 +617,13 @@ class Engine:
             reply = vocab.confirm(taught)
         elif self.clarify is not None:
             reply, self.clarify = self.clarify.answer(text), None
+        elif imp_free and (imp := important.answer(text, now=now)) is not None:
+            # D49: his answer to "is that important?" / "when do you want to start?", or "what did you notice?"
+            reply, imp_turn, flow_turn = imp.text, True, True
+            strat = strategy.make("DO", strat.lang)
+            if imp.chunk:                       # "yes, plan it now" → the step-by-step chunker takes over
+                self.chunker = chunker.Chunker(imp.chunk)
+                reply = self.chunker.start()
         elif undo:
             note = learning.undo_last(self.last_action)
             self.clarify = learning.Clarify(self.last_user_text or "", note)
@@ -636,6 +657,12 @@ class Engine:
         elif _awaiting_label() and len(text.split()) <= 12 and not bye.is_bye(text):
             from .life import alarms           # she just asked "What's it for?" about a reminder
             reply = alarms.set_label(text)
+        elif imp_free and not taught and domain != "control" and _tutor_request(text) is None \
+                and (noticed := important.from_turn(text, now=now, privacy=privacy, calm=calm)) is not None:
+            # D49: "my exams start from the 9th" → read it back + ONE question; "…give me a reminder on the 1st" →
+            # booked and read back. Nothing is written before his yes (or his own instruction).
+            reply, imp_turn, flow_turn = (upd.ack + " " if upd.saved else "") + noticed, True, True
+            strat = strategy.make("DO", strat.lang)
         elif upd.saved and len(text.split()) <= 45 and self.onboarding is None and self.chunker is None \
                 and self.woop is None and self.pending is None:   # his life update was written: say so (no LLM)
             reply = upd.ack
@@ -979,6 +1006,11 @@ class Engine:
             print(f"[cards] {e}")
             self.last_card = None
         self.last_user_ep, self.last_reply_ep, self.last_mood = user_ep, reply_ep, emo.label
+        if not imp_turn and not self._spec:
+            try:
+                important.settle(now)           # he moved on: a bare "yes" later must not book the thing she asked about
+            except Exception as e:
+                print(f"[important] {type(e).__name__}: {e}")
         if upd.needs_llm and privacy < 2 and not (route == "fast_path" and domain in ("todo", "time", "control")):
             lifeupdate.after_reply(user_ep, privacy)    # an update the patterns couldn't parse: the extractor reads
                                                         # this one turn in the background (never on the hot path)

@@ -193,6 +193,23 @@ def create(text: str, ref: datetime | None = None) -> str | None:
     return f"Got it — reminder {slot}: {second_person(label)}. (#{row['id']})"
 
 
+def create_at(when: datetime, label: str, *, important: bool = False, heard: str | None = None) -> int | None:
+    """A reminder at a moment the brain already worked out (D49: "a week before your exams"). Same row, same Apple
+    Reminders mirror and same nagging as one he set by voice. The caller checks that `when` is still ahead. Returns the intent id."""
+    payload = {"say": label, "kind": "reminder", "label": label, "snoozes": 0, "heard": (heard or "")[:120],
+               "important": important, "by": "noticed"}
+    row = one("""INSERT INTO intents(kind, fire_at, payload, user_set) VALUES ('reminder',%s,%s,true) RETURNING id""",
+              (when, json.dumps(payload)))
+    cards.note("set", "intent", row["id"])
+    if os.getenv("STITI_EVENTKIT", "on") != "off":
+        try:
+            from ..connectors import eventkit
+            eventkit.mirror_intent_async(row["id"])
+        except Exception:
+            pass
+    return row["id"]
+
+
 # ---------------------------------------------------------------- right after setting one
 NO_LABEL_SAY = "You asked me to remind you now."
 _last = {"id": None, "t": 0.0, "await_label": False}     # the reminder he just set (this process)
