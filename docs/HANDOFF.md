@@ -145,6 +145,10 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - Endpoints: `/` `/chat` `/memory` (Next export in `frontend/out`; 503 "not built" if missing), `/ws`, `GET /api/state`,
   `POST /api/todo/{id}/done`, `GET /api/link` (same-origin key), `GET /api/mind` (`web/mind.py`), `POST /api/fact`,
   `POST /api/fact/{id}/forget` (writes need same Origin; USER.md synced first, re-rendered after), `/icons/<n>.png`.
+- **Background jobs (D56, `src/stiti/jobs.py`):** `stiti_job` table, worker thread in the app (SKIP LOCKED claims,
+  heartbeat, park on free-tier limits, requeue + resume on start). `POST /api/lessons/prepare` (concept map of a
+  listed file, `tutor/prepare.py`), `GET /api/jobs`, `POST /api/jobs/{id}/retry|cancel`, `GET /api/events` (SSE fed by
+  `NOTIFY stiti_jobs`). New long tasks = `@jobs.handler("kind")` + add the module to `jobs._HANDLER_MODULES`.
 - Chat replies carry `used` = `Engine.last_used` (memory COUNT + facts/doc sections/lessons handed to the LLM) → receipts.
 - **Privacy (D24): no conversation text is ever sent to a page** (no history on open, no conversations API). Public
   site: `STITI_PUBLIC=1 pnpm build` (landing only; chat/memory code aliased out).
@@ -174,6 +178,9 @@ then say "check my mail for anything important". Try on the mic: "my exams start
 ` (downloads MASSIVE / CLINC150 / PRESTO into `~/.stiti/data/`: ≈ 70 MB transferred, 27 MB
 kept, ≈ 2 min download + ≈ 40 s embedding), then restart Stiti. Until then the router is exactly the old one. Read
 `~/.stiti/EXAMPLES.md` (written on the first chat turn) and change any reply that doesn't sound like her.
+17. After merging D56: apply `db/migrations/012_jobs.sql` to `stiti` + `stiti_test`, rebuild the frontend, restart
+Stiti (until then the worker logs "[jobs] off" and Prepare can't queue). Try Prepare on a big file, quit Stiti mid-way,
+start it again: the job should resume from the units it already read.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-12/14 — mic, whiteboard asks, Jarvis gaps (D36–D40, PRs: one per branch, stacked):** mic follows macOS

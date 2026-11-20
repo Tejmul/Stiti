@@ -187,6 +187,19 @@ def _cache_path(source: str) -> Path:
     return CFG.home / "tutor" / "concepts" / f"{key_for(source)}.json"
 
 
+def map_cache_path(source: str, *, book_path: str | None = None, unit: str | None = None) -> Path:
+    """Where concept_map caches this file's (or topic's) map. The key includes the file's mtime + size, so an edited
+    syllabus gets a fresh map, not last week's cache. Shared with tutor/prepare.py (D56), which builds it ahead."""
+    stamp = ""
+    if book_path:
+        try:                                       # he edits his syllabus → a fresh map, not last week's cache
+            st = Path(book_path).expanduser().stat()
+            stamp = f"@{int(st.st_mtime)}:{st.st_size}"
+        except OSError:
+            pass
+    return _cache_path(source + (f"#{unit}" if unit else "") + stamp)
+
+
 def _concept(raw: dict, cid: str, unit: str, unit_idx: int, general: bool) -> Concept:
     try:
         w = min(3, max(1, int(raw.get("weight") or 2)))
@@ -244,14 +257,7 @@ def concept_map(source: str, *, book_path: str | None = None, unit: str | None =
     general knowledge fills them in (Concept.general)."""
     from . import planner as P
     call = call or P._call
-    stamp = ""
-    if book_path:
-        try:                                       # he edits his syllabus → a fresh map, not last week's cache
-            st = Path(book_path).expanduser().stat()
-            stamp = f"@{int(st.st_mtime)}:{st.st_size}"
-        except OSError:
-            pass
-    cache = _cache_path(source + (f"#{unit}" if unit else "") + stamp)
+    cache = map_cache_path(source, book_path=book_path, unit=unit)
     try:
         return [Concept(**c) for c in json.loads(cache.read_text())]
     except Exception:

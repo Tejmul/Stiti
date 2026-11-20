@@ -24,6 +24,7 @@ from ..config import CFG, REPO
 OUT = REPO / "frontend" / "out"          # Next.js static export (`cd frontend && pnpm build`)
 ICONS = REPO / "public" / "actions"
 PORT = int(os.getenv("STITI_WEB_PORT", "7317"))
+EVENTS_MAX_S = 600       # one /api/events stream's life; EventSource reconnects by itself
 
 
 def web_token() -> str:
@@ -77,7 +78,7 @@ class ChatSession:
 
 def app():
     from starlette.applications import Starlette
-    from starlette.responses import FileResponse, JSONResponse, PlainTextResponse
+    from starlette.responses import FileResponse, JSONResponse, PlainTextResponse, StreamingResponse
     from starlette.routing import Mount, Route, WebSocketRoute
     from starlette.staticfiles import StaticFiles
     from starlette.websockets import WebSocketDisconnect
@@ -206,6 +207,69 @@ def app():
             out["error"] = out["message"]                # the page's api() helper shows `error`
         return JSONResponse(out, status_code=code)
 
+    async def lesson_prepare(req):
+        if not guard(req, write=True):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import lessons
+        try:
+            body = await req.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return JSONResponse({"ok": False, "message": "Bad request.", "error": "Bad request."}, 400)
+        out = await asyncio.to_thread(lessons.prepare, body)
+        code = out.pop("status", 200)
+        if code != 200:
+            out["error"] = out["message"]
+        return JSONResponse(out, status_code=code)
+
+    # ---- background jobs (D56): list / retry / cancel, and live progress as server-sent events
+    async def jobs_api(req):
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from .. import jobs
+        return JSONResponse({"jobs": await asyncio.to_thread(jobs.recent),
+                             "now": datetime.now().astimezone().isoformat()}, headers=nostore)
+
+    def job_action(name):
+        async def h(req):
+            if not guard(req, write=True):
+                return JSONResponse({"error": "not allowed"}, 403)
+            from .. import jobs
+            try:
+                row = await asyncio.to_thread(getattr(jobs, name), int(req.path_params["id"]))
+            except jobs.NotPossible as e:
+                return JSONResponse({"ok": False, "error": str(e)}, 409)
+            return JSONResponse({"ok": True, "job": jobs.public(row)})
+        return h
+
+    async def events(req):
+        """Server-sent events: `snapshot` (recent jobs) once, then one `job` event per change (Postgres NOTIFY).
+        EventSource can't send headers, so the token comes as ?t= (same check as every API route). The stream ends
+        after 10 minutes and the browser reconnects by itself (a fresh snapshot, nothing missed)."""
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from .. import jobs
+        loop = asyncio.get_running_loop()
+        qu = jobs.HUB.subscribe(loop)
+
+        async def stream():
+            try:
+                yield "retry: 3000\n\n"
+                snap = await asyncio.to_thread(jobs.recent)
+                yield f"event: snapshot\ndata: {json.dumps({'jobs': snap})}\n\n"
+                end = loop.time() + EVENTS_MAX_S
+                while loop.time() < end:
+                    try:
+                        payload = await asyncio.wait_for(qu.get(), 15)
+                    except asyncio.TimeoutError:
+                        yield ": ping\n\n"                   # keeps the connection open through idle minutes
+                        continue
+                    yield f"event: job\ndata: {payload}\n\n"
+            finally:
+                jobs.HUB.unsubscribe(qu)
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={**nostore, "X-Accel-Buffering": "no"})
+
     async def ws_chat(ws):
         if not (host_ok(ws.headers) and ws.headers.get("origin") in origins
                 and secrets.compare_digest(ws.query_params.get("t", ""), token)):
@@ -249,6 +313,10 @@ def app():
         Route("/api/fact/{id:int}/forget", fact_forget, methods=["POST"]),
         Route("/lessons", page("lessons.html")), Route("/api/lessons", lessons_api),
         Route("/api/lessons/notes", lesson_note), Route("/api/lessons/start", lesson_start, methods=["POST"]),
+        Route("/api/lessons/prepare", lesson_prepare, methods=["POST"]),
+        Route("/api/jobs", jobs_api), Route("/api/events", events),
+        Route("/api/jobs/{id:int}/retry", job_action("retry"), methods=["POST"]),
+        Route("/api/jobs/{id:int}/cancel", job_action("cancel"), methods=["POST"]),
         Route("/icons/{n}.png", icon), Route("/api/state", state),
         Route("/api/todo/{id:int}/done", todo_done, methods=["POST"]),
         WebSocketRoute("/ws", ws_chat),
@@ -270,7 +338,7 @@ def serve_in_thread() -> threading.Thread | None:
         if s.connect_ex(("127.0.0.1", PORT)) == 0:
             return None
     server = uvicorn.Server(uvicorn.Config(app(), host="127.0.0.1", port=PORT, log_level="warning",
-                                           ws_max_size=1 << 20))
+                                           ws_max_size=1 << 20, timeout_graceful_shutdown=3))
     th = threading.Thread(target=server.run, name="stiti-web", daemon=True)
     th.start()
     return th
@@ -288,4 +356,10 @@ def run(open_browser: bool = True) -> None:
     print(f"\n✨  Stiti is at {url}\n    (bookmark http://127.0.0.1:{PORT}/chat after the first visit)\n")
     if open_browser:
         threading.Timer(1.0, lambda: webbrowser.open(url)).start()
-    uvicorn.run(app(), host="127.0.0.1", port=PORT, log_level="warning", ws_max_size=1 << 20)
+    from .. import jobs
+    jobs.start_worker()                                  # "Prepare" on the Lessons page works here too (D56)
+    try:
+        uvicorn.run(app(), host="127.0.0.1", port=PORT, log_level="warning", ws_max_size=1 << 20,
+                    timeout_graceful_shutdown=3)        # an open live-progress stream never holds up Ctrl-C
+    finally:
+        jobs.stop_worker()

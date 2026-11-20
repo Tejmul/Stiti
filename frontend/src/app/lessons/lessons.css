@@ -91,6 +91,24 @@
 .pg-lessons .file__tick .ico { width: 14px; height: 14px; }
 .pg-lessons .file.is-on .file__tick { background: var(--ink); border-color: var(--ink); color: #fff; }
 .pg-lessons .files__none { margin: 12px; color: var(--ink-2); font-size: 14.5px; }
+.pg-lessons .hint b { color: var(--ink-2); font-weight: 600; }
+
+/* a file row = the pick (radio label) · Prepare / its job state / Ready · the tick (a second label for the radio) */
+.pg-lessons .file { cursor: default; }
+.pg-lessons .file__pick { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; align-self: stretch; cursor: pointer; }
+.pg-lessons .file__tick { cursor: pointer; }
+.pg-lessons .prep { flex: none; display: inline-flex; align-items: center; gap: 5px; height: 30px; padding: 0 12px; border-radius: 999px;
+  font: 500 10px var(--mono); letter-spacing: .08em; text-transform: uppercase; white-space: nowrap; }
+.pg-lessons .prep .ico { width: 13px; height: 13px; }
+.pg-lessons .prep--b { border: 1px solid var(--line-2); background: rgba(255, 255, 255, .7); color: var(--ink-2);
+  transition: color .25s var(--out), border-color .25s var(--out), background .25s var(--out); }
+.pg-lessons .prep--b:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); background: #fff; }
+.pg-lessons .prep--b:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(70, 86, 214, .35); }
+.pg-lessons .prep--b:disabled { opacity: .5; cursor: default; }
+.pg-lessons .prep--ok { color: var(--blue); padding: 0 6px; }
+.pg-lessons .prep--run { color: var(--ink); background: rgba(127, 178, 240, .2); }
+.pg-lessons .msg.is-ok { color: var(--ink-2); }
+.pg-lessons .msg.is-ok .ico { color: var(--ok); }
 
 /* topic + focus fields */
 .pg-lessons .field { position: relative; display: grid; gap: 8px; }
@@ -205,6 +223,45 @@
 .pg-lessons .prog__foot { display: flex; align-items: center; justify-content: space-between; gap: 6px 16px; flex-wrap: wrap; margin-top: 10px; }
 .pg-lessons .prog__meta { font: 400 10.5px/1.5 var(--mono); letter-spacing: .04em; color: var(--ink-3); }
 
+/* ------------------------------------------------------------------ background jobs (live; nothing moves) */
+.pg-lessons .jobs__head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.pg-lessons .live { display: inline-flex; align-items: center; gap: 7px; font: 400 10.5px var(--mono); letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink-3); }
+.pg-lessons .live i { width: 7px; height: 7px; border-radius: 50%; background: rgba(38, 43, 87, .2); }
+.pg-lessons .live.is-on { color: var(--ink-2); }
+.pg-lessons .live.is-on i { background: var(--ok); }
+.pg-lessons .job { padding: 14px 0; }
+.pg-lessons .job__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pg-lessons .job__ico { width: 18px; height: 18px; flex: none; color: var(--ink-2); }
+.pg-lessons .job.is-done .job__ico { color: var(--ok); }
+.pg-lessons .job.is-failed .job__ico { color: var(--warn); }
+.pg-lessons .job.is-parked .job__ico, .pg-lessons .job.is-running .job__ico { color: var(--blue); }
+.pg-lessons .job__main { flex: 1; min-width: 0; display: grid; }
+.pg-lessons .job__name { font-size: 15.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pg-lessons .job__kind { font: 400 10.5px/1.6 var(--mono); letter-spacing: .04em; color: var(--ink-3); }
+.pg-lessons .job__st { flex: none; display: inline-grid; place-items: center; height: 24px; padding: 0 10px; border-radius: 999px;
+  font: 500 10px var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2);
+  background: rgba(38, 43, 87, .05); border: 1px solid var(--line); }
+.pg-lessons .job.is-running .job__st { color: var(--blue); background: rgba(70, 86, 214, .07); border-color: rgba(70, 86, 214, .22); }
+.pg-lessons .job.is-parked .job__st, .pg-lessons .job.is-retrying .job__st { color: var(--ink); background: rgba(127, 178, 240, .2);
+  border-color: rgba(70, 86, 214, .18); }
+.pg-lessons .job.is-failed .job__st { color: var(--warn); background: rgba(180, 83, 31, .06); border-color: rgba(180, 83, 31, .25); }
+.pg-lessons .job.is-done .job__st { color: var(--ok); background: rgba(47, 138, 91, .07); border-color: rgba(47, 138, 91, .22); }
+.pg-lessons .job__step { margin: 8px 0 0 28px; font-size: 14px; line-height: 1.45; color: var(--ink-2); overflow-wrap: anywhere; }
+.pg-lessons .job.is-failed .job__step { color: var(--warn); }
+.pg-lessons .job__bar { height: 6px; margin: 10px 0 0 28px; }
+.pg-lessons .job__foot { display: flex; align-items: center; justify-content: space-between; gap: 6px 12px; flex-wrap: wrap; margin: 8px 0 0 28px; }
+.pg-lessons .job__foot:has(.job__meta:empty):not(:has(button)) { display: none; }
+.pg-lessons .job__meta { font: 400 10.5px/1.6 var(--mono); letter-spacing: .04em; color: var(--ink-3); }
+.pg-lessons .job__acts { display: inline-flex; gap: 4px; }
+.pg-lessons .job__b { height: 32px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line-2); background: #fff;
+  font-size: 13.5px; font-weight: 500; color: var(--ink); transition: color .25s var(--out), border-color .25s var(--out); }
+.pg-lessons .job__b:hover:not(:disabled) { color: var(--navy-2); border-color: var(--ink-3); }
+.pg-lessons .job__b--quiet { background: transparent; border-color: transparent; color: var(--ink-2); }
+.pg-lessons .job__b--quiet:hover:not(:disabled) { border-color: var(--line-2); color: var(--ink); }
+.pg-lessons .job__b:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(70, 86, 214, .35); }
+.pg-lessons .job__b:disabled { opacity: .5; cursor: default; }
+
 /* ------------------------------------------------------------------ notes list */
 .pg-lessons .list li { border-bottom: 1px solid var(--line); }
 .pg-lessons .list li:last-child { border-bottom: 0; }
@@ -314,6 +371,9 @@
   .pg-lessons .side { gap: 36px; }
   .pg-lessons .problem { flex-direction: column; gap: 12px; padding: 22px; }
   .pg-lessons .link-arrow { min-height: 44px; }
+  .pg-lessons .prep--b { height: 36px; }
+  .pg-lessons .job__b { height: 40px; }
+  .pg-lessons .job__step, .pg-lessons .job__bar, .pg-lessons .job__foot { margin-left: 0; }
   .note__head { padding: 20px 18px 14px; }
   .note__body { padding: 4px 18px 28px; }
   .note__foot { padding: 12px 18px 16px; }

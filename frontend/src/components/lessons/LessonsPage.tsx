@@ -2,11 +2,13 @@
 // Lessons: start a whiteboard lesson from his own files or any topic (no terminal), see what he knows per file, and
 // read the notes each lesson saved. Reads /api/lessons; starts via POST /api/lessons/start. Same token model as the
 // other app pages. Still page: no entrance motion; hovers are a subtle navy shift + arrow nudge.
+// Background jobs (D56): "Prepare" on a file queues its concept map; the Jobs panel follows it live (/api/events).
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import AppNav from "@/components/app/AppNav";
-import type { LessonNote, LessonProgress, Lessons } from "@/lib/stiti";
+import type { Job, LessonNote, LessonProgress, Lessons } from "@/lib/stiti";
 import { NotAllowed, api } from "@/lib/stiti";
+import Jobs, { useJobs } from "./Jobs";
 import NoteView from "./NoteView";
 import Progress from "./Progress";
 import StartCard, { type Pick } from "./StartCard";
@@ -26,6 +28,9 @@ export default function LessonsPage() {
   const [watch, setWatch] = useState(0);                 // > now: keep polling (a lesson was just started)
   const got = useRef(false);
   const kindSet = useRef(false);
+  const reload = useRef<() => void>(() => {});
+  // background jobs, live; a finished "Prepare" refreshes the files so that file shows Ready
+  const { jobs, connected, patch } = useJobs(useCallback((j: Job) => { if (j.kind === "concept_map") reload.current(); }, []));
 
   const load = useCallback((): Promise<void> => {
     const ctl = new AbortController();
@@ -47,6 +52,8 @@ export default function LessonsPage() {
       },
     ).finally(() => clearTimeout(timer));
   }, []);
+
+  useEffect(() => { reload.current = () => { void load(); }; }, [load]);
 
   const retry = () => { setStatus("loading"); setLag(false); void load(); };
 
@@ -116,8 +123,9 @@ export default function LessonsPage() {
         {data && status === "ready" && (
           <div className="lay">
             <StartCard files={data.files} active={data.active} boardUrl={data.board_url} pick={pick} setPick={setPick}
-              onStarted={started} />
+              onStarted={started} jobs={jobs} onJob={patch} />
             <div className="side">
+              <Jobs jobs={jobs} connected={connected} onChange={patch} />
               <Progress rows={data.progress} onContinue={continueFrom} />
               <Notes notes={data.notes} onOpen={setNote} />
             </div>

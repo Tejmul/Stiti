@@ -1386,3 +1386,35 @@ These local fixes run first; D54's free-LLM second opinion still judges what the
 72 labelled answers the local grader alone scores 51/72 (D54's local: 54/72): stricter on two-word expectations and
 question echoes, so more right paraphrases are 'partial' — which the second opinion re-judges — and fewer wrong ones
 are a false 'correct' (which never reaches it).
+## D56: Background jobs with live progress — Postgres queue + NOTIFY → server-sent events (2026-11-20)
+Teacher feature plan, Wave 1 #1. Research: `docs/research/teaching_apps.md` (REA of Turbo AI's per-upload progress
+rows + startup reconciler, NotebookLM's "generate later" when the quota is out, iTutor's job queue). Chosen: the
+smallest thing that fits free + local + 8 GB — **Postgres only**, no Redis, no new process.
+1. **One table** `stiti_job` (`db/migrations/012_jobs.sql`): kind, recipe JSON + `recipe_hash`, `source_hash`
+   (path + size + mtime), status queued|running|done|failed|parked|cancelled, step, percent, eta_s, error, attempts /
+   max_attempts, parks, not_before, claimed_by + heartbeat_at, `checkpoint` JSON, result. A partial unique index keeps
+   **one live job per recipe** → `jobs.enqueue()` is idempotent (a second "Prepare" click returns the same job).
+2. **Worker** (`src/stiti/jobs.py`): a thread in Stiti.app (and `stiti web`) claims with
+   `UPDATE … WHERE id = (SELECT … FOR UPDATE SKIP LOCKED LIMIT 1)` (many workers never take the same row), runs the
+   handler for that kind, heartbeats every 10 s. Handlers call `job.progress(step, %)` (ETA from the pace when not
+   given) and `job.save(...)` (checkpoint); a cancelled job raises `Cancelled` at its next report.
+3. **Free tier out → parked**, never failed: `router.NoProvider`, an HTTP 429 or `raise Park` → `not_before` = backoff
+   1, 2, 4… min (≤ 30), or later if every provider's `llm_usage.cooldown_until` ends later. Other errors retry with
+   backoff (30 s, 60 s…) up to 3 tries, then failed; `raise Fail(msg)` fails at once. Retry / Cancel from the page.
+4. **Restart-safe:** on start (and every 30 s) running rows whose worker died — heartbeat > 60 s old, or claimed by a
+   dead pid on this Mac — go back to the queue with step, % and checkpoint kept, so a job resumes from its last step.
+5. **Live page:** a trigger fires `NOTIFY stiti_jobs` with a small JSON summary on every visible change (not on a bare
+   heartbeat); one shared LISTEN connection per process (`jobs.HUB`) fans it out to `GET /api/events` (Starlette
+   `StreamingResponse`, text/event-stream: a `snapshot`, then `job` events, pings, 10-min life + browser reconnect).
+   Same Host + token guard as every API route (token as `?t=`, EventSource can't send headers). `/api/jobs` lists,
+   `POST /api/jobs/{id}/retry|cancel` (same-Origin writes).
+6. **First handler — Prepare a file** (`tutor/prepare.py`, kind `concept_map`): builds the coach's concept map in the
+   background so the lesson on that file starts at once. It wraps `coach.concept_map` with its own `call`: each unit's
+   answer is checkpointed (a restart or a 429 only re-asks the missing units), each finished unit moves the progress;
+   if any unit hit the free-tier limit the half-built map is deleted (the coach would cache filler) and the job parks.
+   A map older than its file is stale → Prepare rebuilds it. `POST /api/lessons/prepare` accepts only a listed file.
+7. **UI:** Lessons page — "Background jobs" panel (step, %, time left, "Will retry at HH:MM", Retry / Cancel, Live
+   indicator) and Prepare / Preparing n% / Ready on every file in the Start card. Private page only.
+**Not yet:** notes / recap / transcription handlers (Wave 2 uses the same queue); the voice path starting a lesson
+doesn't enqueue yet (it builds the map in-process as before).
+**Tests:** `jobs_eval` (84, new).

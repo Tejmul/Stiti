@@ -125,6 +125,8 @@ mastery → exam triage → ≤ 2 sentences then his turn → notes pages → do
 concept still wrong, notes export, real-voice test.
 ✅ 2026-11-20 (D54): fair grading of spoken answers — local grader first, free-LLM second opinion (2 s cap) on
 wrong/partial; accuracy 73.6 % → 93.5 %, right-marked-wrong 12 → 1–2 on 72 labelled spoken answers. Next: hints that target `missing_text`.
+✅ 2026-11-20 (D56): background jobs + live progress — Postgres queue (SKIP LOCKED, park on 429, resume after a
+restart) → NOTIFY → `/api/events`; "Prepare" a file on the Lessons page builds its concept map ahead of the lesson.
 LLM lesson planner written (strict JSON) but unverified until a key exists. Next: FSRS review sessions, offline
 Excalidraw bundle, word-timed TTS, real-voice test on the big monitor.
 
