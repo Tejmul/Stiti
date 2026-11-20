@@ -164,6 +164,12 @@ def voiced_ms(audio: np.ndarray) -> int:
 def build_prompt(lang: str = "en", prev: str = "", cloud: bool = False) -> str:
     """Glossary + the previous utterance + example blocks (ordered by the language prior)."""
     blocks = [WAKE_LINE] + ([HI_LINES, EN_LINES] if lang == "hinglish" else [EN_LINES, HI_LINES])
+    try:
+        from ..brain.lang import english_only
+        if english_only():                            # D51: Hinglish example lines made Whisper write his English
+            blocks = [WAKE_LINE, EN_LINES]            # as "Draw jaisi Nandini raha hai" (2026-11-20 lesson log)
+    except Exception:
+        pass
     parts = [glossary.prompt_text(cloud=cloud)] if os.getenv("STITI_STT_BIAS", "on") != "off" else []
     # the previous utterance goes BEFORE the examples: measured with a previous line in the other language
     # (he switches), at the end it cost 8.6 → 12.2% WER, before the examples 9.9% (same language: 8.5 vs 8.8%)
