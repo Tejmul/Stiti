@@ -112,6 +112,8 @@ for t, rest in (("Hey Stiti", ""), ("Stiti, what are my todos", "what are my tod
 
 print("the owner's own wake phrase lives in the local profile, not in the code")
 check("a personal phrase does not wake her by default", not wake.detect("Wake up sunshine")[0])
+check("phrases are written the way she's called", wake.spoken("hey stiti") == "Hey Stiti" and
+      wake.spoken("stiti uth jao") == "Stiti uth jao", wake.spoken("hey stiti"))
 print("  " + wake.add_phrase("Wake up sunshine"))
 check("… once added, it does", wake.detect("Wake up sunshine, what's next") == (True, "what's next"), str(wake.detect("Wake up sunshine, what's next")))
 check("… Whisper is primed with it", "Wake up sunshine." in stt.wake_line(), stt.wake_line())

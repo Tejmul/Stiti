@@ -85,7 +85,8 @@ def remove_phrase(phrase: str) -> str:
 
 def spoken(phrase: str) -> str:
     """'hey stiti' → 'Hey Stiti' (for prompts and hints)."""
-    return " ".join(w.capitalize() if w.startswith("stiti") else w for w in phrase.split()).capitalize()
+    s = " ".join(w.capitalize() if w.startswith("stiti") else w for w in phrase.split())
+    return s[:1].upper() + s[1:]
 
 
 def hint() -> str:
