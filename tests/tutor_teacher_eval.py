@@ -395,5 +395,79 @@ check("thresholds are named constants", all(hasattr(ears, n) for n in ("ECHO_WIN
                                                                        "MIN_BARGE_WORDS"))
       and all(hasattr(P, n) for n in ("FILLER_AFTER_S", "RESUME_GAP_S", "CHECKIN_MIN_GAP_S")))
 
+print("opening a lesson (D42): board first, plan while her voice loads; 'end' ends it")
+from stiti.tutor import audio as AU, commands as CM, server as SV      # noqa: E402
+
+order, t_open = [], time.time()
+real = dict(make=AU.make, lesson=tutor.make_lesson, start=SV.BoardServer.start, opened=SV.BoardServer.open_browser,
+            stop=SV.BoardServer.stop, run=P.Tutor.run, ans=tutor.answerer)
+
+
+def _mark(name, wait=0.0):
+    order.append((name, round(time.time() - t_open, 2)))
+    time.sleep(wait)
+
+
+class _Aud:
+    def close(self):
+        _mark("audio closed")
+
+
+def _slow_audio(mode, events, debug=False, scale=1.0):
+    _mark("audio loading", 0.5)
+    return _Aud()
+
+
+def _slow_plan(target, args, say=print):
+    _mark("planning", 0.5)
+    return LS.load(LS.demos()["compiler"]), None, 0
+
+
+got = {}
+AU.make, tutor.make_lesson = _slow_audio, _slow_plan
+SV.BoardServer.start = lambda self: (got.update(srv=self, waiting=self.on_connect()), _mark("board started"), self)[2]
+SV.BoardServer.open_browser = lambda self: _mark("browser opened")
+SV.BoardServer.stop = lambda self: None
+P.Tutor.run = lambda self: (got.update(connect=got["srv"].on_connect()), _mark("lesson running"),
+                            {"finished": True, "checks_right": 0, "checks_graded": 0, "questions": 0,
+                             "cards_saved": 0})[2]
+try:
+    t_open = time.time()
+    res = tutor._teach(["some topic", "--silent"])
+finally:
+    AU.make, tutor.make_lesson = real["make"], real["lesson"]
+    SV.BoardServer.start, SV.BoardServer.open_browser = real["start"], real["opened"]
+    SV.BoardServer.stop, P.Tutor.run = real["stop"], real["run"]
+names = [n for n, _ in order]
+at = dict(order)
+check("the board opens before her voice loads or the lesson is planned",
+      names.index("browser opened") < min(names.index("audio loading"), names.index("planning")), str(order))
+check("the board is on screen within 0.3 s", at["browser opened"] < 0.3, str(order))
+check("voice loading and planning run at the same time (not one after the other)",
+      at["lesson running"] < 0.9 + 15.5 and abs(at["audio loading"] - at["planning"]) < 0.3, str(order))
+check("while it loads the board says what's happening",
+      got.get("waiting") and got["waiting"][0]["type"] == "status" and "some topic" in got["waiting"][0]["caption"],
+      str(got.get("waiting")))
+check("once the lesson exists, a (re)loaded page gets the lesson board, not the waiting line",
+      got.get("connect") and got["connect"][0]["type"] == "reset", str(got))
+order.clear()
+tutor.make_lesson = lambda target, args, say=print: (_ for _ in ()).throw(SystemExit("No key."))
+AU.make = _slow_audio
+SV.BoardServer.start = lambda self: self
+SV.BoardServer.open_browser = lambda self: None
+SV.BoardServer.stop = lambda self: _mark("board stopped")
+try:
+    res2 = tutor._teach(["some topic", "--silent"])
+finally:
+    AU.make, tutor.make_lesson = real["make"], real["lesson"]
+    SV.BoardServer.start, SV.BoardServer.open_browser, SV.BoardServer.stop = real["start"], real["opened"], real["stop"]
+check("a lesson that can't be planned closes the voice and the board, no crash",
+      res2 == {"finished": False} and {"audio closed", "board stopped"} <= {n for n, _ in order}, f"{res2} {order}")
+for t in ("end", "End.", "end it", "finish", "end the lesson", "stop the class", "bas karo"):
+    check(f"{t!r} ends the lesson", CM.classify(t) == "end", CM.classify(t))
+for t, want in (("stop", "pause"), ("the end of the array", "question"), ("finish the loop first?", "question"),
+                ("end index is what", "question")):
+    check(f"{t!r} is not 'end'", CM.classify(t) == want, CM.classify(t))
+
 print(f"tutor teacher: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
