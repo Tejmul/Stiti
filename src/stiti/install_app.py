@@ -85,8 +85,19 @@ def migrate() -> str:
     if not APP.exists():
         remove_legacy_agents()
         return f"LaunchAgent: removed {len(old)} old login item(s); Stiti.app isn't installed (run `stiti install-app`)."
-    install(start_now=False)
+    remove_legacy_agents()
+    _load_agent()                                  # the app bundle itself is not touched (it may be running)
     return f"LaunchAgent: moved {len(old)} old login item(s) to {LABEL} (the running app was left alone)."
+
+
+def _load_agent() -> None:
+    AGENT.parent.mkdir(parents=True, exist_ok=True)
+    with open(AGENT, "wb") as f:
+        plistlib.dump({"Label": LABEL, "ProgramArguments": ["/usr/bin/open", "-a", str(APP)],
+                       "RunAtLoad": True, "ProcessType": "Interactive"}, f)
+    uid = os.getuid()
+    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
+    subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(AGENT)], capture_output=True)
 
 
 def install(start_now: bool = True) -> str:
@@ -111,14 +122,7 @@ def install(start_now: bool = True) -> str:
     exe.write_text(LAUNCHER.format(repo=REPO))
     exe.chmod(0o755)
     subprocess.run(["codesign", "--force", "--deep", "--sign", "-", str(APP)], check=True, capture_output=True)
-
-    AGENT.parent.mkdir(parents=True, exist_ok=True)
-    with open(AGENT, "wb") as f:
-        plistlib.dump({"Label": LABEL, "ProgramArguments": ["/usr/bin/open", "-a", str(APP)],
-                       "RunAtLoad": True, "ProcessType": "Interactive"}, f)
-    uid = os.getuid()
-    subprocess.run(["launchctl", "bootout", f"gui/{uid}/{LABEL}"], capture_output=True)
-    subprocess.run(["launchctl", "bootstrap", f"gui/{uid}", str(AGENT)], capture_output=True)
+    _load_agent()
     if start_now:
         subprocess.run(["open", "-a", str(APP)])
     return f"Installed {APP} (starts at login). Logs: {CFG.home / 'logs' / 'app.log'}"

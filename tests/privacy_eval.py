@@ -260,7 +260,8 @@ with open(ia.AGENTS_DIR / "org.example.older.plist", "wb") as f:
 with open(ia.AGENTS_DIR / "com.other.tool.plist", "wb") as f:
     plistlib.dump({"Label": "com.other.tool", "ProgramArguments": ["/usr/bin/true"]}, f)
 calls: list[list[str]] = []
-ia.subprocess.run = lambda cmd, *a, **k: calls.append(list(cmd)) or subprocess.CompletedProcess(cmd, 0, b"", b"")
+_real_run = subprocess.run
+subprocess.run = lambda cmd, *a, **k: calls.append(list(cmd)) or subprocess.CompletedProcess(cmd, 0, b"", b"")
 check("the label is the same generic one for everyone", ia.LABEL == "com.stiti.app")
 check("an older Stiti agent is found by what it runs", [x[0] for x in ia.legacy_agents()] == ["org.example.older"])
 msg = ia.migrate()
@@ -272,9 +273,20 @@ check("…other agents untouched", (ia.AGENTS_DIR / "com.other.tool.plist").exis
 with open(ia.APP / "Contents" / "Info.plist", "rb") as f:
     bid = plistlib.load(f)["CFBundleIdentifier"]
 check("…the app keeps its bundle id (macOS keeps mic / Calendar / Reminders grants)", bid == "org.example.older", bid)
-check("…and the running app is not started a second time", not any(c[:1] == ["open"] for c in calls), str(calls))
+check("…and the running app is neither rebuilt nor started again", not any(c[:1] in (["open"], ["codesign"])
+      for c in calls), str(calls))
 n = len(calls)
 check("migrate is idempotent", "already" in ia.migrate() and len(calls) == n)
+ia.install(start_now=False)
+with open(ia.APP / "Contents" / "Info.plist", "rb") as f:
+    bid = plistlib.load(f)["CFBundleIdentifier"]
+check("a later install-app keeps the existing bundle id too", bid == "org.example.older", bid)
+shutil.rmtree(ia.APP)
+ia.install(start_now=False)
+with open(ia.APP / "Contents" / "Info.plist", "rb") as f:
+    bid = plistlib.load(f)["CFBundleIdentifier"]
+check("a brand-new install gets the generic id", bid == "com.stiti.app", bid)
+subprocess.run = _real_run
 from stiti import migrate_local                                          # noqa: E402
 
 lines = migrate_local.run(["--wake", "Wake up sunshine", "--wake", "Hey Stiti"])
