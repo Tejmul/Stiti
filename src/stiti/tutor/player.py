@@ -592,12 +592,17 @@ class Tutor:
                 break
             lines = self._play_answer(ans) if ans and ans.get("say") else self._offline_answer(question)
             self.last_doubt = {"q": question, "a": lines, "t": time.time()}
+            if ans and ans.get("stuck_at"):
+                self.log(f"   [doubt] stuck at: {ans['stuck_at']} ({ans.get('error_type')})")
             first = False
+            if ans and not answering and not self.ended:
+                self._doubt_check(ans.get("check"))
             nxt = self._await_followup(question, answering)
             if nxt is None:
                 break
             question, simpler = nxt
-        self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]})
+        self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]
+                   + [{**a, "at_ms": 300} for a in self.board.note_doubt(title or question)]})
         if resume_cue:
             self.snaps[self.k] = self.board.snapshot()   # replay restores THIS (lesson board + doubt board below)
         if not self.ended:
@@ -707,6 +712,24 @@ class Tutor:
             self.events.put(ev)                       # back / skip / slower …: the lesson loop handles it
             return None
         return None
+
+    def _doubt_check(self, chk: dict | None) -> None:
+        """D53: after a doubt, one short question shows whether the gap is really closed (not 'did you get it?')."""
+        if not chk or not chk.get("prompt"):
+            return
+        reply = self.listen(chk["prompt"], timeout=25)
+        if not reply:
+            return
+        if commands.classify(reply, answering=True) in ("question", "steer", "confused"):
+            self.events.put({"type": "text", "text": reply, "_seen": True})   # another doubt: the follow-up takes it
+            return
+        g = grade.grade(Check(kind="recall", prompt=chk["prompt"], expectations=[chk.get("expected") or ""]), reply)
+        if g["verdict"] == "correct":
+            self.say("Yes, exactly.", interruptible=False)
+        elif g["verdict"] == "partial":
+            self.say(f"Nearly. The key part: {chk.get('expected')}.", interruptible=False)
+        else:
+            self.say(f"Not quite. It's {chk.get('expected')}.", interruptible=False)
 
     def _play_answer(self, ans: dict) -> list[str]:
         """Say the answer sentence by sentence; each sentence draws its own ops while it is said."""
