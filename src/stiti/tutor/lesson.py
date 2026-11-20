@@ -22,7 +22,8 @@ REGIONS = ["main", "side", "notes", "parking", "goal"]
 STYLES = ["plain", "warm", "green", "blue", "red", "violet", "muted",                  # colours
           "underline", "circle", "marker", "tick", "cross", "pointer", "color"]        # highlight kinds
 SEGMENT_TYPES = ["warmup", "hook", "organizer", "teach", "worked_example", "contrast", "pulse",
-                 "explain_back", "apply", "quiz", "summary", "close", "answer"]
+                 "explain_back", "apply", "quiz", "summary", "close", "answer",
+                 "break"]                                         # D53 day mode: a 5-minute break that waits for him
 CHECK_KINDS = ["predict", "mcq", "recall", "explain_why", "explain_back", "apply", "discriminate"]
 ORIGINS = ["book", "tutor_example", "tutor_bridge", "general_knowledge"]
 
