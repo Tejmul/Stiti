@@ -134,7 +134,7 @@ Rules that shape every choice: free only, no local LLM, personal data stays on t
 - **Amadeus, Tequila, Skyscanner, Duffel** — closed or business-only. **Skyvern, Magentic-UI, Firecrawl self-host** — too heavy
   for 8 GB. **Operator, Claude computer use, AgentQL beyond 50 calls** — paid.
 
-## 5. Questions only Tejmul can answer
+## 5. Questions only the owner can answer
 
 1. Which sites do you really book on — flights (airline site, MakeMyTrip, ixigo, Cleartrip?), trains, buses? Step 3 starts with one.
 2. Is step 2 (page opens filled, you finish) enough for now, or do you want step 3 knowing it may break and may be against the site's terms?

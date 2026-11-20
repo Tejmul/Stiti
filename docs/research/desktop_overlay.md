@@ -1,6 +1,6 @@
 # Desktop presence overlay + on-screen cards (research, 2026-11-11)
 
-**Question:** When Tejmul says "Hey Stiti", what should appear on his desktop so he can *see* that she is hearing,
+**Question:** When the owner says "Hey Stiti", what should appear on his desktop so he can *see* that she is hearing,
 thinking, doing and speaking, and how should she show answers like his to-do list? It has to look premium and calm,
 match Stiti's look (paper `#ecebf2`, navy `#262b57`, blue `#4656d6`, sky `#7fb2f0`, dot particles, white liquid-glass
 pill), never take focus away from what he's doing, and stay cheap on an **M2 with 8 GB**. Everything stays on the Mac.
@@ -183,7 +183,7 @@ Seven 6 pt dots, coloured navy · blue · mid · sky · mid · blue · navy, are
 | **offline / error** | `[turn]` exception, or every LLM provider down | One amber dot (`#b4531f`) for 1.5 s while she says the fallback | — |
 | **alarm ringing** | `ring_control` set | Card with **Stop** / **+5 min** buttons | stays until handled |
 
-- **Captions: off by default.** Tejmul's rule is never to show his conversations in the UI. An opt-in one-line caption
+- **Captions: off by default.** the owner's rule is never to show his conversations in the UI. An opt-in one-line caption
   of *her* sentence (14 pt, under the pill, never stored, kept out of screen sharing) can be a setting later. Cards show
   **data from the brain** (lists), not chat.
 - **Focus:** the pill never becomes key. It is click-through while hearing, so it can't eat a click aimed at the menu
@@ -354,7 +354,7 @@ class Pill(NSObject):
    the premium Dynamic-Island moment; untested.
 5. Whether `setSharingType_(NSWindowSharingNone)` still hides the window from ScreenCaptureKit captures (Zoom/Meet)
    on macOS 26.
-6. Caption policy: confirm with Tejmul that an opt-in caption of *her* line doesn't break the "no conversations in UI"
+6. Caption policy: confirm with the owner that an opt-in caption of *her* line doesn't break the "no conversations in UI"
    rule.
 
 ## Sources

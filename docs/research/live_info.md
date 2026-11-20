@@ -1,6 +1,6 @@
 # Research: live internet info ("what's happening in the world / AI / placements?")
 
-Date: 2026-11-10. Goal: Tejmul asks by voice or web chat for current news, tech/AI updates, product updates, new research
+Date: 2026-11-10. Goal: the owner asks by voice or web chat for current news, tech/AI updates, product updates, new research
 papers, placement/hiring news or a plain web search, and Stiti answers with **real, current** facts in ≤60 spoken
 words, naming sources. Constraints: zero cost, keyless preferred, local-first (only the search words leave the Mac),
 fast (voice first audio < 2 s), the brain decides and the LLM only writes the words.

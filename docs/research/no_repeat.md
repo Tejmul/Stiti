@@ -6,8 +6,8 @@ Research for the "she re-lists the same facts" bug. 2026-11-14.
 
 | Turn | User | Stiti |
 |---|---|---|
-| 1 | "What do you know about me?" | School, two projects, football |
-| 2 | "Okay, what else do you know?" | School, projects, football **again**, plus one new item |
+| 1 | "What do you know about me?" | School, two projects, sport |
+| 2 | "Okay, what else do you know?" | School, projects, sport **again**, plus one new item |
 | 3 | "And what else?" | The same three again, plus one more new item |
 | 4 | (same question word for word) | Same reply word for word |
 
@@ -44,7 +44,7 @@ Root causes:
 ## 3. Recommendation for Stiti
 
 **3.1 Said ledger** (per session, in RAM on the Engine)
-- `items`: ids she actually said: `F<fact>`, `E<episode>`, `D<chunk>`, plus **`U<n>` for each `standing_profile()` line** (that's where school, projects and football come from).
+- `items`: ids she actually said: `F<fact>`, `E<episode>`, `D<chunk>`, plus **`U<n>` for each `standing_profile()` line** (that's where school, projects and sport come from).
 - Attribution runs after each reply, also on asked turns. Use `mark_volunteered`'s ≥ 2 content-word overlap, or cos(sentence, item) ≥ 0.80.
 - `sent_vecs` (N×768): her spoken sentences, embedded with `task: sentence similarity | query: ` ([EmbeddingGemma card](https://ai.google.dev/gemma/docs/embeddinggemma/model_card)). Store only what was **heard**: drop vectors for text removed by `truncate_last_reply`.
 - `anchor`: the last non-MORE question and its qvec, plus a `cursor`.

@@ -6,7 +6,7 @@ pipeline, and its accuracy tricks, and what should Stiti copy for its own pill (
 Feeds **D26** (overlay) and the STT/biasing decisions.
 
 **Target:** `/Applications/Wispr Flow.app`, v**1.6.1400** (`Info.plist` `CFBundleShortVersionString`), installed by
-Tejmul. Static analysis only: no network interception, the app was not modified or run, app storage and user data were
+The owner. Static analysis only: no network interception, the app was not modified or run, app storage and user data were
 not opened, and no secrets were recorded. We learn the design here; no code is copied into Stiti.
 
 ## Method (rea + static reading)
@@ -195,7 +195,7 @@ module `60666`):
 | # | Copy this | Where in Stiti | Why |
 |---|---|---|---|
 | 1 | **Context-rich STT prompt:** owner name + top KG names (already done) **+ previous utterance (`prev_asr_text`) + frontmost app name + on-screen words via AX**, ranked manual > recent > learned > app-context, stopwords removed, capped | `voice/stt.py` `_bias_names()` / `_refresh_bias()`, prompt builder | Whisper's `initial_prompt` is our `dictionary_context`. Continuity with the last turn fixes split sentences |
-| 2 | **Learn words from corrections:** when Tejmul repeats or corrects a name ("no, *Stiti*"), align the old and new text, take ≤ 4 substitutions, check them locally (Laya, not an LLM), and store `phrase + observedSource` in the KG/`LESSONS.md` as a bias term. Optionally add a `replacement` map for post-STT fixes | `voice/stt.py` + brain lessons / KG | This is the "corrections become permanent rules" principle, applied to the ears |
+| 2 | **Learn words from corrections:** when the owner repeats or corrects a name ("no, *Stiti*"), align the old and new text, take ≤ 4 substitutions, check them locally (Laya, not an LLM), and store `phrase + observedSource` in the KG/`LESSONS.md` as a bias term. Optionally add a `replacement` map for post-STT fixes | `voice/stt.py` + brain lessons / KG | This is the "corrections become permanent rules" principle, applied to the ears |
 | 3 | **Local language-evidence counters:** romanized-Hindi lexicon hits + non-Latin-script count per turn, to choose the Hinglish prompt vs plain `en` (no fastText model needed; 0 MB) | `voice/hinglish.py`, `stt.py` | Same problem as Flow's `HINGLISH` mode, solved without a server |
 | 4 | **Mic capture with OS DSP off** for STT (raw 16 kHz mono). Keep AEC only on the barge-in path | `voice/loop.py` / `duplex.py` capture | Their ASR works best on raw voice. Test it on our Whisper |
 | 5 | **Digital-silence watchdog:** all-zero frames for 5 s → "your mic isn't sending sound", 15 s → escalate. Separate from the VAD | `voice/loop.py` | Catches a dead or muted device, which is a frequent silent failure |

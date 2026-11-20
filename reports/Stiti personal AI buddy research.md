@@ -1,15 +1,15 @@
 # Build Stiti's Brain Before Its Mouth
 
-Stiti should be built as **one local PostgreSQL memory engine** with five parts. The first is an append-only episode log with hybrid vector and full-text recall. The second is a bitemporal knowledge graph that re-implements Zep/Graphiti in plain tables. The third is an ACE-style itemized lessons table, the fourth a directive-style user model, and the fifth a nightly "sleep" consolidation job. Around that engine sit **Laya**, which makes every per-turn decision locally, and a **~150-line router** that treats the Groq, Cerebras, OpenRouter, Mistral and Gemini free tiers as interchangeable mouths. About 40 comparison tables, each with 10 or more papers, repos or models, point to the rule Tejmul already chose: *the LLM proposes, deterministic code disposes*. OpenClaw, Hermes, Leon, isair/jarvis and AIRI all run that way. No open-source system combines a bitemporal KG, lessons and briefing compilation inside Postgres, so Stiti builds its own engine from borrowed parts. Voice is a cascaded Pipecat pipeline: Silero VAD, Smart Turn v3.1, a Hinglish-capable Whisper, Kokoro and emotion2vec+. It fits in roughly 2–3 GB, and the estimated voice-to-first-audio on an M2 is 0.9–1.6 s. That estimate is extrapolated, because nobody has published base-M2 measurements. The life-management features follow the psychology evidence:
+Stiti should be built as **one local PostgreSQL memory engine** with five parts. The first is an append-only episode log with hybrid vector and full-text recall. The second is a bitemporal knowledge graph that re-implements Zep/Graphiti in plain tables. The third is an ACE-style itemized lessons table, the fourth a directive-style user model, and the fifth a nightly "sleep" consolidation job. Around that engine sit **Laya**, which makes every per-turn decision locally, and a **~150-line router** that treats the Groq, Cerebras, OpenRouter, Mistral and Gemini free tiers as interchangeable mouths. About 40 comparison tables, each with 10 or more papers, repos or models, point to the rule the owner already chose: *the LLM proposes, deterministic code disposes*. OpenClaw, Hermes, Leon, isair/jarvis and AIRI all run that way. No open-source system combines a bitemporal KG, lessons and briefing compilation inside Postgres, so Stiti builds its own engine from borrowed parts. Voice is a cascaded Pipecat pipeline: Silero VAD, Smart Turn v3.1, a Hinglish-capable Whisper, Kokoro and emotion2vec+. It fits in roughly 2–3 GB, and the estimated voice-to-first-audio on an M2 is 0.9–1.6 s. That estimate is extrapolated, because nobody has published base-M2 measurements. The life-management features follow the psychology evidence:
 
 - Rank tasks with a transparent Taskwarrior-style urgency score that adds Temporal Motivation Theory (TMT) terms.
 - Plan days with CP-SAT, which solves a 12-task day in 10–60 ms on this Mac.
 - Model habits as a forgiving strength score, not as spaced repetition.
 - Say at most 3 items per spoken turn, allow 3–5 unsolicited nudges a day, and never use guilt language.
 
-Tejmul's hard constraints change the researchers' advice in about a dozen places. Every local-LLM job moves to batched free cloud tiers behind a three-level privacy gate, and every SQLite or ChromaDB store moves into Postgres. Engine v0, specified near the end, is 14 tables, one SQL recall function, a fixed briefing template, a Laya question set, a lessons capture path and a consolidation job. It can be built tonight.
+The owner's hard constraints change the researchers' advice in about a dozen places. Every local-LLM job moves to batched free cloud tiers behind a three-level privacy gate, and every SQLite or ChromaDB store moves into Postgres. Engine v0, specified near the end, is 14 tables, one SQL recall function, a fixed briefing template, a Laya question set, a lessons capture path and a consolidation job. It can be built tonight.
 
-## Tejmul's four constraints rewrote a dozen researcher recommendations
+## The owner's four constraints rewrote a dozen researcher recommendations
 
 The research notes were written partly before D8 ("no local LLM, no Ollama") and D6 ("Postgres replaces SQLite") were final. Several recommendations therefore assume a local 2–4B model or a SQLite file. The table records every place this report overrides a note. The constraint column says which rule forced the change.
 
@@ -120,7 +120,7 @@ Graphiti itself is unusable here. Its drivers cover only Neo4j, FalkorDB, Kuzu a
 
 **graphify contributes the output format, not the store.** Its `GRAPH_REPORT.md` lists god nodes, surprising connections and suggested questions, and the model reads it first ([Better Stack](https://betterstack.com/community/guides/ai/ai-development/graphify-codebase/)). A critical review found graphify's `query` gave a confidently wrong answer ([Vijayan](https://praveenvijayan.substack.com/p/your-knowledge-graph-is-making-your)). That is a reason to expose only compiled reports to the LLM, never raw graph queries.
 
-**Decision:** `entities`, `facts` (bitemporal, partial exclusion constraint on functional predicates) and `episode_mentions` tables. Traverse with `WITH RECURSIVE`. Feelings are first-class time-scoped edges (`tejmul —feels{valence:-0.6}→ project_X`). The LLM only *flags* contradictions, and code closes intervals. Weekly communities and god nodes are computed in Python (igraph/networkx). **Reverse-engineer:** read Graphiti's Python source for its resolution and invalidation prompts (rea isn't needed for Python). Run rea on graphify's report builder only if a JS/Rust build is the easiest target.
+**Decision:** `entities`, `facts` (bitemporal, partial exclusion constraint on functional predicates) and `episode_mentions` tables. Traverse with `WITH RECURSIVE`. Feelings are first-class time-scoped edges (`owner —feels{valence:-0.6}→ project_X`). The LLM only *flags* contradictions, and code closes intervals. Weekly communities and god nodes are computed in Python (igraph/networkx). **Reverse-engineer:** read Graphiti's Python source for its resolution and invalidation prompts (rea isn't needed for Python). Run rea on graphify's report builder only if a JS/Rust build is the easiest target.
 
 ### Consolidation: a nightly "sleep" pipeline of SQL plus batched free-cloud calls
 
@@ -161,9 +161,9 @@ Fourteen "learning without fine-tuning" designs converge on the same loop: store
 - **Explicit corrections become `active` immediately.** This follows MemPrompt and jarvis.
 - **Inferred lessons start as candidates.** They need ≥2 sightings and ≥0.72 confidence (Leon).
 - **The LLM may only propose per-item operations.** Code applies them (ACE).
-- **`LESSONS.md` is rendered from the table** and re-imported when Tejmul edits it.
+- **`LESSONS.md` is rendered from the table** and re-imported when the owner edits it.
 
-### User model and persona: directives superseded in place, soul owned by Tejmul
+### User model and persona: directives superseded in place, soul owned by the owner
 
 Fourteen user-modeling sources and eleven persona sources were compared.
 
@@ -175,7 +175,7 @@ Fourteen user-modeling sources and eleven persona sources were compared.
 - **Weight-level persona (Character-LLM)** is rejected because it ties identity to one model ([Character-LLM](https://arxiv.org/abs/2310.10158)).
 - **Khoj** is the only mature assistant already on Postgres + pgvector, with `UserMemory` and `Entry` models ([Khoj models](https://github.com/khoj-ai/khoj/blob/master/src/khoj/database/models/__init__.py)). Its schema is worth reading, but it is AGPL, so don't copy code.
 
-**Decision:** `SOUL.md` stays a human-owned markdown file, read fresh each turn (AIRI rule). Stiti may only *propose* diffs, keeping OpenClaw's SOUL/AGENTS split between voice and operating rules ([soul.md](https://github.com/openclaw/openclaw/blob/main/docs/concepts/soul.md)). `USER.md` is rendered from a `user_directives` table, and facts about Tejmul's world live in the KG. Mem0's ADD/UPDATE/DELETE/NOOP decides how a new fact reconciles with an old one ([Mem0](https://arxiv.org/abs/2504.19413)). Omi-style confidence thresholds (0.5 / 0.85) decide which facts heard in ambient speech get stored ([Omi](https://github.com/BasedHardware/omi/tree/main/backend)).
+**Decision:** `SOUL.md` stays a human-owned markdown file, read fresh each turn (AIRI rule). Stiti may only *propose* diffs, keeping OpenClaw's SOUL/AGENTS split between voice and operating rules ([soul.md](https://github.com/openclaw/openclaw/blob/main/docs/concepts/soul.md)). `USER.md` is rendered from a `user_directives` table, and facts about the owner's world live in the KG. Mem0's ADD/UPDATE/DELETE/NOOP decides how a new fact reconciles with an old one ([Mem0](https://arxiv.org/abs/2504.19413)). Omi-style confidence thresholds (0.5 / 0.85) decide which facts heard in ambient speech get stored ([Omi](https://github.com/BasedHardware/omi/tree/main/backend)).
 
 ### Embeddings: EmbeddingGemma now, Qwen3-Embedding if Hinglish recall disappoints
 
@@ -206,7 +206,7 @@ No single paper defines a "context compiler". Eleven designs inform it:
 
 **Groq's free tier puts a hard number on the budget.** It allows **8K tokens per minute per model** ([Groq rate limits](https://console.groq.com/docs/rate-limits)). A 2K-token briefing therefore caps one model at about four voice turns a minute, which is why the briefing target is **≤1,500 tokens**.
 
-**Decision:** a fixed briefing template (Engine v0). Standing context (who Tejmul is, active projects, open loops, active lessons) is precompiled nightly into `briefing_cache`. Each turn appends only retrieved memory, current facts, matched lessons and a filtered tool list. Directives and lessons sit *after* memory and immediately before the user's words. Recalled text is quoted and labeled as data.
+**Decision:** a fixed briefing template (Engine v0). Standing context (who the owner is, active projects, open loops, active lessons) is precompiled nightly into `briefing_cache`. Each turn appends only retrieved memory, current facts, matched lessons and a filtered tool list. Directives and lessons sit *after* memory and immediately before the user's words. Recalled text is quoted and labeled as data.
 
 ## Laya decides, a thin router speaks through free clouds
 
@@ -237,9 +237,9 @@ Two findings stand out. **Independent router benchmarks find learned routers bar
 **Decision:** Laya multilingual, run as ONNX INT8 in-process, makes one call per turn with the question set in Engine v0. Four rules govern it:
 
 - **Keep option lists short.** Use a two-level intent: domain first, then action.
-- **Hard thresholds gate side effects.** Fall back to the LLM or ask Tejmul below them.
+- **Hard thresholds gate side effects.** Fall back to the LLM or ask the owner below them.
 - **Risk tiers and privacy floors are deterministic rules, not Laya outputs.**
-- **Log every decision with its outcome**, so Phase 4 can calibrate Laya on Tejmul's own data. That is the one form of training Stiti allows.
+- **Log every decision with its outcome**, so Phase 4 can calibrate Laya on the owner's own data. That is the one form of training Stiti allows.
 
 **Reverse-engineer:** read `laya/agent.py` (abstention gate), `laya/common.py` (sequence builder) and the calibration code. Use rea's model-file inspection on the safetensors/ONNX files to confirm sizes and quantization before downloading onto the 8 GB Mac.
 
@@ -266,7 +266,7 @@ The free tiers set the order. Limits were fetched on 2026-11-10, and the notes w
 | Gemini AI Studio | Flash ~5 RPM / **20 RPD**; Flash-Lite ~10–15 RPM / ~500 RPD (third-party, Oct 2026) ([imisofts](https://imisofts.com/blog/gemini-api-free-tier-limits/)) | **P0 only** | Non-personal jobs only |
 | GitHub Models | **Retired 2026-07-30** ([GitHub changelog](https://github.blog/changelog/2026-08-09-github-models-is-now-retired/)) | n/a | Dropped |
 
-The capacity math works for one person. Groq alone gives about 3,000 requests a day across its three models, Cerebras adds a million tokens, and a voice buddy needs a few hundred turns. **The binding limit is Groq's 8K TPM per model.** That limit is why the ≤1,500-token briefing and the no-LLM fast path both matter. The 27B model Tejmul asked about, Qwen3.8-27B, is available free through Groq and Cerebras. Running it locally is impossible at roughly 15–16 GB in 4-bit ([datanorth](https://datanorth.ai/news/alibaba-releases-qwen3-8-27b)).
+The capacity math works for one person. Groq alone gives about 3,000 requests a day across its three models, Cerebras adds a million tokens, and a voice buddy needs a few hundred turns. **The binding limit is Groq's 8K TPM per model.** That limit is why the ≤1,500-token briefing and the no-LLM fast path both matter. The 27B model the owner asked about, Qwen3.8-27B, is available free through Groq and Cerebras. Running it locally is impossible at roughly 15–16 GB in 4-bit ([datanorth](https://datanorth.ai/news/alibaba-releases-qwen3-8-27b)).
 
 **Decision:** a custom ~150-line router on the OpenAI-compatible client. It has no LiteLLM dependency; if LiteLLM is ever added, use its SDK only, pinned to ≥1.83 with `--require-hashes`.
 
@@ -333,7 +333,7 @@ Fifteen VAD and turn detectors were compared.
 - **A community smart-turn-hinglish fine-tune** reaches only 72.4% balanced accuracy ([HF](https://huggingface.co/abhishek-040010/smart-turn-hinglish)).
 - **Easy Turn** adds a "backchannel" state that is exactly right for "haan/hmm" ([Easy Turn](https://arxiv.org/pdf/2509.23938)).
 
-**Decision:** Silero (stop 0.2 s) plus Smart Turn v3.1, with an adaptive 1.2–2.0 s fallback. A cheap text rule extends the wait when the transcript ends in a filler or conjunction ("matlab…", "aur…", "toh…"). Later, fine-tune Smart Turn on Tejmul's own recordings.
+**Decision:** Silero (stop 0.2 s) plus Smart Turn v3.1, with an adaptive 1.2–2.0 s fallback. A cheap text rule extends the wait when the transcript ends in a filler or conjunction ("matlab…", "aur…", "toh…"). Later, fine-tune Smart Turn on the owner's own recordings.
 
 ### STT: Whisper-family is the only local option that hears Hindi mid-sentence
 
@@ -354,7 +354,7 @@ All of them lack Hindi ([soniqo](https://soniqo.audio/benchmarks); [Moonshine v2
 
 **Personal fine-tuning is the biggest lever.** A community LoRA cut Whisper-small from 71% to 17% WER on Hinglish ([Hinglish LoRA](https://github.com/catherine621/Hinglish-Speech-Recognition-Whisper-Fine-tuning-and-Quantization)). Fine-tuning a speech model is allowed: it is not the LLM. Whisper's default text normaliser understates Indic WER by about 18 points, so cross-paper comparisons are unreliable ([indic-asr-eval](https://github.com/Shekhar-Jha22/indic-asr-eval)).
 
-**Decision:** mlx-whisper large-v3-turbo q4, run per turn after Smart Turn fires, so it hides inside the turn hold. In week one, run a 30-minute A/B on Tejmul's own speech against Apex and Qwen3-ASR 0.6B. Groq whisper-large-v3 is the free fallback for long or noisy audio: 28,800 audio-seconds a day ([eesel](https://www.eesel.ai/blog/groq-pricing)).
+**Decision:** mlx-whisper large-v3-turbo q4, run per turn after Smart Turn fires, so it hides inside the turn hold. In week one, run a 30-minute A/B on the owner's own speech against Apex and Qwen3-ASR 0.6B. Groq whisper-large-v3 is the free fallback for long or noisy audio: 28,800 audio-seconds a day ([eesel](https://www.eesel.ai/blog/groq-pricing)).
 
 ### TTS: Kokoro for speed, emotion through voice, speed and wording
 
@@ -373,7 +373,7 @@ The emotion-capable models all lose on one point:
 
 Two practical traps: mlx-audio's player buffers about 1.5 s before playback ([kokoro-tts](https://github.com/scottschram/kokoro-tts)), and leading silence of 0.4–0.9 s must be trimmed.
 
-**Decision:** Kokoro streamed per sentence, bypassing the mlx-audio buffer. Mood sets the voice preset and speed: slower and softer when Tejmul is tired or sad. Pocket TTS (MIT, ~100M) is an optional expressive second voice later.
+**Decision:** Kokoro streamed per sentence, bypassing the mlx-audio buffer. Mood sets the voice preset and speed: slower and softer when the owner is tired or sad. Pocket TTS (MIT, ~100M) is an optional expressive second voice later.
 
 ### Barge-in and full duplex: engineer it in the cascade
 
@@ -388,7 +388,7 @@ Twelve wake-word engines were compared.
 - **LiveKit WakeWord v2** is about 7 MB, takes ~1 ms per 80 ms step and trains with one command. Its vendor reports 0.08 false accepts per hour against openWakeWord's 8.50 ([LiveKit blog](https://livekit.com/blog/livekit-wakeword)).
 - **Porcupine** is commercial, quoted from $6,000/yr ([micdrop](https://micdrop.dev/blog/wake-word-detection-web-app)).
 
-**Decision:** LiveKit WakeWord v2 for "Hey Stiti", openWakeWord as fallback, plus a hotkey and a 30-second "conversation mode" after each reply. Validate false accepts against an hour of Tejmul's own TV and Hinglish background audio.
+**Decision:** LiveKit WakeWord v2 for "Hey Stiti", openWakeWord as fallback, plus a hotkey and a 30-second "conversation mode" after each reply. Validate false accepts against an hour of the owner's own TV and Hinglish background audio.
 
 ### Emotion detection: a soft, personally calibrated, fused signal
 
@@ -404,7 +404,7 @@ Eighteen emotion sources were compared, and the evidence says to be humble.
 
 - **"Stressed" and "tired" are derived states**, not native classes.
 - **The briefing carries a hint with confidence** ("voice: tense 0.62"). Stiti never declares "you are angry".
-- **Tejmul's denials ("main gussa nahi hoon") are stored as labels** for later calibration.
+- **The owner's denials ("main gussa nahi hoon") are stored as labels** for later calibration.
 
 ## Life management: rank transparently, nudge rarely, never shame
 
@@ -413,7 +413,7 @@ Eighteen emotion sources were compared, and the evidence says to be humble.
 Twelve task systems and models were compared. No open-source tool combines task storage, explainable ranking and voice.
 
 - **Taskwarrior's urgency** is "a simple sum of terms, each weighted by a configurable coefficient", for example `+next` 15.0, due 12.0 and priority H/M/L 6.0/3.9/1.8. It is transparent and explainable ([Taskwarrior urgency](https://taskwarrior.org/docs/urgency/)).
-- **Temporal Motivation Theory** adds what Taskwarrior lacks. Motivation = E×V / (1 + I×D), so it predicts which tasks Tejmul will *avoid* ([TMT](https://en.wikipedia.org/wiki/Temporal_motivation_theory)). Steel's meta-analysis of 691 correlations identifies task aversiveness, delay, self-efficacy and impulsiveness as the strong predictors ([Steel 2007](https://prism.ucalgary.ca/handle/1880/47914)).
+- **Temporal Motivation Theory** adds what Taskwarrior lacks. Motivation = E×V / (1 + I×D), so it predicts which tasks the owner will *avoid* ([TMT](https://en.wikipedia.org/wiki/Temporal_motivation_theory)). Steel's meta-analysis of 691 correlations identifies task aversiveness, delay, self-efficacy and impulsiveness as the strong predictors ([Steel 2007](https://prism.ucalgary.ca/handle/1880/47914)).
 - **Vikunja and Super Productivity** add a server or Electron process.
 - **Apple Reminders through EventKit** reaches the iPhone for free ([EKReminder](https://developer.apple.com/documentation/eventkit/ekreminder.md)).
 
@@ -489,7 +489,7 @@ Thirteen sources were compared. They show SM-2 and FSRS model *memory decay* and
 - **Offer restarts on fresh-start landmarks** ([Dai et al.](https://faculty.wharton.upenn.edu/wp-content/uploads/2014/06/Dai_Fresh_Start_2014_Mgmt_Sci.pdf)).
 - **Never promise "21 days".**
 
-FSRS is reserved for vocabulary and facts Tejmul wants to learn.
+FSRS is reserved for vocabulary and facts the owner wants to learn.
 
 ### Motivation psychology becomes four Laya modules
 
@@ -546,7 +546,7 @@ Sixteen proactivity sources and twelve assistant implementations were compared.
 - **Score:** `relevance × actionability × urgency × receptivity − annoyance − habituation`.
 - **Budget:** 3–5 unsolicited spoken nudges a day. User-set alarms are never suppressed.
 - **Modality ladder:** log → menu-bar badge → banner → voice → alarm.
-- **Learning:** log `(context, action, outcome)` so a small contextual bandit can learn Tejmul's receptivity, an n-of-1 micro-randomized trial ([JITAI/MRT](https://arxiv.org/pdf/2107.03544)).
+- **Learning:** log `(context, action, outcome)` so a small contextual bandit can learn the owner's receptivity, an n-of-1 micro-randomized trial ([JITAI/MRT](https://arxiv.org/pdf/2107.03544)).
 - **Rituals:** a morning plan and an evening wins-first review are user-invited, so they don't count against the budget.
 
 ### Alarms and reminders: three layers so nothing depends on Stiti being awake
@@ -584,7 +584,7 @@ Thirteen tool-selection approaches were compared. They agree on "tool RAG": embe
 - **Transports:** stdio for local servers; streamable HTTP only for hosted servers.
 - **Tool selection:** Laya's `tool_category` picks the server, the shared embedder plus BM25 picks the top 5 tools, and 3–5 tools are always on (time, memory.search, notify, confirm).
 - **Each tool gets hand-written "when to use" examples.**
-- **Stiti is also an MCP server**, built with FastMCP 3, so Claude Code can query Tejmul's preferences.
+- **Stiti is also an MCP server**, built with FastMCP 3, so Claude Code can query the owner's preferences.
 
 ### Which connectors to plug in first
 
@@ -621,7 +621,7 @@ So the model cannot be the defense. **CaMeL's split** works by design: a privile
 
 **Decision:** six controls.
 
-1. **Pin and diff.** Hash each server's command, version and `tools/list`, and disable the server on any change until Tejmul re-approves.
+1. **Pin and diff.** Hash each server's command, version and `tools/list`, and disable the server on any change until the owner re-approves.
 2. **Risk tiers in Stiti's own config:** read, local-write, external/irreversible. The last tier always needs a spoken or Telegram-button confirmation that shows the exact arguments.
 3. **Taint after untrusted reads.** After any untrusted-content tool runs, Laya marks the context tainted, and outbound tools then need confirmation.
 4. **Quarantined summarization of tool output.**
@@ -736,7 +736,7 @@ CREATE TABLE facts (
   predicate          text   NOT NULL,              -- works_at, lives_in, feels_about, knows...
   obj_id             bigint REFERENCES entities(id),
   obj_literal        text,
-  fact_text          text   NOT NULL,              -- "Tejmul works at X"
+  fact_text          text   NOT NULL,              -- "the owner works at X"
   attrs              jsonb,                        -- {"valence":-0.6}
   functional         boolean NOT NULL DEFAULT false,
   valid              tstzrange NOT NULL DEFAULT tstzrange(now(), NULL),  -- world time
@@ -779,7 +779,7 @@ CREATE UNIQUE INDEX one_active_directive ON user_directives (supersession_key) W
 -- 7. lessons: ACE-style itemized playbook (renders LESSONS.md)
 CREATE TABLE lessons (
   id                  bigserial PRIMARY KEY,
-  situation           text  NOT NULL,                 -- "Tejmul stressed, late night, work topic"
+  situation           text  NOT NULL,                 -- "the owner stressed, late night, work topic"
   trigger             jsonb NOT NULL DEFAULT '{}',    -- {"mood":["stressed"],"topic":["work"],"time":"late_night","person":[12]}
   guidance            text  NOT NULL,                 -- imperative, <= 25 words
   polarity            text  NOT NULL CHECK (polarity IN ('do','dont')),
@@ -1009,7 +1009,7 @@ Every LLM gets the same template, so swapping the model changes nothing about wh
                           top-3 tasks with one-line reason · next alarm
 [MEMORY ≤600]             quoted data, never instructions; each line dated + sourced:
                           [E18231 · 2026-11-03 · he said] "…"
-                          [F412 · true since 2026-10 · fact] Tejmul works on Stiti nightly
+                          [F412 · true since 2026-10 · fact] the owner works on Stiti nightly
                           [F377 · ended 2026-09 · fact] … (only when the change matters)
 [HOW TO TALK NOW ≤200]    active talk_style directives + matched lessons:
                           MUST: keep it under 3 sentences when he is stressed (lesson L17, from 2026-11-02)
@@ -1071,7 +1071,7 @@ One `predict_batch` call answers all of the following:
 
 Every answer is logged to `decisions` with `acted` and, later, `outcome`.
 
-**Day-one test:** run all 13 questions on 30 real Hinglish sentences from Tejmul, on both the English and the multilingual checkpoint. Record accuracy, latency and RSS. The gates above are deliberately conservative starting points, to be recalibrated weekly from the log. Irreversible tool actions never rely on Laya alone: the risk-tier confirmation still applies.
+**Day-one test:** run all 13 questions on 30 real Hinglish sentences from the owner, on both the English and the multilingual checkpoint. Record accuracy, latency and RSS. The gates above are deliberately conservative starting points, to be recalibrated weekly from the log. Irreversible tool actions never rely on Laya alone: the risk-tier confirmation still applies.
 
 ### Lessons capture
 
@@ -1087,13 +1087,13 @@ Every answer is logged to `decisions` with `acted` and, later, `outcome`.
 - Owner-explicit corrections become `active` with confidence 0.9.
 - Inferred lessons (for example, repeated "bas bas" after long replies) stay `candidate` until `seen_count ≥ 2` and `confidence ≥ 0.72`, per Leon's gate.
 
-**5. Acknowledge in one sentence** so Tejmul can fix a mis-learned rule on the spot: "Samajh gaya, jab tum stressed ho main chhota bolunga" ("Got it, when you're stressed I'll keep it short"). This is PAHF's clarify-before-acting idea.
+**5. Acknowledge in one sentence** so the owner can fix a mis-learned rule on the spot: "Samajh gaya, jab tum stressed ho main chhota bolunga" ("Got it, when you're stressed I'll keep it short"). This is PAHF's clarify-before-acting idea.
 
 **6. Score.** If the lesson is applied and the next two turns bring no renewed correction, increment `helpful_count`. If the same correction comes back in the same situation, increment `harmful_count` and queue the lesson for an EDIT.
 
 **7. Curate nightly** with ACE/ExpeL per-item operations only: ADD, EDIT, MERGE, RETIRE, UPVOTE, DOWNVOTE. Each is logged in `consolidation_runs.stats`. Retire a lesson when `harmful_count > helpful_count + 2`.
 
-**8. Render `LESSONS.md`.** If Tejmul edits the file, its hash changes and the diff is imported as owner edits.
+**8. Render `LESSONS.md`.** If the owner edits the file, its hash changes and the diff is imported as owner edits.
 
 ### Consolidation job ("sleep")
 
@@ -1158,7 +1158,7 @@ rea is most useful on JS/TS, Electron or minified bundles, and on model files. P
 | KG learning depends on the cloud (no local LLM) | Offline days add episodes but no facts | Episodes stay searchable; watermarked backlog catches up |
 | Fact extraction by free 20–27B models may be noisy; Graphiti warns weak models fail ingestion | A polluted graph is worse than none | Strict JSON schema, deterministic resolver, confidence thresholds, provenance on every fact, weekly spot-check |
 | Hinglish STT error is high (Apex WER 29.8–47.6 against transliterated references) | Memory and Laya inherit transcript errors | Week-one A/B; personal LoRA; Groq Whisper fallback |
-| Smart Turn cut off 32 of 80 pauses in one deployment; Hinglish fillers make it worse | Stiti interrupts Tejmul | Adaptive fallback + filler rule; fine-tune on own recordings |
+| Smart Turn cut off 32 of 80 pauses in one deployment; Hinglish fillers make it worse | Stiti interrupts the owner | Adaptive fallback + filler rule; fine-tune on own recordings |
 | Laptop-speaker echo | Barge-in triggers on Stiti's own voice | WebRTC AEC; headphones until verified |
 | Naturalistic emotion accuracy is around 41% | Mis-read moods annoy | Hint only; personal baseline; ask, don't declare; store denials as labels |
 | macOS TCC under launchd can silence the mic | Stiti goes deaf after a reboot | Signed `.app`, in-process mic, Login Item |
@@ -1173,7 +1173,7 @@ rea is most useful on JS/TS, Electron or minified bundles, and on model files. P
 The research moves the bottleneck. With no local LLM, the scarce resource is not GPU memory for a model. It is three other things:
 
 - **Groq's 8K tokens per minute.** This turns the context compiler from a nicety into the component that sets Stiti's conversation rate.
-- **Laya's calibration.** Its zero-shot accuracy is too low to trust without Tejmul's own decision log.
+- **Laya's calibration.** Its zero-shot accuracy is too low to trust without the owner's own decision log.
 - **The privacy gate.** It decides what the cloud may think about.
 
 Stiti's quality will therefore track its decision log, its private eval set and its briefing discipline more closely than any model choice. That vindicates D1: the brain really is the engine. It also clarifies what "local-first" means here. State, memory, decisions and sensitive data stay on the Mac. Language, extraction and nightly reflection are rented from interchangeable free providers that never hold state.

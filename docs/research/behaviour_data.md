@@ -112,7 +112,7 @@ Licence short guide: CC BY, CC0, MIT, Apache, BSD = fine with credit. CC BY-SA =
 - **Privacy:** never send his real conversations to any service for labelling. All tests on real chats stay on the Mac.
 - **Fine-tuning a cloud or local LLM on any of this:** against the rules, and not needed.
 
-## 5. Open questions for Tejmul
+## 5. Open questions for the owner
 
 1. May a script download about 30 MB of public data into `~/.stiti/data/`? Nothing is committed.
 2. NC data (ESConv, EmpatheticDialogues) for local use only: fine for a personal project, a problem if Stiti is ever sold. Use or skip?

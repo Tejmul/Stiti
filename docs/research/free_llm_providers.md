@@ -43,7 +43,7 @@ returns IDs prefixed `models/`, so the router silently skipped Gemini. Both fixe
 | 12 | SiliconFlow (China) | free Qwen3-8B / GLM-4-9B; free set mainly on .cn (Chinese phone) | small Qwen/GLM | ok | unclear | 🟡 skip (signup barrier) |
 | 13 | Alibaba Model Studio (Qwen/DashScope) | trial credits that expire | Qwen Plus/Turbo | ok | unclear | 🟡 trial, not permanent |
 | 14 | Moonshot (Kimi) | needs a $1 top-up | Kimi K2 | ok | may train unless agreed | ⛔ not free (Kimi free via NVIDIA instead) |
-| 15 | Ollama Cloud | free tier, 1 concurrent, 5-h sessions | GLM-4.7, Kimi K2, gpt-oss | ok | — | ⛔ skipped: Tejmul's "no Ollama" rule |
+| 15 | Ollama Cloud | free tier, 1 concurrent, 5-h sessions | GLM-4.7, Kimi K2, gpt-oss | ok | — | ⛔ skipped: the owner's "no Ollama" rule |
 | 16 | Pollinations / LLM7 / Kilo (anonymous) | anonymous, tiny limits | gpt-oss-20b, misc | slow | unknown | ⛔ never for personal data |
 | 17 | Cohere | trial key, 20 RPM | Command-A | ok | terms forbid personal use | ⛔ |
 

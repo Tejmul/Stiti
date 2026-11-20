@@ -6,7 +6,7 @@ One entry per decision: what, why, alternatives. Newest at the bottom.
 **What:** Stiti's identity, memory, knowledge graph and lessons live in a local
 store (Postgres + markdown). A Context Compiler builds a per-turn briefing; any LLM is a
 plug-in that only turns the briefing into words.
-**Why:** Tejmul wants Stiti to stay the same no matter which (free) LLM is used, and
+**Why:** the owner wants Stiti to stay the same no matter which (free) LLM is used, and
 fine-tuning is neither free nor portable.
 **Alternatives rejected:** fine-tuning, relying on a provider's built-in memory,
 an LLM-driven agent framework that owns the state.
@@ -28,22 +28,22 @@ needs no server and fits 8 GB RAM. Revisit a dedicated graph DB only if SQLite g
 **What:** One Laya call per turn answers all typed decisions (intent, needs_llm,
 is_correction, tone, urgency, memory scope, tool category, importance). Low-confidence
 answers fall back to the LLM. Decisions + outcomes are logged for calibration.
-**Why:** Tejmul wants the brain, not the LLM, to make decisions, and wants many decisions
+**Why:** the owner wants the brain, not the LLM, to make decisions, and wants many decisions
 made at once, fast and free. Laya is local, small (≈0.4–0.9 GB), typed, calibrated, Apache-2.0.
 **Trade-off:** Modest zero-shot accuracy → needs confidence gate + calibration on own data.
 Fine-tuning Laya (not the LLM) is allowed because it is part of Stiti's brain.
 **Alternatives:** hand-written rules only (brittle), LLM function-calling for every decision
 (slow, burns free quota, makes the LLM the brain).
 
-## D6: PostgreSQL replaces SQLite (2026-11-10, Tejmul's call)
+## D6: PostgreSQL replaces SQLite (2026-11-10, the owner's call)
 **What:** One local Postgres (Homebrew) holds episodes, embeddings (`pgvector`),
 full-text index, knowledge graph (nodes/edges with valid_from/valid_to), lessons,
 todos, decision log. ChromaDB is not used: pgvector covers it in the same DB.
-**Why:** Tejmul's choice. Also: real concurrency for voice + background jobs, one store
+**Why:** the owner's choice. Also: real concurrency for voice + background jobs, one store
 for vector + text + graph + relational data, mature extensions.
 **Cost:** ~100–300 MB RAM for a tuned local server on the 8 GB Mac. D3's SQLite part is superseded.
 
-## D7: Components Tejmul suggested, pending research (2026-11-10)
+## D7: Components the owner suggested, pending research (2026-11-10)
 Being evaluated in the deep research (reports/Stiti personal AI buddy research.md):
 - LiteLLM hybrid router (local + Gemini fallback). **Note:** local Qwen-27B won't fit
   8 GB RAM (~16 GB at 4-bit); local side must be ~4B or smaller.
@@ -53,10 +53,10 @@ Being evaluated in the deep research (reports/Stiti personal AI buddy research.m
 - SM-2 spaced repetition for habits (compare with FSRS and habit-formation research).
 - Psychology: WOOP, Cognitive Load Theory, Temporal Motivation Theory, anti-guilt design.
 
-## D8: No local LLM, no Ollama (2026-11-10, Tejmul's call)
+## D8: No local LLM, no Ollama (2026-11-10, the owner's call)
 **What:** Stiti never runs an LLM on the Mac. All LLM calls go to free cloud tiers.
 Local models are limited to small ones: VAD, STT, TTS, emotion, embeddings, Laya.
-**Why:** Tejmul: running Ollama on the 8 GB Mac overloads it.
+**Why:** the owner: running Ollama on the 8 GB Mac overloads it.
 **Fallback:** if all cloud providers fail, Stiti still does fast-path actions
 (todos, alarms, reminders, memory recall) via Laya + rules, and says deep thinking is unavailable.
 
@@ -90,7 +90,7 @@ Laya code stays (`stiti/decide.py`), off by default (`STITI_LAYA=off`).
   Chosen over Pipecat+SmallWebRTC for v1: same AEC family, far fewer moving parts.
 - **STT:** whisper-small 4-bit (283 ms) over large-v3-turbo 4-bit (1,064 ms) — ~same Hinglish accuracy on the
   synthetic test; one model, one pass serves wake detection + command (mlx-whisper caches one model).
-- **Wake phrases:** ASR keyword spotting with fuzzy match ("Stiti", "Hey Stiti", "Wake up baby girl") — zero training.
+- **Wake phrases:** ASR keyword spotting with fuzzy match ("Stiti", "Hey Stiti", "Hi Stiti"; personal phrases live in the local profile) — zero training.
 - **Voice emotion:** emotion2vec+ base (FunASR) in a background thread, 70–165 ms, ~+800 MB; fused with prosody vs.
   personal baseline and text mood; confidence capped (generic SER ≈41% on natural speech).
 - **Documents:** MarkItDown (MIT) instead of PyMuPDF4LLM (AGPL) / Docling (11 s/page); heading-aware chunks in Postgres.
@@ -191,7 +191,7 @@ Research + live latency table: `docs/research/free_llm_providers.md` (17 provide
 - **Add:** Z.ai GLM-4.7-Flash (free, no training on API data → P1 backup), Cloudflare Workers AI (10k neurons/day,
   P1 backup), NVIDIA NIM (DeepSeek/Kimi/Qwen, evaluation terms → P0 only).
 - **Drop / not free:** Cerebras (card since 2026-07), Hugging Face (no free credits since 2026-10), GitHub Models
-  (retired), Moonshot ($1 top-up), Ollama Cloud (Tejmul's no-Ollama rule), anonymous endpoints (privacy).
+  (retired), Moonshot ($1 top-up), Ollama Cloud (the owner's no-Ollama rule), anonymous endpoints (privacy).
 - **Privacy:** each provider has `max_privacy`; P1 turns only go to providers that don't train on API data;
   OpenRouter P1 requests send `data_collection: deny` (in practice its free models then 404 → P0 only).
 - **Zero cost enforced in code:** `router.is_free()` (OpenRouter `:free` only, Z.ai exact free list) filters every chain.
@@ -358,14 +358,14 @@ strategy is chosen **locally**; weak free models ignore prompt rules, so the sha
   offline checks with a fake "bad" LLM + pass@3 on the real free router).
 
 ## D27: Hearing his words, speaking Indian English — STT glossary + cloud second opinion, goonj voice (2026-11-11)
-Owner: it mishears him ("Tejmul" → "Tejmal", "Newton School" → "Newton's Club") and the Hinglish/Hindi voice is "not
+Owner: it mishears him (made-up stand-ins here: "Tanvik" → "Tanvick", "Darwin School" → "Darwin's Club") and the Hinglish/Hindi voice is "not
 suitable"; he wants English with an Indian accent people understand. Research: `docs/research/stt_tts_indian_english.md`
 (22 STT engines, 18 TTS options, measured on this M2) + `docs/research/re_wispr_flow.md` ("What Stiti should copy").
 Names are a **biasing** problem, not a model-size problem, so the brain feeds the ears; the model stays whisper-small q4.
 - **Glossary from the brain (`voice/glossary.py`):** owner name/call_me, proper nouns in `USER.md` (by frequency),
   top graph entities, ingested document titles, + fixed words every user says (Stiti, todos, resume, placements, DSA,
-  GitHub, cursor). Near-duplicates of a better-ranked term are dropped, so a misheard fact (USER.md had "Tejmal …
-  Newton's Club of Technology") can't teach the wrong spelling. ≤ 40 terms / ~150 tokens, most important last,
+  GitHub, cursor). Near-duplicates of a better-ranked term are dropped, so a misheard fact (USER.md had "Tanvick …
+  Darwin's Club of Technology") can't teach the wrong spelling. ≤ 40 terms / ~150 tokens, most important last,
   refreshed in the background every 5 min. P2 terms never go to the cloud.
 - **Prompt (`stt.build_prompt`):** `Glossary: …` + the **previous utterance** of this conversation (Wispr
   `prev_asr_text`; same-utterance speculative passes are recognised by an audio fingerprint) + a short English block
@@ -388,14 +388,14 @@ Names are a **biasing** problem, not a model-size problem, so the brain feeds th
   the mic still transcribes everything for the wake phrase (TV, other people) and none of that goes to the cloud.
   `STITI_STT_CLOUD=off` (env wins) or owner_profile `stt_cloud=off` keeps all audio local. Key from `.env` via the router's client, never
   printed; each call is counted in `llm_usage` (groq / whisper-large-v3).
-- **Learning words from his corrections (`voice/vocab.py`, Wispr §3 adapted to voice):** "no, I said Tejmul",
-  "it's Stiti, not City", "Tejmul, not Tejmal", "spell it T-E-J-M-U-L", "nahi, maine Tejmul bola", and explicit "add
-  'Zonuly' to your vocabulary" / "remember the word X". Rules, < 1 ms, no LLM. The heard form comes from the correction
+- **Learning words from his corrections (`voice/vocab.py`, Wispr §3 adapted to voice):** "no, I said Tanvik",
+  "it's Stiti, not City", "Tanvik, not Tanvick", "spell it T-A-N-V-I-K", "nahi, maine Tanvik bola", and explicit "add
+  'Tilecraft' to your vocabulary" / "remember the word X". Rules, < 1 ms, no LLM. The heard form comes from the correction
   ("not City") or from the closest-sounding span of his previous utterance. A correction only teaches a name or a rare
   word ("no, I said milk" and "call Rahul not Raju" are not word corrections). Saved to `~/.stiti/vocab.json` (local,
   readable, editable); the term goes to the top of the glossary immediately and the heard form becomes an exact
   rewrite before the fuzzy snap — unless it is an ordinary single word ("City" is never rewritten elsewhere). The
-  engine answers with a fast-path "Got it — Tejmul, not Tejmal." (no LLM, not treated as an undo or a talk-style
+  engine answers with a fast-path "Got it — Tanvik, not Tanvick." (no LLM, not treated as an undo or a talk-style
   lesson).
 - **Blips:** < 0.5 s of speech that Whisper wasn't sure about is ignored (`endpoint.Commit.text`), not answered with
   "Sorry?" (Wispr). Sure short words ("haan", "stop") still count.
@@ -543,10 +543,10 @@ from a 6-voice lineup; then: "there should be two voices: one for Hinglish and a
 - Measured 20 female voices on one line (pitch, pitch spread, Whisper round-trip, synth time): all equally clear
   (~4% WER, mostly "4" vs "four"); priya's pitch spread is 4.6 semitones vs ~2.7 for the rest (reads as older);
   brightest: goonj en_nisha 326 Hz, en_ananya 305 Hz, hi_meera 281 Hz. Every American/British Kokoro voice says
-  "Tej" as "Tedge".
+  Indian names wrong (a say-as respelling fixes it).
 - `voice` (English lines) + optional `voice_hi` (lines where `hinglish.phonemize` finds 2+ Hindi words). One Kokoro
   model per model file, shared, so two stock voices cost no extra RAM; a goonj + stock pair adds ~115 MB.
-- `voice_speed` (0.8–1.3, moods scale it) and `say_as` respellings ({"Tej": "Tayj"}) live in the local owner_profile —
+- `voice_speed` (0.8–1.3, moods scale it) and `say_as` respellings ({"Arav": "Ahrahv"}) live in the local owner_profile —
   never in code — and apply to stock Kokoro voices only (goonj already says Indian names right).
 - CLI: `stiti voices use-hi <voice|off>`, `stiti voices speed 1.05`, `stiti voices say-as <word> <how>`. Fixed: `try` /
   `use` treated every non-`af_` voice as a goonj persona (hf_beta broke). Tests: `tests/voice_pick_eval.py` (21).
@@ -571,7 +571,7 @@ language switches it. Research: `docs/research/language_switching.md` (11 option
 likely glitching or the audio stream is corrupted. I cannot control the synthesis engine…", "Functioning within normal
 parameters. No errors to report.", "That is a word I do not recognize.", "My thinking brain (cloud LLM) is offline."
 
-- **Cause 1 — SOUL:** "Stiti is Tejmul's own JARVIS … British-butler understatement" + "never claim feelings" made the
+- **Cause 1 — SOUL:** "Stiti is the owner's own JARVIS … British-butler understatement" + "never claim feelings" made the
   model play a machine. **Cause 2 — truncation:** the briefing keeps only 1400 chars of SOUL; ours was ~1700, so the
   whole "Never" section was cut every turn. New SOUL (live + `docs/persona/SOUL.jarvis.md` + `DEFAULT_SOUL`): a friend
   who sounds like a person, "Sounds human" rules first, 1386 chars. No bare "Done." example (the model copied it).
@@ -644,7 +644,7 @@ one reply and Groq doesn't support them).
 ## D38: She learns from normal conversation — night extraction that works, real-time life updates, honest "noted" (2026-11-14)
 **Problem (measured on his real brain, 4 days, ~270 episodes):** 12 current facts, all from the day-one resume import;
 the two night runs extracted `{}` and `{"added": 1}` (a mishearing, later retracted); 2 entities; 1 lesson.
-"Actually, I left MVRX Labs… I left in September" → "Noted. I will mark that down." — nothing was written.
+"Actually, I left Orbitly Labs… I left in September" → "Noted. I will mark that down." — nothing was written.
 Research: `docs/research/learn_from_chat.md` (13 systems: Mem0, Graphiti, MemGPT, A-MEM, LangMem, ChatGPT memory…).
 
 **Root causes found** (the old extractor is not dead: on a clean made-up English day it finds ~8 facts — it fails at
@@ -652,7 +652,7 @@ everything around that)
 1. *Nothing in the turn.* Only keythings (likes/diet) wrote facts live; `REMEMBER_RX` replied "Noted — I'll remember
    that." and wrote nothing; the LLM said "noted" freely (no rule against it, unlike "Added …" / "from now on").
 2. *The night job mostly didn't run* (Mac asleep at night; catch-up only once a day — 11-12/11-13 had no run), and the
-   MVRX turn (ep 285/286) was after the last watermark anyway.
+   Orbitly turn (ep 285/286) was after the last watermark anyway.
 3. *His real windows had few durable statements, and the extractor saw them with no context*: of 127 lines sent, most
    were questions, commands, wake words, Telugu/garbled STT; no Stiti line, so short answers meant nothing; STT half
    sentences went twice.
@@ -687,7 +687,7 @@ everything around that)
   Riya is my sister · I don't play X anymore / I quit smoking · remember that … / "…, yaad rakhna" · actually it's X,
   not Y (retract + restate, entity renamed). Month phrases date it ("in September" → valid from 1 Sep). Hypotheticals
   ("if I left…"), questions, "remember to …" and reminder/todo/alarm turns are skipped. Saved → fast reply "Got it —
-  updated: you left MVRX Labs (September)." (no LLM), episode importance 7, standing profile + USER.md re-rendered in a
+  updated: you left Orbitly Labs (September)." (no LLM), episode importance 7, standing profile + USER.md re-rendered in a
   background thread. A life-update/correction the patterns can't parse ("actually…", "change it", job/moved words) →
   the same extractor for that one turn, in a background thread after the reply (`background_smart`, never the voice
   chain's model; P2 never).
@@ -707,7 +707,7 @@ everything around that)
 **Numbers**
 - Selection on his real brain (read-only dry run, no LLM): 127 lines would have been sent before → 72 now (+ 66 with
   her reply as context); 71 skipped locally (questions, greetings, commands, fragments). Real-time patterns would have
-  caught the MVRX turn and "Pugal is my son"; the to-do/alarm turns are not touched.
+  caught the Orbitly turn and "Ishan is my son"; the to-do/alarm turns are not touched.
 - Live check (made-up 15-line day with a resume-style "intern at Ledgerly" + "hockey player", real Groq gpt-oss-120b,
   ~3.2k tokens, ~5 s): **new** → 10 facts (Meera is his sister / works at Finlo / moving to Pune, "left Ledgerly in
   September 2026", full-time on Tilecraft, Arjun is his friend, badminton, no longer hockey, biryani, no spicy food
@@ -720,7 +720,7 @@ everything around that)
 **Tests:** `tests/learn_from_chat_eval.py` (55, fake router → offline/deterministic): chat → facts/entities/mentions/
 rule; questions/commands/greetings/fragments/P2 not sent; Stiti's line, invented ids and low confidence rejected;
 "left Ledgerly" ends the internship (kept in history); repeat merged; standing profile + USER.md + GRAPH_REPORT;
-real-time "I left Orbitly" (dated September, no LLM), "I don't play hockey anymore" (not a lesson), "Pugal is my son",
+real-time "I left Orbitly" (dated September, no LLM), "I don't play hockey anymore" (not a lesson), "Ishan is my son",
 "remember that…", no hollow "noted" (complete + stream), background extraction for an unparsed update, hypotheticals /
 questions write nothing. Existing suites re-run green: learning, memory, mdsync, persona, honest_actions, no_repeat,
 intent, conversation, human_talk, whole_sentence, lang_switch, turn, realtime, card_motion, web, speed, proactive,
@@ -1342,3 +1342,28 @@ wherever it wants." Research and plan: `docs/research/tutor_agent.md` (15 source
 **Not yet:** heard on his real voice; a mastery-gated re-teach (a concept still wrong after its steps comes back
 later in the session); notes export ("save my notes"); Smart Turn tuned for the tutor; confirm-when-unsure hearing.
 **Tests:** `tutor_coach_eval` (22, new), `tutor_teacher_eval` 112, `tutor_eval` 27, `tutor_launch_eval` 63.
+
+## D54: Fork-safe — the code knows nobody; everything personal is in the user's own local profile (2026-11-20)
+Owner: "this should be for every user… someone forks and uses it for themselves, that information should be for
+themselves." An audit found his employer, college, a friend, a project, his wake phrase and his name in code comments,
+examples, tests, docs and the LaunchAgent label.
+- **Code / tests / docs:** comments say "the owner"; examples use the made-up world (Ravi, Orbitly, Lakeview; Tanvik /
+  Darwin School for the speech-to-text cases; Arav → Ahrahv for say-as). Every test keeps its intent.
+- **Per-user settings come from the local profile:** wake phrases = generic defaults ("Stiti", "Hey/Hi/Hello Stiti",
+  Hinglish forms) + `owner_profile.wake_phrases` (`stiti wake add|remove`); the Whisper wake line and status hints
+  are built from them. The intro's first answer now saves `name` / `call_me` locally. Glossary seeds were already
+  brain-only.
+- **LaunchAgent:** generic `com.stiti.app`. An older install is found by what it runs (`open -a ~/Applications/Stiti.app`),
+  booted out and removed; the app keeps its bundle id so macOS keeps the mic / Calendar / Reminders grants.
+  `stiti migrate-local [--wake "<phrase>"]` does the one-time move (idempotent); `stiti doctor` flags an old label.
+  The old phrase can't be migrated automatically (it would have to live in the code again), so it's an argument.
+- **Guard:** `scripts/privacy_check.py` reads the LOCAL profile (owner_profile, entities, facts, USER.md, vocab.json,
+  optional `~/.stiti/privacy_terms.txt` / `privacy_allow.txt`) and scans tracked or staged files. It prints only
+  `file:line  category`, never a value; exit 1 on hits; skips in CI / without a profile. Opt-in pre-commit hook
+  (`--install-hook`). Chosen over gitleaks / trufflehog / detect-secrets, which find secrets by pattern, not *this
+  person's* names; the local profile is the only list of what is private, and it must never be copied into a config.
+  The owner's name stays only as the copyright holder (LICENSE), package author and project owner (CLAUDE.md).
+- **Not done (needs the owner's call):** older commits on GitHub still contain the details; removing them means a
+  history rewrite (`git filter-repo --replace-text`) + force-push, which breaks every clone, fork and open PR.
+**Tests:** `privacy_eval` (44, new: fresh install knows nobody, the check on a fake profile + fake repo, hook, LaunchAgent
+move), `recap_eval` (own wake phrase), the rest unchanged in intent.

@@ -1,7 +1,7 @@
 # Decision layer pilot (build step 4) — 2026-11-10, Apple M2 8 GB
 
 30 synthetic Hinglish/English turns with gold labels (`tests/gold_turns.py`, written by Claude —
-**replace with 30 of Tejmul's real sentences** and re-run). Scripts: `tests/laya_pilot.py`.
+**replace with 30 of the owner's real sentences** and re-run). Scripts: `tests/laya_pilot.py`.
 
 | Decider | Domain | Correction* | Privacy | Mood | p50 latency | Max RSS |
 |---|---|---|---|---|---|---|

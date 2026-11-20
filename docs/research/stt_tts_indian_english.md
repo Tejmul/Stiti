@@ -1,8 +1,9 @@
-# Hearing and speaking Indian English: STT + TTS for Tejmul's accent (research, 2026-11-11)
+# Hearing and speaking Indian English: STT + TTS for the owner's accent (research, 2026-11-11)
 
-**Questions.** (1) Speech-to-text mishears Tejmul (Indian accent, English with Hindi words). Examples from his log
-(whisper-small q4 via mlx, `language="en"`, Hinglish initial prompt, `src/stiti/voice/stt.py`): "Tejmul" → "Tejmal",
-"Newton School of Technology" → "Newton's Club of Technology", "Karang li am preparing for placements" (garbled
+**Questions.** (1) Speech-to-text mishears the owner (Indian accent, English with Hindi words). Examples from his log,
+with made-up stand-ins for his name and college
+(whisper-small q4 via mlx, `language="en"`, Hinglish initial prompt, `src/stiti/voice/stt.py`): "Tanvik" → "Tanvick",
+"Darwin School of Technology" → "Darwin's Club of Technology", "Karang li am preparing for placements" (garbled
 "Currently"), "The curzle turns into square" (cursor), short "So..." fragments. Which **free** engine and settings work
 best and still keep voice-to-first-audio < 1 s? (2) He finds the Hindi voice "not suitable at all". He wants Stiti to
 speak **English with an accent that suits Indian speech**. Which voice should do that, and what happens to Hindi words
@@ -25,15 +26,15 @@ measurements for ~20 engine/setting combinations on this M2 (8 GB).
     large-v3, heard "Stiti, open my GitHub" spoken by Aman as "Pierre Clovis Thermal P … Sierra Leone".
 - **WER** is computed after lowercasing, removing punctuation, mapping digits to words, folding "to-dos" to "todos",
   and folding Roman Hindi spelling variants to one form using Stiti's own `hinglish.LEX`, so kya = kia and hai = he.
-  **Owner terms heard** counts how many of Tejmul, Stiti, Newton School of Technology, placements, cursor, todos,
+  **Owner terms heard** counts how many of Tanvik, Stiti, Darwin School of Technology, placements, cursor, todos,
   resume, GitHub, DSA, mummy and Rahul (90 occurrences in the set) came out right.
 - **Latency** is the warm wall-clock time for the whole clip on the M2. Whisper is not streaming, so this is the time
   from end of speech to text. RTF = latency / clip length. RSS is the peak resident memory of the test process.
-- **Prompts** compared: `none`; `hinglish` = today's `HINGLISH_PROMPT`; `owner` = `"Glossary: Stiti, Tejmul, Newton
+- **Prompts** compared: `none`; `hinglish` = today's `HINGLISH_PROMPT`; `owner` = `"Glossary: Stiti, Tanvik, Darwin
   School of Technology, placements, DSA, GitHub, todos, resume, cursor."` + today's prompt. "Rahul" was left out on
   purpose as a control.
 - **Caveat:** synthetic speech is cleaner and more regular than a real mic in a real room. On this set every engine
-  already heard "Newton School" and "cursor" correctly. Absolute WER on his real voice **will be higher**. Use the
+  already heard "Darwin School" and "cursor" correctly. Absolute WER on his real voice **will be higher**. Use the
   *ranking* and the *deltas*, and re-run the harness on his own clips (see Next steps).
 
 ## (A) STT — live measurements (this Mac, M2 8 GB, 2026-11-11, 110 clips)
@@ -70,12 +71,12 @@ per-clip results of #3 and #14 (local latency + Groq latency on escalated turns)
   **translates** Hinglish into English: "Kal subah 6 baje alarm laga do" → "tomorrow morning 6 o'clock alarm"; "Aaj
   bahut kaam tha yaar…" → "Today was a very good day, I am tired". Hinglish WER is 81–87% for every English-forced
   model. Today's Hinglish prompt brings small q4 to 12.4%. Adding a **9-word owner glossary** brings it to **9.7%**, with
-  **"Tejmal" → "Tejmul" on all 5 voices** and "playsa mains" → "placements". The cost is +12 ms.
-- **Without the glossary, engines almost always write "Tejmal"** ("Tajmal", "Mahal", "Mal"): 0/5 for every local
+  **"Tanvick" → "Tanvik" on all 5 voices** and "playsa mains" → "placements". The cost is +12 ms.
+- **Without the glossary, engines almost always write "Tanvick"** ("Tanwik", "Mahal", "Mal"): 0/5 for every local
   Whisper size, Swift, Parakeet, Nemotron, Moonshine and Groq turbo, and 1/5 for Apple en-US. With it: small, medium
   5/5; turbo, base and Groq large-v3 4/5; Groq turbo still 0/5. Names are a biasing problem, not a model-size problem.
 - **Groq: large-v3 honours the glossary, turbo mostly ignores it.** large-v3 heard 66/90 owner terms, turbo 49/90,
-  and turbo still wrote "Tejmal" with the glossary. With the long Hinglish prompt, Groq turbo also produced a
+  and turbo still wrote "Tanvick" with the glossary. With the long Hinglish prompt, Groq turbo also produced a
   **prompt echo**: "Remind me to call mummy. Remind me to call mummy. Remind me to call mummy." for "Currently I am
   preparing for placements". Local turbo q4 turned 3 s of pure noise into "Aaj bahut kaam tha yaar." (a prompt
   sentence), and turbo/distil without a prompt turned it into "Thank you.". So prompts should hold words, not whole
@@ -103,7 +104,7 @@ per-clip results of #3 and #14 (local latency + Groq latency on escalated turns)
 
 **Glossary snap post-correction** (`scratchpad/stt/postfix.py`). For each owner term, compare same-length word spans by
 consonant skeleton (first letter + consonants, repeats collapsed; SequenceMatcher ≥ 0.8). Never rewrite a word found in
-`/usr/share/dict/words`, and skip terms with a skeleton shorter than 3 letters (DSA). Measured fixes: Tajmal → Tejmul,
+`/usr/share/dict/words`, and skip terms with a skeleton shorter than 3 letters (DSA). Measured fixes: Tanwik → Tanvik,
 tadoos/todoos → todos. Early versions that allowed wider spans ate neighbouring Hindi words ("tadoos kya" → "todos";
 "today's" → "todos"), so it stays this strict. Gain: 9.7 → 9.1 WER, 75 → 80/90 terms. It is cheap (< 1 ms) and is the
 right home for names Whisper has never seen. "todos" itself is the hardest word in the set ("to-dos / daughters /
@@ -136,7 +137,7 @@ tattoos / orders"). A Laya/fast-path synonym ("to do", "to-dos", "todo list") he
 | 22 | Biasing: post-ASR lexicon snap (ours) | fuzzy match to the owner's glossary | +5 terms, <1 ms, model-agnostic | can't fix what is far off | ✅ add |
 
 ## (C) TTS — Indian-accented English voice, live measurements
-Two sentences per option. S1 = "Hey Tejmul, your meeting with the placement team is at three thirty. Should I remind you
+Two sentences per option. S1 = "Hey Ravi, your meeting with the placement team is at three thirty. Should I remind you
 at three?". S2 = "Okay yaar, I added buy milk to your todos. Aaj ka plan is ready, so let's start." (English with
 Hindi words). **Intelligibility proxy:** 5 English reply sentences + S2 → whisper-large-v3-turbo q4, no prompt,
 `language="en"` (a strong "listener") → WER. Like hinglish_voice.md, this checks clarity, not beauty. All voices hit
@@ -162,7 +163,7 @@ of 2–7 words, warm, p50.
 | 15 | Indic Parler-TTS (AI4Bharat) | T5 + Parler decoder, 0.9B, prompt-described speakers incl. Indian English | 2.6 s+ per line on an L4 GPU (reported) | — | — | — | ~4 GB | Apache-2.0 | ⛔ RAM + speed |
 | 16 | Groq `canopylabs/orpheus-v1-english` | hosted Orpheus 3B | not run | — | — | — | 0 | free 10 RPM / 100 req/day; American voices | ⛔ wrong accent, tiny quota |
 | 17 | `jeevav62/kokoro-82m-indian-en` (single-speaker Kokoro FT) | — | — | — | — | — | — | repo now empty/private | ⛔ unavailable |
-| 18 | Veena / Svara (3B Llama → SNAC) | LLM-style TTS | slow on M2 | — | — | — | 3B | Apache | ⛔ = a local LLM (Tejmul's rule) |
+| 18 | Veena / Svara (3B Llama → SNAC) | LLM-style TTS | slow on M2 | — | — | — | 3B | Apache | ⛔ = a local LLM (the owner's rule) |
 
 \* measured while STT benchmarks ran in parallel. These are relative numbers, roughly 1.5× the clean figures.
 
@@ -211,7 +212,7 @@ escalated p90 turn is ~1.3 s, so play the "hmm" filler (voice_latency.md) when e
 1. One-time export (`scratchpad/tts/goonj_export.py`, run in a throwaway `uv run --with kokoro` env) →
    `~/.stiti/models/voice/goonj.int8.onnx` (114 MB) + `goonj-voices.bin` (15 personas). Load them with the existing
    `Kokoro(...)`. Keep Kokoro `af_heart` as the fallback if the files are missing.
-2. Tejmul picks the persona by ear: **`en_priya`** or **`en_tara`** (female), **`en_arjun`** (male). Set
+2. The owner picks the persona by ear: **`en_priya`** or **`en_tara`** (female), **`en_arjun`** (male). Set
    `STITI_VOICE=en_priya`.
 3. **Hindi words inside English replies:** keep D22's lexicon routing (lexicon words → espeak `hi` phonemes, the rest →
    `en-us`), but **speak the whole line with the same Indian-English persona** (`STITI_HI_VOICE` = the same persona).
@@ -222,7 +223,7 @@ escalated p90 turn is ~1.3 s, so play the "hmm" filler (voice_latency.md) when e
 5. Record as a decision (proposed D25) **after** he listens to the samples below.
 
 ## Listening samples (2 sentences each; s1 = English, s2 = English with Hindi words)
-All in `/private/tmp/claude-501/-Users-tejmul-Desktop-Stiti/0e6c0a17-f92d-4e80-a621-98bf58ea090b/scratchpad/samples/indian_english/`
+All in `<session scratchpad>`
 (the session scratchpad is temporary; copy anything worth keeping):
 - **Recommended, goonj ONNX int8:** `go_en_priya_int8_s1.wav`, `go_en_priya_int8_s2.wav`, `go_en_arjun_int8_s1.wav`,
   `go_en_arjun_int8_s2.wav`, `go_en_tara_int8_s1.wav`, `go_en_tara_int8_s2.wav` (fp32: `go_*_fp32_s*.wav`; PyTorch
