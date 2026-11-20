@@ -1362,3 +1362,27 @@ A right spoken answer, paraphrased or mis-heard by speech-to-text ("the FA" for 
 ≈ 700 ms, 0 timeouts when spaced like a lesson (burst: some hit the 2 s cap and kept the local verdict).
 **Not yet:** local false "correct" on topic-similar wrong answers (never reaches the LLM); targeted hints from
 `missing_text`; real-voice transcripts. **Tests:** `tutor_grade_eval` (new, offline).
+
+## D55: The coach teaches any subject, and a syllabus file (2026-11-20)
+"It should teach me ANYTHING… if I give my entire syllabus it should teach me in a day." Evaluated with the real free
+models on 6 subjects (biology, history, economics, maths, programming, language) + 3 syllabus files; evidence and
+examples in `docs/research/tutor_subjects.md`.
+1. **A syllabus is an outline, not a book** (`book.is_outline`, `unit_text`, `outline_topics`; "Module N" / "Week N"
+   headings). Each unit's LISTED TOPICS + general knowledge make its concepts (`OUTLINE_PROMPT`, every listed topic
+   covered, in order); a flat list is one grouping call. `Concept.general` → steps get no fake SOURCES and never say
+   "the book says". Before, every unit got the text-book citations as its "sources" and 6 major OS topics were lost.
+   The concept cache key includes the file's mtime + size.
+2. **Prompts for any subject:** topic maps in 2–5 real units (regrouped if a model gives one unit per concept; a lazy
+   one-concept answer is asked again); probes one per unit with ONE expected point plus spoken paraphrases ("A or
+   B"); steps fill named `points` / `figure` (required in step 1) / `example` fields — same board slots and
+   Segment/Check — with subject-neutral figures and a real case/timeline (not a made-up "what if") as the worked
+   example for non-procedural subjects. Code keeps ≤ 2 spoken sentences, borrows a missing figure, de-duplicates
+   points, clips at word boundaries, and merges alternative expectations unless the question asks for several things.
+3. **Fairer local grading** (`grade.py`): spoken ↔ written numbers and maths, numbers must match, comma lists are one
+   answer, question-echo words don't count, light stemming, both of two key words. Simulated spoken answers: right
+   graded correct 52 % → 63 %, wrong rejected 80 % → 85 %.
+**Not yet:** order/negation-aware grading (a small local NLI model), a fact check of the cached concept map.
+These local fixes run first; D54's free-LLM second opinion still judges what they leave wrong/partial. On D54's
+72 labelled answers the local grader alone scores 51/72 (D54's local: 54/72): stricter on two-word expectations and
+question echoes, so more right paraphrases are 'partial' — which the second opinion re-judges — and fewer wrong ones
+are a false 'correct' (which never reaches it).

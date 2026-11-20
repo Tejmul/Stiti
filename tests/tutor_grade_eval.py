@@ -67,15 +67,23 @@ print("local grader on the labelled spoken-answer set (no LLM)")
 never = FakeLLM({"verdict": "correct", "missing": [], "reason": "x"})
 right = n = 0
 by_tag: dict[str, list[bool]] = {}
+described: list[str] = []          # MCQ answers that describe an option instead of picking one
 for c in FIX["cases"]:
     g = grade.grade(chk(c["check"]), c["answer"], call=never)          # llm defaults to False
     right += g["verdict"] == c["truth"]
     n += 1
+    if c["tag"] == "mcq" and grade.pick_option(chk(c["check"]), c["answer"]) is None:
+        described.append(g["verdict"])
+        continue
     by_tag.setdefault(c["tag"], []).append(g["verdict"] == c["truth"])
 check(f"the set is big and varied ({n} cases, {len(FIX['checks'])} questions)", n >= 40 and len(FIX["checks"]) >= 20)
 check(f"local accuracy holds its baseline ({right}/{n} = {right / n:.0%} ≥ 70%)", right / n >= 0.70)
 check("idk variants and MCQ picks are always right locally", all(by_tag["idk"]) and all(by_tag["mcq"]),
       str({t: sum(v) for t, v in by_tag.items()}))
+# 'the one that checks the grammar and builds the tree': the question's own words don't count locally (D55), so
+# a described option is at most partial here — never a flat 'wrong' — and the second opinion judges it
+check("…an MCQ answer that describes an option (no pick) is never 'wrong' locally: the second opinion decides",
+      described and "wrong" not in described, str(described))
 check("with llm=False the LLM is never asked", never.calls == [])
 for a, v in (("tokens", "correct"), ("it produces a parse tree", "wrong"), ("I don't know", "idk"),
              ("I think it's the lexer", "wrong")):
