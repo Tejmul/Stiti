@@ -184,30 +184,37 @@ def _judge_prompt(check: Check, answer: str, exps: list[str]) -> str:
                                answer=answer[:400].replace('"', "'"))
 
 
-def second_opinion(check: Check, answer: str, *, call=None, timeout_s: float | None = None) -> dict:
-    """One free-LLM judgement under a hard deadline -> {verdict, missing:[i], reason, ms} or {error, ms}.
-    `call` has planner._call's signature (tests pass a fake). The worker is a daemon thread: if the provider is
-    slow we stop waiting, and its late answer is simply dropped."""
-    exps = [e for e in check.expectations or [] if e and e.strip()]
+def _deadline(call, system: str, user: str, schema: dict, name: str, max_tokens: int, timeout_s: float):
+    """One strict-JSON free-LLM call on a daemon thread under a hard deadline -> (reply, ms, error | None)."""
     if call is None:
         from .planner import _call as call
     fut: Future = Future()
 
     def work():
         try:
-            fut.set_result(call(JUDGE_SYSTEM, _judge_prompt(check, answer, exps), JUDGE_SCHEMA, "grade", 300,
-                                route="tutor_answer", reasoning="low", temperature=0))
+            fut.set_result(call(system, user, schema, name, max_tokens, route="tutor_answer", reasoning="low",
+                                temperature=0))
         except BaseException as e:            # noqa: BLE001 — any failure means "no second opinion"
             fut.set_exception(e)
-    timeout_s = LLM_TIMEOUT_S if timeout_s is None else timeout_s
     t = time.perf_counter()
     threading.Thread(target=work, daemon=True, name="grade-llm").start()
     try:
         d = fut.result(timeout=timeout_s)
     except Exception as e:
-        return {"error": "timeout" if not fut.done() else f"{type(e).__name__}: {str(e)[:80]}",
-                "ms": (time.perf_counter() - t) * 1000}
-    ms = (time.perf_counter() - t) * 1000
+        return None, (time.perf_counter() - t) * 1000, ("timeout" if not fut.done()
+                                                       else f"{type(e).__name__}: {str(e)[:80]}")
+    return d, (time.perf_counter() - t) * 1000, None
+
+
+def second_opinion(check: Check, answer: str, *, call=None, timeout_s: float | None = None) -> dict:
+    """One free-LLM judgement under a hard deadline -> {verdict, missing:[i], reason, ms} or {error, ms}.
+    `call` has planner._call's signature (tests pass a fake). The worker is a daemon thread: if the provider is
+    slow we stop waiting, and its late answer is simply dropped."""
+    exps = [e for e in check.expectations or [] if e and e.strip()]
+    d, ms, err = _deadline(call, JUDGE_SYSTEM, _judge_prompt(check, answer, exps), JUDGE_SCHEMA, "grade", 300,
+                           LLM_TIMEOUT_S if timeout_s is None else timeout_s)
+    if err:
+        return {"error": err, "ms": ms}
     if not isinstance(d, dict) or d.get("verdict") not in ("correct", "partial", "wrong"):
         return {"error": "bad reply", "ms": ms}
     idx = [i for i, e in enumerate(check.expectations or []) if e and e.strip()]   # prompt number n → index
@@ -305,3 +312,92 @@ def parse_confidence(text: str) -> int | None:
     if re.search(r"(not|nahi|guess|thoda|little)", t):
         return 2
     return None
+
+
+# ------------------------------------------------------------------------------------------------ Blurt (free recall)
+# Coconote's Blurt (docs/research/apps/coconote.md T4): "tell me everything you remember about X", graded per key
+# point as recalled / partial / missed — here locally (keywords + the local embedder, the best piece of his answer per
+# point), with one free-LLM second opinion only when a point is partial (a paraphrase the keywords half-caught).
+BLURT_RECALLED_SEM = 0.72
+BLURT_PARTIAL_KW, BLURT_PARTIAL_SEM = 0.3, 0.62
+BLURT_TIMEOUT_S = 3.0
+BLURT_PROMPT = """TOPIC: {topic}
+KEY POINTS the learner should remember:
+{points}
+LEARNER'S FREE RECALL (speech-to-text, everything they remembered): "{answer}"
+For EACH key point return status = "recalled" (the recall states it, in any words), "partial" (touches it but
+misses its key part) or "missed" (not stated, or stated wrongly). Return JSON: points = items of n (the point's
+number) and status; reason = at most 12 words."""
+BLURT_SCHEMA = {"type": "object", "additionalProperties": False, "required": ["points", "reason"], "properties": {
+    "points": {"type": "array", "items": {"type": "object", "additionalProperties": False, "required": ["n", "status"],
+                                          "properties": {"n": {"type": "integer"},
+                                                         "status": {"type": "string",
+                                                                    "enum": ["recalled", "partial", "missed"]}}}},
+    "reason": {"type": "string"}}}
+_CHUNK_RX = re.compile(r"(?<=[.!?;])\s+|,\s+|\s+(?:and then|and also|also|then|plus|and)\s+")
+
+
+def _chunks(answer: str) -> list[str]:
+    """His recall in idea-sized pieces, so one point's similarity isn't diluted by everything else he said."""
+    parts = [p.strip() for p in _CHUNK_RX.split(answer or "") if p and len(p.split()) >= 2]
+    return parts[:24] or ([answer.strip()] if (answer or "").strip() else [])
+
+
+def blurt_grade(points: list[str], answer: str, *, topic: str = "", semantic: bool = True, llm: bool = False,
+                call=None, timeout_s: float | None = None) -> dict:
+    """-> {points: [{point, status: recalled|partial|missed, kw, sem}], recalled, partial, missed, score (0–1),
+           source: local|llm, llm_ms, reason}. Words of the topic's own name don't count ("photosynthesis is…"
+    alone recalls nothing), and a number in a point must be said."""
+    pts = [str(p) for p in (points or []) if p and str(p).strip()]
+    answer = answer or ""
+    echo = {_stem(w) for w in _words(topic)}
+    idk = is_idk(answer) and len(answer.split()) <= 6
+    chunks = [] if idk else _chunks(answer)
+    sims: list[list[float]] = [[0.0] for _ in pts]
+    if semantic and chunks and pts:
+        try:
+            from .. import embed
+            v = embed._embed(pts + chunks)
+            pv, cv = v[:len(pts)], v[len(pts):]
+            sims = [[float(pv[i] @ cv[j]) for j in range(len(chunks))] for i in range(len(pts))]
+        except Exception:
+            pass
+    got_nums = _numbers(answer)
+    rows = []
+    for i, p in enumerate(pts):
+        kw = 0.0 if idk else _keyword_score(p, answer, echo)
+        sem = max(sims[i]) if sims[i] else 0.0
+        need = _numbers(p)
+        nums_ok = not need or bool(need & got_nums)
+        if (kw >= COVER or sem >= BLURT_RECALLED_SEM) and nums_ok:
+            st = "recalled"
+        elif kw >= BLURT_PARTIAL_KW or sem >= BLURT_PARTIAL_SEM:
+            st = "partial"
+        else:
+            st = "missed"
+        rows.append({"point": p, "status": st, "kw": round(kw, 2), "sem": round(sem, 2)})
+    out: dict = {"points": rows, "source": "local", "llm_ms": None, "reason": ""}
+    if (llm and llm_enabled() and any(r["status"] == "partial" for r in rows)
+            and len(answer.split()) >= LLM_MIN_WORDS):
+        prompt = BLURT_PROMPT.format(topic=topic[:120] or "this topic",
+                                     points="\n".join(f"{i + 1}. {p[:160]}" for i, p in enumerate(pts)),
+                                     answer=answer[:1200].replace('"', "'"))
+        d, ms, err = _deadline(call, JUDGE_SYSTEM, prompt, BLURT_SCHEMA, "blurt", 400,
+                               BLURT_TIMEOUT_S if timeout_s is None else timeout_s)
+        out["llm_ms"] = ms
+        if err or not isinstance(d, dict):
+            out["llm_error"] = err or "bad reply"
+        else:
+            for it in d.get("points") or []:
+                try:
+                    k = int(it.get("n")) - 1
+                except (TypeError, ValueError):
+                    continue
+                if 0 <= k < len(rows) and it.get("status") in ("recalled", "partial", "missed"):
+                    rows[k]["status"] = it["status"]
+            out.update(source="llm", reason=str(d.get("reason") or "")[:120])
+    n = len(rows) or 1
+    for st in ("recalled", "partial", "missed"):
+        out[st] = sum(r["status"] == st for r in rows)
+    out["score"] = round((out["recalled"] + 0.5 * out["partial"]) / n, 2)
+    return out
