@@ -542,5 +542,17 @@ stick = [e for e in r["t"].board.els.values() if e.kind == "sticky" and e.region
 check("his doubt is pinned to the page's doubts strip (his notes)", len(stick) == 1
       and "How does the lexer" in getattr(stick[0], "label", ""), str([getattr(e, "label", "") for e in stick]))
 
+# ------------------------------------------------------------------ hold-to-talk: room voices don't count
+print("\nhold-to-talk: only what he says while holding the key counts")
+pl = FakePlanner()
+r = run({"Think of reading": [{"type": "ptt_mode", "on": True}, voice("Where did you play yesterday, my child?")],
+         "The lexer reads": [{"type": "ptt", "down": True}, voice("What happens to the spaces between tokens?"),
+                             {"type": "ptt", "down": False}]}, planner=pl, pace=0.3)
+qs = [c[0] for c in pl.calls]
+check("with hold-to-talk on, a room voice is ignored (not answered, not graded)",
+      not any("play yesterday" in q for q in qs)
+      and any("not holding the talk key" in x for _, x in r["logs"]), str(qs))
+check("…and what he says while holding the key is answered", any("spaces between tokens" in q for q in qs), str(qs))
+
 print(f"tutor teacher: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
