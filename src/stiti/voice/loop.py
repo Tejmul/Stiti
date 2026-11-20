@@ -42,6 +42,10 @@ from .vad import FRAME, SR, VAD
 
 AWAKE_TIMEOUT_S = float(os.getenv("STITI_AWAKE_TIMEOUT", "30"))    # of real silence (D47: was 20, counted from her last reply;
                                                                    # D48: 45 kept her answering things said to someone else)
+CONVO_AWAKE_S = float(os.getenv("STITI_CONVO_AWAKE", "60"))      # 2026-11-20: once a conversation is going (2+ turns) or
+                                                                   # she just asked him something, 60 s of silence
+DROWSY_S = float(os.getenv("STITI_DROWSY", "90"))                 # after dozing off mid-conversation, a follow-up-shaped
+                                                                   # line ("and why…", "what about…") carries on, no wake word
 CAPTIONS = os.getenv("STITI_CAPTIONS", "on") != "off"             # live words next to the orb: what she hears, what she says
 INTERIM_EVERY_S, INTERIM_MIN_MS, INTERIM_WINDOW_S = 1.6, 1500, 6.0   # a rough transcript while he is still talking
 WORK_JOIN_S = 8.0                    # wait at most this long for the previous engine call before the next one
@@ -74,6 +78,8 @@ class VoiceLoop:
         self.awake = False
         self.silenced = False            # True after a stop word: no voice at all until a wake phrase
         self.last_activity = 0.0
+        self.turns_awake = 0             # turns handled since she woke (an active conversation keeps her up longer)
+        self.drowsy_until = 0.0          # dozed off mid-conversation: a follow-up still counts until then
         self.duplex: Duplex | None = None
         self.paused = threading.Event()  # menubar "mute"
         self.ring_control = None         # set while an alarm rings: "band karo" / "5 minute aur" (no wake word needed)
@@ -229,7 +235,7 @@ class VoiceLoop:
         if self.duplex is not None:
             self.duplex.stop_playback()
         self._resume = None
-        self.awake, self.silenced = False, True
+        self.awake, self.silenced, self.drowsy_until = False, True, 0.0
         self._chime(up=False)
         print(f"🤫 (stopped — say {wake.hint()} when you need me)")
 
@@ -241,6 +247,7 @@ class VoiceLoop:
             w.join(WORK_JOIN_S)
 
     def _handle(self, text: str, audio: np.ndarray | None, c: endpoint.Commit | None = None):
+        self.turns_awake = getattr(self, "turns_awake", 0) + 1
         self._wait_work()
         overlay.set_state("thinking")
         voice = None
@@ -413,17 +420,26 @@ class VoiceLoop:
                     self.rt.tick(c)
                 if c is None and not _tutor_active() and (why := d.heal()):
                     print(f"🎙️  [mic] {why} — reopened the microphone (reopen #{d.reopens})")
-                if c is None and not _tutor_active() and d.reopen_failed() and _may_restart():
-                    print("🎙️  [mic] still silent after reopening — restarting Stiti (a fresh process hears again)",
-                          flush=True)
-                    os._exit(75)                         # Stiti.app's launcher restarts on a non-zero exit
                 now = time.time()
+                if c is None and not _tutor_active() and d.reopen_failed():
+                    ok = mic_restart_ok(self.awake, now - self.last_activity, d.heard_once, _last_restart_ago(now))
+                    if ok and _may_restart():
+                        print("🎙️  [mic] still silent after reopening — restarting Stiti (a fresh process hears again)",
+                              flush=True)
+                        os._exit(75)                     # Stiti.app's launcher restarts on a non-zero exit
+                    if not ok and not d.heard_once and not getattr(self, "_no_help_said", False):
+                        self._no_help_said = True        # said once: the log filled with a restart every 5 min
+                        print("🎙️  [mic] silent even after a fresh start (lid closed / input muted / headset away?) — "
+                              "not restarting again; I keep checking and reopen when a mic comes back", flush=True)
+                win = awake_window(self.turns_awake, getattr(self.engine, "last_reply_text", None))
                 if self.awake and (self.tt.busy or c is not None):
-                    self.last_activity = max(self.last_activity, now - AWAKE_TIMEOUT_S + 8)   # he is talking: stay
+                    self.last_activity = max(self.last_activity, now - win + 8)   # he is talking: stay
                 # D47: only an IDLE moment can end the session. Before, the check also ran on the tick that delivered
                 # his words: he spoke for 25 s, paused, and she fell asleep before reading what he had just said.
-                if should_sleep(self.awake, c is not None, now - self.last_activity, d.playing, self.tt.busy):
+                if should_sleep(self.awake, c is not None, now - self.last_activity, d.playing, self.tt.busy,
+                                timeout=win):
                     self.awake = False
+                    self.drowsy_until = now + DROWSY_S if self.turns_awake >= 1 else 0.0
                     overlay.set_state("hidden")
                     self._chime(up=False)
                     print("💤 (sleeping — say “Hey Stiti” to wake me)")
@@ -479,12 +495,22 @@ class VoiceLoop:
                     self.tt.clear_prefix()
                     if self.debug:
                         print(f"   (heard while asleep: {text!r}, {res.ms:.0f} ms)")
+                    if not res.unclear and carries_on(text, now, self.drowsy_until, self.silenced):
+                        # she dozed off a moment ago in the middle of a conversation and he just carries on ("and
+                        # why is that?", "what about Pune?"): no wake word needed, no greeting — answer it
+                        self.awake, self.last_activity, self.drowsy_until = True, now, 0.0
+                        overlay.set_state("listening")
+                        router.warm()
+                        print(f"You: {text}   (carrying on — no wake word needed right after a conversation)")
+                        self._handle(text, c.audio, c)
+                        continue
                     woke, rest = wake.detect(text)
                     if not woke:
                         if wake.near_miss(text):         # "Hey Stuti-ish" that didn't match: log it, nothing else
                             print(f"   (almost woke: {text!r})")
                         continue
                     self.awake, self.silenced, self.last_activity = True, False, now
+                    self.turns_awake, self.drowsy_until = 0, 0.0
                     overlay.set_state("listening")      # "Hey Stiti" → the pill blooms in under the menu bar
                     router.warm()                       # reconnect to the LLM while the chime plays
                     self._chime(up=True)
@@ -544,6 +570,29 @@ _BYE_RX = re.compile(r"\b(bye+|good ?night|gn|so jao|go to sleep|sleep now|see y
 
 MIC_RESTARTS = 2              # at most this many mic restarts …
 MIC_RESTART_WINDOW_S = 600.0  # … per 10 minutes (a really muted mic must not cause a restart loop)
+CONVO_GUARD_S = 120.0         # never restart during a conversation or within 2 min of its last turn (2026-11-20)
+NO_HELP_S = 30 * 60.0         # this process never heard a sound and the last restart was < 30 min ago: a fresh
+                              # process doesn't help (2026-11-18: 12 restarts in 55 min, one every 5 min, mic still dead)
+
+
+def mic_restart_ok(awake: bool, since_activity_s: float, heard_once: bool, last_restart_ago_s: float | None) -> bool:
+    """May the mic watchdog restart the process now? Never mid-conversation (a restart used to wipe what she was
+    talking about); never again when the last restart didn't bring any sound back (the mic itself is silent)."""
+    if awake or since_activity_s < CONVO_GUARD_S:
+        return False
+    if not heard_once and last_restart_ago_s is not None and last_restart_ago_s < NO_HELP_S:
+        return False
+    return True
+
+
+def _last_restart_ago(now: float | None = None) -> float | None:
+    from ..config import CFG
+    now = time.time() if now is None else now
+    try:
+        stamps = [float(x) for x in (CFG.home / "logs" / "mic_restarts").read_text().split()]
+    except (OSError, ValueError):
+        return None
+    return now - max(stamps) if stamps else None
 
 
 def _may_restart(now: float | None = None) -> bool:
@@ -572,10 +621,31 @@ def _safe(fn, text: str):
         return None
 
 
-def should_sleep(awake: bool, got_segment: bool, since_activity_s: float, playing: bool, busy: bool) -> bool:
+def should_sleep(awake: bool, got_segment: bool, since_activity_s: float, playing: bool, busy: bool,
+                 timeout: float | None = None) -> bool:
     """End the session? Only on an idle tick: never on the tick that delivers his words (got_segment), never while he
     is mid-sentence (busy) or she is speaking."""
-    return bool(awake and not got_segment and since_activity_s > AWAKE_TIMEOUT_S and not playing and not busy)
+    t = AWAKE_TIMEOUT_S if timeout is None else timeout
+    return bool(awake and not got_segment and since_activity_s > t and not playing and not busy)
+
+
+def awake_window(turns_awake: int, her_last: str | None) -> float:
+    """Seconds of silence before she sleeps: AWAKE_TIMEOUT_S after a wake or a one-off command; CONVO_AWAKE_S once a
+    conversation is going (2+ turns since the wake) or when her last reply asked him something (he is thinking about
+    his answer). 2026-11-20: 9 % of his next lines came 30 s – 10 min after her reply, i.e. after she had slept."""
+    if turns_awake >= 2 or (her_last or "").rstrip().endswith("?"):
+        return max(AWAKE_TIMEOUT_S, CONVO_AWAKE_S)
+    return AWAKE_TIMEOUT_S
+
+
+def carries_on(text: str, now: float, drowsy_until: float, silenced: bool) -> bool:
+    """Right after she dozed off mid-conversation (not after "bye" / "stop"): a line shaped like a follow-up ("and
+    why…", "what about…", "tell me more") or one that names her anywhere continues the conversation."""
+    if silenced or now >= drowsy_until or not text.strip():
+        return False
+    from ..brain.thread import cue
+    named = any(v in wake._norm(text).split() for v in wake.NAME_VARIANTS)
+    return cue(text) or named
 
 
 def _greeting_line() -> str:

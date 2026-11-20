@@ -17,7 +17,9 @@ class Config:
     db_url: str = os.getenv("STITI_DB", "postgresql:///stiti")
     home: Path = Path(os.path.expanduser(os.getenv("STITI_HOME", "~/.stiti")))
     tz: ZoneInfo = ZoneInfo(os.getenv("STITI_TZ", "Asia/Kolkata"))
-    briefing_token_budget: int = 1500
+    # 1,500 left ~200 tokens after the fixed parts (soul, rules, profile, markers ≈ 1,300): RECENT was squeezed to the
+    # last two exchanges in most turns (2026-11-20). Groq free = 8K TPM → ~3.5 turns a minute, the chain falls back.
+    briefing_token_budget: int = int(os.getenv("STITI_BRIEF_BUDGET", "1900"))
     keys: dict[str, str] = field(default_factory=lambda: {
         **{p: os.getenv(f"{p.upper()}_API_KEY", "")
            for p in ("groq", "cerebras", "zai", "cloudflare", "openrouter", "mistral", "nvidia", "gemini")},

@@ -1550,3 +1550,21 @@ and "it asks the same questions again and again" — so pacing is owned by code 
    asking is his answer (it used to be dropped, so she asked again).
 **Tests:** `tutor_coach_eval`, `tutor_teacher_eval`, `tutor_grade_eval`, `tutor_eval`, `web_lessons_eval` extended;
 `review_map_eval` unchanged in intent.
+
+## D62: She keeps the conversation going — no restarts mid-talk, resume after a restart, a thread, one beat (2026-11-20)
+**His words:** she stops listening mid-conversation, loses the thread ("and that one?", "why?" = new topic), answers
+and stops, lessons don't continue. Evidence + numbers: `docs/research/conversation_continuity.md`.
+- **Watchdog:** restart only when asleep and ≥ 2 min after the last turn; no second restart within 30 min when the
+  fresh process never heard a sound (2026-11-18: 12 restarts in 55 min); a default-mic switch is not a failed reopen.
+- **Resume:** the app's engine continues the voice session if the last turn was < 15 min ago and restores its state
+  from `~/.stiti/conversation.json` (0600) — RECENT, D36 ledger, D48 recap, thread, pending yes all survive restarts.
+- **Awake:** 60 s window in a running conversation / after her question (30 s otherwise); 90 s drowsy window where a
+  follow-up-shaped line or her name carries on; "bye Stiti" inside a long sentence counts only at its end.
+- **Thread** (`brain/thread.py`): follow-ups recall with the topic and get a [THREAD] block; "tell me more" about a
+  topic continues it (about him: the D36 honest path).
+- **Briefing:** budget 1,900 (`STITI_BRIEF_BUDGET`), last three exchanges always kept (RECENT was 2 exchanges in 81 %
+  of long-conversation turns), earlier-in-this-conversation gist, facts trimmed to 3 before RECENT.
+- **One beat:** a specific follow-up question or a building sentence, only in a running thread or a story, never
+  two questions in a row (≤ 1 in 4), off when terse / annoyed / after commands / when cut off / "don't ask questions".
+- Lessons (symptom 4): diagnosed; fix paused by the owner as WIP on branch `wip/lesson-resume`.
+- Tests: `conversation_continuity_eval` 100 (new). NOT verified on the mic.
