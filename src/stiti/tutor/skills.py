@@ -28,7 +28,13 @@ REGIONS = {  # relative to the page origin: x, y, w, h
     "title": (60, 34, 1060, 80), "goal": (1160, 40, 380, 60),
     "main": (60, 150, 1040, 610), "side": (1160, 150, 380, 520),
     "parking": (1160, 700, 380, 170), "notes": (60, 790, 1040, 80),
+    # D53 notes page (research: tutor_systems.md "whiteboard as notes"): fixed slots, filled in order — the LLM names
+    # the slot, never a position. Key points left (~60 %), one figure right, worked example band, his doubts, Remember.
+    "points": (60, 140, 860, 430), "figure": (960, 140, 580, 430), "example": (60, 600, 1480, 130),
+    "doubts": (60, 755, 940, 125), "remember": (1040, 755, 500, 125),
 }
+FLOW_V = ("points", "figure")      # top → bottom inside the slot
+FLOW_H = ("example", "doubts")     # left → right, wrapping to a new row
 PALETTE = {  # stroke, background (Excalidraw's own palette)
     "plain": ("#1e1e1e", "#f8f9fa"), "warm": ("#e8590c", "#ffec99"), "green": ("#2f9e44", "#b2f2bb"),
     "blue": ("#1971c2", "#a5d8ff"), "red": ("#e03131", "#ffc9c9"), "violet": ("#6741d9", "#d0bfff"),
@@ -260,6 +266,23 @@ class Board:
     def _place(self, w: float, h: float, place: str | None, ref: str | None, region: str | None) -> tuple[float, float, str]:
         fs = self._fs()
         region = region or "main"
+        if region in FLOW_V:
+            rx, ry, rw, rh = self.region(region)
+            y = fs.get(region + "_y") or ry
+            x = rx if region == "points" else rx + max(0.0, (rw - w) / 2)
+            fs[region + "_y"] = y + h + (22 if region == "points" else 40)
+            return x, y, region
+        if region in FLOW_H:
+            rx, ry, rw, rh = self.region(region)
+            x, y = fs.get(region + "_x") or rx, fs.get(region + "_row") or ry
+            if x > rx and x + w > rx + rw:              # next row
+                x, y = rx, y + fs.get(region + "_h", h) + 14
+            fs[region + "_x"], fs[region + "_row"] = x + w + 28, y
+            fs[region + "_h"] = max(h, fs.get(region + "_h", 0) if x > rx else h)
+            return x, y, region
+        if region == "remember":
+            rx, ry, _, _ = self.region(region)
+            return rx, ry, region
         if region in ("side", "parking"):
             rx, ry, rw, rh = self.region(region)
             key = "side_y" if region == "side" else "park_y"
@@ -368,6 +391,14 @@ class Board:
         self.log.extend(acts)
         return acts
 
+    def note_doubt(self, question: str) -> list[dict]:
+        """D53: his doubt becomes part of his notes — a yellow sticky in the page's doubts strip."""
+        keep, self.frame = self.frame, (self.col, 0)
+        acts = self._op_sticky(Op(type="sticky", text="Q: " + question[:60], region="doubts"))
+        self.frame = keep
+        self.log.extend(acts)
+        return acts
+
     def summary(self) -> str:
         """'id | type | text' lines — what the LLM gets instead of a screenshot (ChalkTalk)."""
         out = []
@@ -416,13 +447,28 @@ class Board:
     def _op_text(self, op: Op) -> list[dict]:
         region = op.region or "main"
         small = region in ("parking", "goal", "notes")
-        fs = 16 if small else 20
-        txt = wrap(op.text, 34 if region in ("side", "parking", "goal") else 52)
+        # notes pages are read from across a room: big type by role (title 40 · points 30 · remember 26 · example 24)
+        fs = 16 if small else {"points": 30, "remember": 26, "example": 24, "doubts": 20}.get(region, 20)
+        text = op.text
+        if region == "points":                           # numbered key points: the page reads like notes
+            st = self._fs()
+            st["points_n"] = st.get("points_n", 0) + 1
+            text = f"{st['points_n']}. {text}"
+        width = {"side": 34, "parking": 34, "goal": 34, "points": 46, "example": 22, "doubts": 40,
+                 "remember": 30}.get(region, 52)
+        txt = wrap(text, width)
         w, h = text_size(txt, fs)
         x, y, reg = self._place(w, h, op.place, op.ref, region)
         iid = self._new_id(op.id, "t")
-        stroke = PALETTE.get(op.style or "plain", PALETTE["plain"])[0]
+        stroke = PALETTE.get(op.style or {"example": "green", "remember": "violet"}.get(region, "plain"),
+                             PALETTE["plain"])[0]
         self._register(iid, "text", x, y, w, h, reg, label=op.text)
+        if region == "remember":                         # the page's takeaway, boxed
+            return [{"do": "add", "anim": "fade", "els": [_base(
+                type="rectangle", id=iid + ".box", x=x - 14, y=y - 12, width=w + 28, height=h + 24,
+                strokeColor=PALETTE["violet"][0], backgroundColor="#f3f0ff", strokeWidth=2, roundness={"type": 3})]},
+                {"do": "add", "anim": "type", "dt": 150,
+                 "els": [_base(type="text", id=iid, x=x, y=y, text=txt, fontSize=fs, strokeColor=stroke)]}]
         return [{"do": "add", "anim": "type" if len(txt) < 80 else "fade",
                  "els": [_base(type="text", id=iid, x=x, y=y, text=txt, fontSize=fs, strokeColor=stroke)]}]
 
@@ -481,13 +527,16 @@ class Board:
         gid = op.id or f"g{self.n + 1}"
         nodes = op.nodes or []
         sizes, dims = {}, {}
+        gfs = 24 if op.region == "figure" else 20
         for n in nodes:
-            txt, w, h = self._box_dims(n["text"], n.get("shape") or "rectangle", 20)
+            txt, w, h = self._box_dims(n["text"], n.get("shape") or "rectangle", gfs)
             sizes[n["id"]], dims[n["id"]] = (w, h), txt
-        rx, ry, rw, rh = self.region("main")
-        mains = [e for e in self._frame_els() if e.region == "main"]
-        top = ry if not mains else max(e.bottom for e in mains) + VGAP
-        pos, mode = layered_layout(nodes, op.edges or [], sizes, op.direction or "", rw + 380 if not mains else rw,
+        reg = "figure" if op.region == "figure" else "main"
+        rx, ry, rw, rh = self.region(reg)
+        mains = [e for e in self._frame_els() if e.region == reg]
+        top = ry if not mains else max(e.bottom for e in mains) + (40 if reg == "figure" else VGAP)
+        wide = rw + 380 if not mains and reg == "main" else rw
+        pos, mode = layered_layout(nodes, op.edges or [], sizes, op.direction or "", wide,
                                    ry + rh - top if mains else rh)
         gw = max(pos[i][0] + sizes[i][0] for i in pos)
         x0 = rx + max(0, (rw - gw) / 2) if gw <= rw else rx
@@ -498,9 +547,9 @@ class Board:
             x, y = x0 + pos[n["id"]][0], top + pos[n["id"]][1]
             stroke, bg = PALETTE.get(n.get("style") or op.style or "blue", PALETTE["blue"])
             shape = n.get("shape") or "rectangle"
-            self._register(nid, "box", x, y, w, h, "main", shape, label=n["text"])
+            self._register(nid, "box", x, y, w, h, reg, shape, label=n["text"])
             el = _base(type=shape, id=nid, x=x, y=y, width=w, height=h, strokeColor=stroke, backgroundColor=bg,
-                       label={"text": dims[n["id"]], "fontSize": 20})
+                       label={"text": dims[n["id"]], "fontSize": gfs})
             if shape == "rectangle":
                 el["roundness"] = {"type": 3}
             acts.append({"do": "add", "anim": "sketch", "dt": t, "els": [el]})
@@ -520,9 +569,9 @@ class Board:
         rows = op.rows or []
         ncol = max(len(r) for r in rows)
         rows = [r + [""] * (ncol - len(r)) for r in rows]
-        fs = 18
+        fs = 22 if op.region == "figure" else 18
         colw = [max(110, max(len(r[c]) for r in rows) * fs * CH + 30) for c in range(ncol)]
-        rowh = 50
+        rowh = 58 if op.region == "figure" else 50
         W, H = sum(colw), rowh * len(rows)
         x0, y0, reg = self._place(W, H, op.place, op.ref, op.region)
         tid = self._new_id(op.id, "tbl")

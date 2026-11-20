@@ -48,6 +48,7 @@ FRAG_S = 6.0                # a fragment dropped as "too short to interrupt" thi
 GATHER_UNFINISHED_S = 4.5   # his words end mid-thought ("…so", "…I want you to") → wait this long for the rest
 UNFINISHED_RX = re.compile(r"\b(so|and|but|or|because|to|the|a|an|of|in|on|with|for|is|are|was|like|that|which|"
                            r"if|then|i|my|you|want|mean|about|um+|uh+|actually|basically)\W*$", re.I)
+PTT_TAIL_S = 2.5            # hold-to-talk: speech still counts this long after he lets go (Whisper finishing)
 STEER_LINES = {"skip_to": "Okay, let's jump ahead.", "restart": "Okay, let's go again from the start, slowly.",
                "switch": "Okay, let's switch to that.", "crash": "Got it. Let's cover the whole thing quickly for your exam."}
 
@@ -95,6 +96,15 @@ class Tutor:
         self._frag: tuple[float, str] | None = None   # (when, text) of a too-short piece of his speech
         self._held: deque = deque()                     # events that arrived while she waited for his whole sentence
         self.switch: dict | None = None                 # {"mode": switch|crash, "target", "say"} → __init__ plans it
+        self.on_check = None                            # D53 coach: (segment, record) after every graded check
+        self.skip_to: int | None = None                 # D53 coach: jump here at the next step (he knows the rest)
+        self.before_end = None                          # D53 coach: () -> True when it added more segments
+        # hold-to-talk (Wispr Flow: the user decides when he's talking). 2026-11-20 demo: people talking in his room
+        # ("Where did you play yesterday?") were graded as his answers. On: only speech while the key is held (or
+        # within PTT_TAIL_S after release, while Whisper finishes) counts; commands like "end" too.
+        self.ptt_mode = False
+        self.ptt_down = False
+        self.ptt_up_t = 0.0
         if start:                                    # resuming: rebuild the board silently up to `start`
             flat = lesson.cue_list()
             for kk in range(min(start, len(flat))):
@@ -131,6 +141,25 @@ class Tutor:
             return None
         if ev.get("type") == "error":
             self.log(f"   [board] {ev.get('msg')}")
+            return None
+        if ev.get("type") == "ptt_mode":
+            self.ptt_mode = bool(ev.get("on"))
+            self.log(f"   [ptt] hold-to-talk {'on' if self.ptt_mode else 'off'}")
+            self.status("waiting" if self.ptt_mode else "playing",
+                        "hold Space to talk" if self.ptt_mode else "listening")
+            return None
+        if ev.get("type") == "ptt":
+            self.ptt_down = bool(ev.get("down"))
+            if self.ptt_down:
+                self.ptt_mode = True                  # pressing the key at all means he wants this mode
+                if self.audio.playing:
+                    self.audio.stop()                 # he's about to talk: she stops, like a raised hand
+            else:
+                self.ptt_up_t = time.time()
+            return None
+        if (ev.get("type") == "voice" and self.ptt_mode and not self.ptt_down
+                and time.time() - self.ptt_up_t > PTT_TAIL_S):
+            self.log(f"   (ignored, not holding the talk key: {(ev.get('text') or '')[:60]!r})")
             return None
         if ev.get("type") not in ACTIONABLE:
             return None
@@ -281,8 +310,14 @@ class Tutor:
     def _apply(self, ops: list[Op], k: int, say: str = "", ms: int = 0) -> list[dict]:
         before = set(self.board.els)
         acts = []
-        for op in ops:
+        # D53 "it should look like real time": ops without their own word cue are spread across the sentence, so she
+        # writes while she talks instead of everything popping in at 0 ms (a page title still comes first)
+        loose = [i for i, op in enumerate(ops) if op.type != "new_page" and (op.at in (None, "", "start"))]
+        for i, op in enumerate(ops):
             at = resolve_at(op.at, say, ms) if ms else 0
+            if ms and i in loose:
+                j = loose.index(i)
+                at = int(ms * (0.08 + 0.8 * j / max(1, len(loose))))
             for a in self.board.apply(op):
                 acts.append({**a, "at_ms": at + a.get("dt", 0)})
         for iid in set(self.board.els) - before:
@@ -300,21 +335,47 @@ class Tutor:
                         words.append(op.text)
         return [w for w in words if w and not w.lower().startswith(("warm", "summary", "recap"))]
 
-    def run(self) -> dict:
-        self._persist_start()
+    def _drop_stale_speech(self) -> None:
+        """2026-11-20: a garbled reply to the goal question was still queued and got graded as the answer to probe 1
+        before he even heard it ('asking me the same questions again and again'). Voice/typed lines already waiting
+        when a new question starts are dropped; controls (end, pause…) are kept."""
+        keep = []
+        while True:
+            try:
+                e = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if e.get("type") in ("voice", "text"):
+                self.log(f"   (dropped, said before the question: {(e.get('text') or '')[:60]!r})")
+                continue
+            keep.append(e)
+        self._held = deque(e for e in self._held if e.get("type") not in ("voice", "text"))
+        for e in keep:
+            self.events.put(e)
+
+    def ears_on(self, words: list[str] | None = None) -> None:
+        """D52: the big cloud ear + his lesson's words for Whisper. Called before ANY listening — the coach's opening
+        questions too (2026-11-20: his goal answer was heard as 'Ipul yoru, abstracti…' by the local ear alone)."""
         try:
             from ..voice import glossary, stt
-            glossary.set_session(self.lesson_words())  # D52: Whisper expects HIS lesson's words ("DFA", not "the FA")
-            stt.prefer_cloud(hasattr(self.audio, "vl"))   # voice lessons only: the big cloud ear for his sentences
+            glossary.set_session((words or []) + self.lesson_words())
+            stt.prefer_cloud(hasattr(self.audio, "vl"))   # voice lessons only
         except Exception:
             pass
+
+    def run(self) -> dict:
+        self._persist_start()
+        self.ears_on(getattr(self, "extra_words", None))
         try:
             while not self.ended:
                 flat = self._flat()
                 if self.k >= len(flat):
-                    if getattr(self.L, "complete", True) or not self._wait_for_more():
-                        break
-                    continue
+                    if not getattr(self.L, "complete", True) and self._wait_for_more():
+                        continue
+                    if (getattr(self.L, "complete", True) and self.before_end is not None and not self.ended
+                            and self.before_end()):
+                        continue                    # D53 coach: come back to what's still wrong, then the recap
+                    break
                 seg, cue, si, ci = self._cue(self.k)
                 if seg.type == "summary" and ci == 0 and self.predict and not self._hook_done:
                     self._revisit_hook()
@@ -328,6 +389,8 @@ class Tutor:
                     if r in ("moved", "end"):
                         continue
                 self.k += 1
+                if self.skip_to is not None:            # the coach saw he knows this concept: skip its other steps
+                    self.k, self.skip_to = max(self.k, self.skip_to), None
                 self._save_cursor()
                 if ci == len(seg.cues) - 1 and not self.ended:      # end of a section: breathe, maybe check in
                     ev = self._section_end(seg)
@@ -389,6 +452,7 @@ class Tutor:
         elif kind in ("slower", "faster"):
             self.speed = round(min(1.3, max(0.75, self.speed + (-0.1 if kind == "slower" else 0.1))), 2)
             self.futs.clear()
+            self.send({"type": "speed", "value": self.speed})      # the dock shows "0.9×"
             self.say("Okay, slower." if kind == "slower" else "Okay, a bit faster.")
         elif kind == "end":
             self.ended = True
@@ -402,6 +466,63 @@ class Tutor:
             self._answer(text, resume_cue=mid_cue)
         elif kind == "steer":
             self._steer(text, mid_cue=mid_cue)
+        elif kind == "correct":
+            self._corrected(text, mid_cue)
+
+    def listen(self, prompt: str | None = None, *, check_box: dict | None = None, timeout: float = 60.0) -> str | None:
+        """Ask him something outside the lesson script and wait for his whole answer (D53 coach opening).
+        -> his text, "" when he stayed silent, None when he ended the lesson."""
+        self._drop_stale_speech()                     # words from before this question are not its answer
+        ev = self.say(prompt) if prompt else None
+        if check_box:
+            self.send({"type": "check", **check_box})
+        self.status("waiting", "your turn — say or type your answer")
+        t0, nudged = time.time(), False
+        try:
+            while not self.ended:
+                ev = ev or self._next_event(0.3)
+                if ev is None:
+                    waited = time.time() - t0
+                    if waited > timeout * self.pace:
+                        return ""
+                    if not nudged and waited > timeout * self.pace / 2:
+                        nudged = True
+                        ev = self.say("Take your time. Or say I don't know.")
+                    continue
+                kind, text = self._kind(ev, answering=True)
+                ev = None
+                if kind == "end":
+                    self.ended = True
+                    return None
+                if kind == "repeat" and prompt:
+                    ev = self.say(prompt)
+                    continue
+                if text:
+                    return text
+        finally:
+            if check_box:
+                self.send({"type": "check_done"})
+        return None
+
+    def _corrected(self, text: str, mid_cue: bool = True) -> None:
+        """'No, I said lexer': she heard him wrong. Drop what she was doing with the wrong words and take the right
+        ones — and teach the ear the word (vocab.learn), so the next time it hears 'lexer' (D53)."""
+        rest = commands.correction(text) or text
+        prev = self.questions[-1] if self.questions else None
+        self.log(f"   [heard wrong] now: {rest!r} (before: {prev!r})")
+        try:
+            from ..voice import vocab
+            vocab.learn(text, prev)
+        except Exception:
+            pass
+        self.audio.stop()
+        kind = commands.classify(rest)
+        if kind == "steer":
+            self._steer(rest, mid_cue=mid_cue)
+        else:
+            self.say("Ah, sorry. Got it.", interruptible=False)
+            self._answer(rest if kind == "question" or len(rest.split()) > 2 else f"What about {rest}?",
+                         resume_cue=mid_cue)
 
     # ------------------------------------------------------------ he changes the plan (D52)
     def _units(self) -> tuple[str, list[str]]:
@@ -554,12 +675,17 @@ class Tutor:
                 break
             lines = self._play_answer(ans) if ans and ans.get("say") else self._offline_answer(question)
             self.last_doubt = {"q": question, "a": lines, "t": time.time()}
+            if ans and ans.get("stuck_at"):
+                self.log(f"   [doubt] stuck at: {ans['stuck_at']} ({ans.get('error_type')})")
             first = False
+            if ans and not answering and not self.ended:
+                self._doubt_check(ans.get("check"))
             nxt = self._await_followup(question, answering)
             if nxt is None:
                 break
             question, simpler = nxt
-        self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]})
+        self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]
+                   + [{**a, "at_ms": 300} for a in self.board.note_doubt(title or question)]})
         if resume_cue:
             self.snaps[self.k] = self.board.snapshot()   # replay restores THIS (lesson board + doubt board below)
         if not self.ended:
@@ -653,6 +779,9 @@ class Tutor:
             kind, text = self._kind(ev, answering=answering)
             if kind == "question":
                 return text, False
+            if kind == "correct":                     # "no, I asked about X": answer X instead
+                self.log(f"   [heard wrong] now: {commands.correction(text)!r}")
+                return commands.correction(text) or text, False
             if kind == "confused":
                 return f"I still didn't get this: {question}", True
             if kind == "answer":
@@ -669,6 +798,24 @@ class Tutor:
             self.events.put(ev)                       # back / skip / slower …: the lesson loop handles it
             return None
         return None
+
+    def _doubt_check(self, chk: dict | None) -> None:
+        """D53: after a doubt, one short question shows whether the gap is really closed (not 'did you get it?')."""
+        if not chk or not chk.get("prompt"):
+            return
+        reply = self.listen(chk["prompt"], timeout=25)
+        if not reply:
+            return
+        if commands.classify(reply, answering=True) in ("question", "steer", "confused"):
+            self.events.put({"type": "text", "text": reply, "_seen": True})   # another doubt: the follow-up takes it
+            return
+        g = grade.grade(Check(kind="recall", prompt=chk["prompt"], expectations=[chk.get("expected") or ""]), reply)
+        if g["verdict"] == "correct":
+            self.say("Yes, exactly.", interruptible=False)
+        elif g["verdict"] == "partial":
+            self.say(f"Nearly. The key part: {chk.get('expected')}.", interruptible=False)
+        else:
+            self.say(f"Not quite. It's {chk.get('expected')}.", interruptible=False)
 
     def _play_answer(self, ans: dict) -> list[str]:
         """Say the answer sentence by sentence; each sentence draws its own ops while it is said."""
@@ -785,6 +932,10 @@ class Tutor:
             if kind in ("slower", "faster"):
                 self._handle({"type": "control", "cmd": kind})
                 continue
+            if kind == "correct":                     # "no, I said FIRST sets": grade what he really said
+                text = commands.correction(text) or text
+                self.log(f"   [heard wrong] his answer: {text!r}")
+                kind = "answer"
             if kind == "steer":                       # "I don't need the basics" is a request, not his guess (D52)
                 r = self._steer(text, mid_cue=False)
                 if r in ("moved", "switch"):
@@ -835,6 +986,11 @@ class Tutor:
                 self.say("A confident miss. Those are the best ones to learn from, so this card goes to the top of your revision.")
         self.results.append(rec)
         self.send({"type": "check_done"})
+        if self.on_check is not None:
+            try:
+                self.on_check(seg, rec)
+            except Exception as e:
+                self.log(f"   [coach] on_check {type(e).__name__}: {e}")
         return outcome
 
     def _revisit_hook(self) -> None:

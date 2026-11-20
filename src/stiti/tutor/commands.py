@@ -53,13 +53,33 @@ STEER = re.compile(
     r"whole (syllabus|book|notebook|thing|html|file)|(the|this|that) (html|notebook|file|pdf|book) i (gave|sent|shared))\b")
 
 
+# He corrects what she heard (D53, "it's hearing wrong and then answering me anything. I could not even correct it"):
+# "no, I said lexer", "not that, I asked about the FIRST set", "I meant DFA". The rest is what he really said.
+CORRECTION = re.compile(r"^(?:(?:no+|nope|nahi|not that|wrong|that'?s not what i (?:said|asked|meant))[,.! ]+)?"
+                        r"(?:i (?:said|asked|meant|mean|was asking|am asking)|i'?m asking|my question (?:is|was))"
+                        r"[,: ]+(?:about |for |that |if |whether )?(?P<rest>.+)$", re.I)
+
+
+def correction(text: str) -> str | None:
+    """"no, I said lexer" → "lexer" (what he really said), else None."""
+    m = CORRECTION.match((text or "").strip())
+    if not m:
+        return None
+    rest = m.group("rest").strip(" .!?,")
+    if not rest or rest.lower() in ("it", "that", "this", "so", "yes", "no", "what", "the same"):
+        return None                                   # "I mean it" is not a correction
+    return rest
+
+
 def classify(text: str, *, answering: bool = False) -> str:
-    """-> end | pause | repeat | back | next | slower | faster | resume | confused | hindi | english |
+    """-> correct | end | pause | repeat | back | next | slower | faster | resume | confused | hindi | english |
           steer | question | answer | other.  While a check is open, plain sentences are answers — but a request
           to change the lesson ("I don't need the basics", "exam tomorrow") is never taken as his answer."""
     t = _N(text)
     if not t:
         return "other"
+    if correction(text):
+        return "correct"
     if len(t.split()) <= 6:
         for name, rx in RULES:
             if name in ("confused", "hindi", "english"):

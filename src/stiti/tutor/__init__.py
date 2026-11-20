@@ -208,7 +208,7 @@ def _teach(args: list[str]) -> dict:
     from .player import Tutor
     from .server import BoardServer
     target = next((a for i, a in enumerate(args) if not a.startswith("--")
-                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes", "--hours", "--goal"))), None)
+                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes", "--hours", "--goal", "--focus"))), None)
     mode = "silent" if "--silent" in args else "type" if "--type" in args else "voice"
     board = "--no-board" not in args
     holder: dict = {}
@@ -221,6 +221,8 @@ def _teach(args: list[str]) -> dict:
     if course:
         audio = au.make(mode, events, debug="--debug" in args)
         return _course_session(args, target, audio, events, srv, stop_args=args)
+    if _coach_target(target, args):
+        return _coach_session(target, args, mode, srv, events, holder)
     # D42: the board opens FIRST and the lesson is planned WHILE her voice loads. Before, he said "teach me X" and
     # looked at nothing for ~19 s: voice models (13 s), then the plan (5 s), and only then the board — in a row.
     if srv:
@@ -296,6 +298,76 @@ def _teach(args: list[str]) -> dict:
     print(f"\n✅ {'Finished' if result['finished'] else 'Stopped'} '{lesson.title}': checks {right}/{graded}, "
           f"{result['questions']} question(s), {result['cards_saved']} revision card(s) saved.")
     return result
+
+
+def _coach_target(target: str | None, args: list[str]) -> bool:
+    """D53: his file or a topic → the coach (goal + quick probes + mastery). `--classic` keeps the old lesson; the
+    built-in demo, --resume and course modes stay as they were."""
+    from . import lesson as L
+    if not target or "--classic" in args or "--resume" in args or target in L.demos():
+        return False
+    from .. import router
+    return any(s["key"] for s in router.status())
+
+
+def _coach_session(target: str, args: list[str], mode: str, srv, events, holder: dict) -> dict:
+    """One coached session on the same board and voice; 'switch to unit 3' / 'exam tomorrow' re-plan in place."""
+    from . import audio as au
+    from .coach import Coach
+    p = Path(target).expanduser()
+    book_path = str(p) if p.suffix.lower() in BOOK_EXTS and p.exists() else None
+    unit = _arg(args, "--chapter")
+    goal = None
+    if srv:
+        srv.start()
+        print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (opening it now — drag it to your big screen, press F for full screen)\n")
+        if "--no-open" not in args:
+            srv.open_browser()
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .coach import concept_map, focus_split
+    pool = ThreadPoolExecutor(1, thread_name_prefix="coach-map")
+    # D42: her voice (~13 s) and reading his file run at the same time, after the board is already on screen
+    fut = pool.submit(concept_map, book_path or target, book_path=book_path, unit=unit)
+    try:
+        audio = au.make(mode, events, debug="--debug" in args)
+    except BaseException:
+        if srv:
+            srv.stop()
+        raise
+    stop = threading.Event()
+    if mode != "voice" or sys.stdin.isatty():
+        threading.Thread(target=_stdin_reader, args=(events, stop), daemon=True).start()
+    print("Talk any time: wait / continue / repeat / go back / skip / slower / faster / end — or just ask.\n")
+    res: dict = {"finished": False}
+    try:
+        for _ in range(4):                           # at most a few re-plans in one sitting
+            coach = Coach(book_path or target, audio=audio, events=events, server=srv, book_path=book_path,
+                          unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")))
+            fut = None                               # a re-plan (other unit) maps again
+            holder["t"] = coach.t
+            coach.t.ptt_mode = "--ptt" in args          # hold-to-talk from the start (noisy room)
+            if srv:
+                srv.connected.wait(15)
+                for m in coach.t.on_connect():
+                    srv.send(m)
+            res = coach.run()
+            sw = coach.t.switch
+            if not sw:
+                break
+            if sw["mode"] == "crash":                # "exam tomorrow, cover everything": the whole file, exam mode
+                unit, goal = None, {"mode": "exam", "days": 1}
+            else:
+                unit = sw.get("target") or unit
+                goal = coach.goal
+    finally:
+        stop.set()
+        audio.close()
+        if srv:
+            srv.stop()
+    print(f"\n✅ {'Finished' if res.get('finished') else 'Stopped'}: checks {res.get('checks_right', 0)}/"
+          f"{res.get('checks_graded', 0)}, {res.get('questions', 0)} question(s).")
+    return res
 
 
 def _switch_target(sw: dict, target: str | None, lesson) -> str:
@@ -583,7 +655,10 @@ def _launch(topic: str | None, resume: bool, mode: str | None) -> str:
         return msg
     from .lesson import demos
     args = ["--resume"] if resume else ([topic] if topic else [])
-    if topic and topic not in demos():
+    book = find_book(topic) if topic and not resume and topic not in demos() else None
+    if book:                                        # "teach me the compiler notebook" → HIS file, not the topic (D53)
+        args = [book]
+    if topic and topic not in demos() and not book:
         from .. import router
         if not any(s["key"] for s in router.status()):
             if "compil" in topic.lower():
@@ -591,6 +666,8 @@ def _launch(topic: str | None, resume: bool, mode: str | None) -> str:
             else:
                 return "Right now I can only teach my compilers lesson. Say: teach me compilers."
     _spawn(args)
+    if book:
+        return f"Opening the whiteboard with {Path(book).stem[:40]}. First, a couple of quick questions."
     return "Opening the whiteboard. Give me a few seconds." if not resume else "Opening your lesson where we stopped."
 
 

@@ -433,7 +433,7 @@ P.Tutor.run = lambda self: (got.update(connect=got["srv"].on_connect()), _mark("
                              "cards_saved": 0})[2]
 try:
     t_open = time.time()
-    res = tutor._teach(["some topic", "--silent"])
+    res = tutor._teach(["some topic", "--silent", "--classic"])
 finally:
     AU.make, tutor.make_lesson = real["make"], real["lesson"]
     SV.BoardServer.start, SV.BoardServer.open_browser = real["start"], real["opened"]
@@ -457,7 +457,7 @@ SV.BoardServer.start = lambda self: self
 SV.BoardServer.open_browser = lambda self: None
 SV.BoardServer.stop = lambda self: _mark("board stopped")
 try:
-    res2 = tutor._teach(["some topic", "--silent"])
+    res2 = tutor._teach(["some topic", "--silent", "--classic"])
 finally:
     AU.make, tutor.make_lesson = real["make"], real["lesson"]
     SV.BoardServer.start, SV.BoardServer.open_browser, SV.BoardServer.stop = real["start"], real["opened"], real["stop"]
@@ -518,6 +518,41 @@ for t, want in (("Bro, I don't need to go from all start bro.", "steer"),
                 ("what is a token?", "question"), ("it produces tokens", "answer")):
     check(f"{t[:40]!r} → {want}", CM.classify(t, answering=want == "answer" or t.startswith("Bro")) == want,
           CM.classify(t, answering=True))
+
+# ------------------------------------------------------------------ D53: a doubt finds where he's stuck, then checks it
+print("\na doubt: where he's stuck → the fix → one check question → pinned to his notes (D53)")
+
+
+class BridgePlanner(FakePlanner):
+    def answer(self, question, ctx):
+        d = super().answer(question, ctx)
+        d.update({"stuck_at": "what ends a token", "error_type": "missing_prerequisite",
+                  "check": {"prompt": "So what tells the lexer a token ended?", "expected": "a space"}})
+        return d
+
+
+pl = BridgePlanner()
+r = run({"The lexer reads": [voice("How does the lexer know where a token ends?")],
+         "So what tells the lexer": [{"type": "text", "text": "a space"}]}, planner=pl, pace=0.3)
+check("after the answer she asks ONE check question about the gap", "So what tells the lexer a token ended?" in r["said"],
+      str(r["said"][:12]))
+check("…his right reply gets 'Yes, exactly.' (graded locally, no LLM)", "Yes, exactly." in r["said"], str(r["said"][:14]))
+check("…where he was stuck is logged", any("stuck at: what ends a token" in x for _, x in r["logs"]), "")
+stick = [e for e in r["t"].board.els.values() if e.kind == "sticky" and e.region == "doubts"]
+check("his doubt is pinned to the page's doubts strip (his notes)", len(stick) == 1
+      and "How does the lexer" in getattr(stick[0], "label", ""), str([getattr(e, "label", "") for e in stick]))
+
+# ------------------------------------------------------------------ hold-to-talk: room voices don't count
+print("\nhold-to-talk: only what he says while holding the key counts")
+pl = FakePlanner()
+r = run({"Think of reading": [{"type": "ptt_mode", "on": True}, voice("Where did you play yesterday, my child?")],
+         "The lexer reads": [{"type": "ptt", "down": True}, voice("What happens to the spaces between tokens?"),
+                             {"type": "ptt", "down": False}]}, planner=pl, pace=0.3)
+qs = [c[0] for c in pl.calls]
+check("with hold-to-talk on, a room voice is ignored (not answered, not graded)",
+      not any("play yesterday" in q for q in qs)
+      and any("not holding the talk key" in x for _, x in r["logs"]), str(qs))
+check("…and what he says while holding the key is answered", any("spaces between tokens" in q for q in qs), str(qs))
 
 print(f"tutor teacher: {passed}/{total} checks passed")
 sys.exit(0 if passed == total else 1)
