@@ -208,7 +208,7 @@ def _teach(args: list[str]) -> dict:
     from .player import Tutor
     from .server import BoardServer
     target = next((a for i, a in enumerate(args) if not a.startswith("--")
-                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes", "--hours", "--goal"))), None)
+                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes", "--hours", "--goal", "--focus"))), None)
     mode = "silent" if "--silent" in args else "type" if "--type" in args else "voice"
     board = "--no-board" not in args
     holder: dict = {}
@@ -325,7 +325,7 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
             srv.open_browser()
     from concurrent.futures import ThreadPoolExecutor
 
-    from .coach import concept_map
+    from .coach import concept_map, focus_split
     pool = ThreadPoolExecutor(1, thread_name_prefix="coach-map")
     # D42: her voice (~13 s) and reading his file run at the same time, after the board is already on screen
     fut = pool.submit(concept_map, book_path or target, book_path=book_path, unit=unit)
@@ -343,7 +343,7 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
     try:
         for _ in range(4):                           # at most a few re-plans in one sitting
             coach = Coach(book_path or target, audio=audio, events=events, server=srv, book_path=book_path,
-                          unit=unit, goal=goal, concepts_future=fut)
+                          unit=unit, goal=goal, concepts_future=fut, focus=focus_split(_arg(args, "--focus")))
             fut = None                               # a re-plan (other unit) maps again
             holder["t"] = coach.t
             if srv:
