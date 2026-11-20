@@ -214,6 +214,29 @@ def make_probes(concepts: list[Concept], n: int = PROBES, call=None) -> list[dic
     return [p for p in d.get("probes") or [] if p.get("concept_id") in ids and p.get("question")][:n]
 
 
+# ------------------------------------------------------------------------------------------------ focus
+def _words(t: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+", (t or "").lower())
+
+
+def matches(want: str, c: Concept) -> bool:
+    """'SDD' ↔ 'Syntax Directed Definitions', 'AST' / 'abstract syntax tree' ↔ 'Abstract Syntax Trees'."""
+    w, n = _words(want), _words(c.name)
+    if not w or not n:
+        return False
+    stem = lambda x: x[:-1] if len(x) > 3 and x.endswith("s") else x  # noqa: E731
+    initials = "".join(x[0] for x in n if x not in ("and", "of", "the", "a", "in"))
+    if len(w) == 1 and len(w[0]) >= 2 and w[0] in (initials, initials.rstrip("s")):
+        return True
+    ws, ns = {stem(x) for x in w}, {stem(x) for x in n}
+    return len(ws & ns) / len(ws) >= 0.6
+
+
+def focus_split(text: str | None) -> list[str]:
+    """'SDD and abstract syntax tree' → ['SDD', 'abstract syntax tree']."""
+    return [p.strip() for p in re.split(r",|\band\b|&|\+", text or "") if p.strip()]
+
+
 # ------------------------------------------------------------------------------------------------ the queue
 def parse_goal(text: str) -> dict:
     """'exam tomorrow' → {mode: exam, days: 1}; 'just want to understand it' → {mode: learn}."""
@@ -348,7 +371,7 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
 class Coach:
     def __init__(self, source: str, *, audio, events, server=None, book_path: str | None = None,
                  unit: str | None = None, goal: dict | None = None, log=print, call=None, persist: bool = True,
-                 planner=None, concepts_future=None, **tutor_kw):
+                 planner=None, concepts_future=None, focus: list[str] | None = None, **tutor_kw):
         from .player import Tutor
         self.source, self.book_path, self.unit = source, book_path, unit
         self.goal, self.log, self.call = goal, log, call
@@ -369,6 +392,7 @@ class Coach:
         self._sources: dict[str, list[dict]] = {}
         self.after_probes: dict[str, float] = {}
         self._future = concepts_future               # D42: the map started while her voice was still loading
+        self.focus = focus or []                     # "teach me SDD and AST": only these concepts
         self.t.before_end = self._before_end
         self.revisited: set[str] = set()
         self.checked: set[str] = set()               # concepts he answered something on this session
@@ -531,6 +555,7 @@ class Coach:
         t = self.t
         mapper = threading.Thread(target=self._build_map, daemon=True)
         mapper.start()
+        t.ears_on(["exam", "tomorrow", "syllabus", "unit", "lexer", "parser", "compiler", "grammar"] + self.focus)
         t.status("playing", "starting")
         if self.goal is None:
             ans = t.listen("Hi! Before I start: what do you need? Is this for an exam, and when is it?")
@@ -547,18 +572,28 @@ class Coach:
         if not self.concepts:
             t.say("Sorry, I couldn't read that properly just now. Try again in a minute.")
             return False
+        if self.focus:
+            sel = [c for c in self.concepts if any(matches(f, c) for f in self.focus)]
+            if sel:
+                self.concepts = sel
+                self.log(f"   [coach] focus {self.focus} → {[c.name for c in sel]}")
+            else:
+                t.say(f"I couldn't find {' and '.join(self.focus)} in your notes, so I'll plan the whole thing.",
+                      interruptible=False)
+        t.extra_words = [c.name for c in self.concepts][:12]
+        t.ears_on(t.extra_words)                     # his file's concept names bias the ear for the probes
         recent = [c for c in self.concepts if time.time() - self.mastery.seen.get(c.id, 0) < 21 * 86400]
         self.returning = len(recent) >= 3
-        probes = [] if self.returning else make_probes(self.concepts, call=self.call)
+        probes = [] if self.returning else make_probes(self.concepts, n=min(PROBES, max(1, len(self.concepts))),
+                                                         call=self.call)
         if self.returning:
             solid = sum(self.mastery.level(c.id) == "known" for c in self.concepts)
             t.say(f"Welcome back. You're solid on {solid} of {len(self.concepts)} topics here, so I'll pick up "
                   "from what's left.", interruptible=False)
         if probes:
-            ev = t.say(f"{'Exam mode. ' if self.goal['mode'] == 'exam' else ''}{len(probes)} quick questions first, so I "
-                       "don't teach you what you already know. Short answers are fine, or say I don't know.")
-            if ev is not None:
-                t.events.put(ev)
+            t.say(f"{'Exam mode. ' if self.goal['mode'] == 'exam' else ''}{len(probes)} quick questions first, so I "
+                  "don't teach you what you already know. Short answers are fine, or say I don't know.",
+                  interruptible=False)
         from .grade import grade
         byid = {c.id: c for c in self.concepts}
         for k, pr in enumerate(probes):
