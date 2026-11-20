@@ -48,6 +48,7 @@ FRAG_S = 6.0                # a fragment dropped as "too short to interrupt" thi
 GATHER_UNFINISHED_S = 4.5   # his words end mid-thought ("…so", "…I want you to") → wait this long for the rest
 UNFINISHED_RX = re.compile(r"\b(so|and|but|or|because|to|the|a|an|of|in|on|with|for|is|are|was|like|that|which|"
                            r"if|then|i|my|you|want|mean|about|um+|uh+|actually|basically)\W*$", re.I)
+PTT_TAIL_S = 2.5            # hold-to-talk: speech still counts this long after he lets go (Whisper finishing)
 STEER_LINES = {"skip_to": "Okay, let's jump ahead.", "restart": "Okay, let's go again from the start, slowly.",
                "switch": "Okay, let's switch to that.", "crash": "Got it. Let's cover the whole thing quickly for your exam."}
 
@@ -98,6 +99,12 @@ class Tutor:
         self.on_check = None                            # D53 coach: (segment, record) after every graded check
         self.skip_to: int | None = None                 # D53 coach: jump here at the next step (he knows the rest)
         self.before_end = None                          # D53 coach: () -> True when it added more segments
+        # hold-to-talk (Wispr Flow: the user decides when he's talking). 2026-11-20 demo: people talking in his room
+        # ("Where did you play yesterday?") were graded as his answers. On: only speech while the key is held (or
+        # within PTT_TAIL_S after release, while Whisper finishes) counts; commands like "end" too.
+        self.ptt_mode = False
+        self.ptt_down = False
+        self.ptt_up_t = 0.0
         if start:                                    # resuming: rebuild the board silently up to `start`
             flat = lesson.cue_list()
             for kk in range(min(start, len(flat))):
@@ -134,6 +141,25 @@ class Tutor:
             return None
         if ev.get("type") == "error":
             self.log(f"   [board] {ev.get('msg')}")
+            return None
+        if ev.get("type") == "ptt_mode":
+            self.ptt_mode = bool(ev.get("on"))
+            self.log(f"   [ptt] hold-to-talk {'on' if self.ptt_mode else 'off'}")
+            self.status("waiting" if self.ptt_mode else "playing",
+                        "hold Space to talk" if self.ptt_mode else "listening")
+            return None
+        if ev.get("type") == "ptt":
+            self.ptt_down = bool(ev.get("down"))
+            if self.ptt_down:
+                self.ptt_mode = True                  # pressing the key at all means he wants this mode
+                if self.audio.playing:
+                    self.audio.stop()                 # he's about to talk: she stops, like a raised hand
+            else:
+                self.ptt_up_t = time.time()
+            return None
+        if (ev.get("type") == "voice" and self.ptt_mode and not self.ptt_down
+                and time.time() - self.ptt_up_t > PTT_TAIL_S):
+            self.log(f"   (ignored, not holding the talk key: {(ev.get('text') or '')[:60]!r})")
             return None
         if ev.get("type") not in ACTIONABLE:
             return None
