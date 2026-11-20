@@ -50,11 +50,11 @@ to finish my question. It's hearing wrong and then answering me anything. It dra
 | # | Step | Status |
 |---|---|---|
 | 1 | Whole sentence, steer (skip / restart / switch / crash course), cloud ear + lesson words (D52) | **done**, `fix/tutor-listens` |
-| 2 | Diagnose-first opening: goal + deadline + 2–3 probes → start point / exam mode | next |
-| 3 | Concept map from his file + BKT-lite mastery + exam triage queue | |
-| 4 | Concept loop: ≤ 2 sentences → his turn → pump / hint / prompt / tell → check → mastery | |
-| 5 | Board as notes: slot layout engine, no coordinates from the LLM, notes export | |
-| 6 | Bridge-style doubt call (stuck_at / error_type / strategy) + targeted check + resume | |
+| 2 | Diagnose-first opening: goal + deadline + 2–3 probes → start point / exam mode | **done** (D53) |
+| 3 | Concept map from his file + BKT-lite mastery + exam triage queue | **done** (D53) |
+| 4 | Concept loop: ≤ 2 sentences → his turn → pump / hint / prompt / tell → check → mastery | **done** (D53; re-teach of a still-wrong concept: next) |
+| 5 | Board as notes: slot layout engine, no coordinates from the LLM, notes export | **done** (D53; export: next) |
+| 6 | Bridge-style doubt call (stuck_at / error_type / strategy) + targeted check + resume | **done** (D53) |
 | 7 | Hearing: confirm-when-unsure, "no, I said…" correction window, WER on his voice | needs the recorder |
 
 **Measure every step on a real lesson from his file:** his talk time vs hers (target ≥ 30 % his), sentences before his

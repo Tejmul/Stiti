@@ -120,6 +120,9 @@ menubar app, CI. **Not yet verified:** anything that needs a cloud LLM (conversa
 extraction, reflections) and anything that needs Tejmul's real voice (Hinglish STT accuracy, false-wake rate).
 
 ### Phase 8 — Whiteboard tutor (D14/D15) — ✅ board, skills, voice-first player, local grading, book outline, persistence
+✅ 2026-11-20 (D51–D53): English only · whole-sentence listening + cloud ear in lessons + steer · the coach (goal → probes →
+mastery → exam triage → ≤ 2 sentences then his turn → notes pages → doubts with stuck_at + check). Next: re-teach a
+concept still wrong, notes export, real-voice test.
 LLM lesson planner written (strict JSON) but unverified until a key exists. Next: FSRS review sessions, offline
 Excalidraw bundle, word-timed TTS, real-voice test on the big monitor.
 
