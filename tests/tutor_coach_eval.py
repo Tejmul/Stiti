@@ -238,19 +238,22 @@ class _A:
         pass
 
 
-real = (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_browser, SV.BoardServer.stop)
+real = (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_if_no_tab, SV.BoardServer.stop,
+        T._coach_target)
+T._coach_target = lambda target, args: True         # the coach path, with or without a cloud key in this checkout
 AU.make = lambda mode, events, debug=False, scale=1.0: (mark("voice loading", 0.5), _A())[1]
 C.concept_map = lambda *a, **k: (mark("reading file", 0.5), [])[1]
 C.Coach.run = lambda self: (self._future.result(), mark("session running"),
                             {"finished": True, "checks_right": 0, "checks_graded": 0, "questions": 0})[2]
 SV.BoardServer.start = lambda self: (self.connected.set(), mark("board started"), self)[2]
-SV.BoardServer.open_browser = lambda self: mark("browser opened")
+SV.BoardServer.open_if_no_tab = lambda self: (mark("browser opened"), True)[1]   # the board tab goes up here
 SV.BoardServer.stop = lambda self: None
 try:
     t0 = time.time()
     T._teach(["compilers", "--silent"])
 finally:
-    AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_browser, SV.BoardServer.stop = real
+    (AU.make, C.concept_map, C.Coach.run, SV.BoardServer.start, SV.BoardServer.open_if_no_tab, SV.BoardServer.stop,
+     T._coach_target) = real
 at = dict(marks)
 check("the board is on screen before anything slow starts", at.get("browser opened", 9) < 0.3
       and at["browser opened"] <= min(at.get("voice loading", 9), at.get("reading file", 9)), str(marks))
