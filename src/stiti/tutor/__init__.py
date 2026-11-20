@@ -7,6 +7,9 @@
     uv run stiti book book.pdf             # just show the book's outline
 Flags: --type (speakers + keyboard, no mic) · --silent (no sound) · --no-board (voice only, no screen)
        --minutes N · --debug
+Coach (his file or a topic): --focus "A and B" · --ptt · --classic (old lesson) ·
+       --goal-mode learn|exam|day [--days N] [--hours H]  (goal already known, e.g. from the web Lessons page:
+       the coach skips "is this for an exam?")
 """
 from __future__ import annotations
 
@@ -203,12 +206,15 @@ def answerer(planner=None, lesson=None):
         return None
 
 
+VALUE_FLAGS = ("--chapter", "--minutes", "--hours", "--goal", "--focus", "--goal-mode", "--days")
+
+
 def _teach(args: list[str]) -> dict:
     from . import audio as au
     from .player import Tutor
     from .server import BoardServer
     target = next((a for i, a in enumerate(args) if not a.startswith("--")
-                   and (i == 0 or args[i - 1] not in ("--chapter", "--minutes", "--hours", "--goal", "--focus"))), None)
+                   and (i == 0 or args[i - 1] not in VALUE_FLAGS)), None)
     mode = "silent" if "--silent" in args else "type" if "--type" in args else "voice"
     board = "--no-board" not in args
     holder: dict = {}
@@ -317,7 +323,8 @@ def _coach_session(target: str, args: list[str], mode: str, srv, events, holder:
     p = Path(target).expanduser()
     book_path = str(p) if p.suffix.lower() in BOOK_EXTS and p.exists() else None
     unit = _arg(args, "--chapter")
-    goal = None
+    from .coach import goal_from_flags
+    goal = goal_from_flags(args)                     # the web Lessons page already asked: skip the goal question
     if srv:
         srv.start()
         print(f"\n🧑‍🏫  Whiteboard: {srv.url}\n    (your open board tab picks it up; otherwise it opens now — press F for full screen)\n")
@@ -625,6 +632,15 @@ def _spawn(args: list[str]) -> None:
     p = subprocess.Popen([sys.executable, "-m", "stiti", "teach", *args], stdout=log, stderr=log,
                          stdin=subprocess.DEVNULL, start_new_session=True)
     LOCK.write_text(str(p.pid))
+
+
+def start_lesson(args: list[str]) -> bool:
+    """Start `stiti teach <args>` (the web Lessons page) unless a lesson already runs. Same lock as launch()."""
+    with _launch_lock:
+        if tutor_active():
+            return False
+        _spawn(list(args))
+        return True
 
 
 def launch(topic: str | None, resume: bool = False, mode: str | None = None) -> str:

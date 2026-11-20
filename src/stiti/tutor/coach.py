@@ -273,6 +273,22 @@ def parse_goal(text: str) -> dict:
     return {"mode": "exam" if exam else "learn", "days": days}
 
 
+def goal_from_flags(args: list[str]) -> dict | None:
+    """`--goal-mode learn|exam|day [--days N] [--hours H]` (the web Lessons page) → the same goal dict parse_goal
+    gives, so the coach skips the spoken goal question. None when no (valid) --goal-mode is given."""
+    def val(flag):
+        return args[args.index(flag) + 1] if flag in args and args.index(flag) + 1 < len(args) else None
+    mode = val("--goal-mode")
+    try:
+        if mode == "day":
+            return {"mode": "day", "days": 0, "hours": max(1.0, min(12.0, float(val("--hours") or DAY_DEFAULT_H)))}
+        if mode == "exam":
+            return {"mode": "exam", "days": max(0, min(365, int(val("--days") or 1)))}
+    except ValueError:
+        return None
+    return {"mode": "learn", "days": None} if mode == "learn" else None
+
+
 def order(concepts: list[Concept], m: Mastery, mode: str, minutes: float) -> list[Concept]:
     """The teaching queue. Learn: book order, skipping what he knows. Exam (Metcalfe & Kornell): nearly-known first,
     then new ones by exam weight, known ones last as one quick check each — all within the time budget."""
@@ -603,7 +619,8 @@ class Coach:
         mapper.start()
         t.ears_on(["exam", "tomorrow", "syllabus", "unit", "chapter", "test"] + self.focus + self.subject.split()[:6])
         t.status("playing", "starting")
-        if self.goal is None:
+        asked = self.goal is None
+        if asked:
             ans = t.listen("Hi! Before I start: what do you need? Is this for an exam, and when is it?")
             if ans is None:
                 return False
@@ -615,8 +632,8 @@ class Coach:
         self.goal["minutes"] = mins
         mapper.join(0.1)
         if mapper.is_alive():
-            t.say("Got it. Give me a few seconds, I'm reading your notes." if self.book_path
-                  else "Got it. Give me a few seconds to plan this.", interruptible=False)
+            t.say(f"{'Got it.' if asked else 'Okay.'} Give me a few seconds, I'm reading your notes." if self.book_path
+                  else f"{'Got it.' if asked else 'Okay.'} Give me a few seconds to plan this.", interruptible=False)
             mapper.join(120)
         if not self.concepts:
             t.say("Sorry, I couldn't read that properly just now. Try again in a minute.")
