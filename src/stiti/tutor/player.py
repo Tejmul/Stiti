@@ -309,14 +309,37 @@ class Tutor:
                         words.append(op.text)
         return [w for w in words if w and not w.lower().startswith(("warm", "summary", "recap"))]
 
-    def run(self) -> dict:
-        self._persist_start()
+    def _drop_stale_speech(self) -> None:
+        """2026-11-20: a garbled reply to the goal question was still queued and got graded as the answer to probe 1
+        before he even heard it ('asking me the same questions again and again'). Voice/typed lines already waiting
+        when a new question starts are dropped; controls (end, pause…) are kept."""
+        keep = []
+        while True:
+            try:
+                e = self.events.get_nowait()
+            except queue.Empty:
+                break
+            if e.get("type") in ("voice", "text"):
+                self.log(f"   (dropped, said before the question: {(e.get('text') or '')[:60]!r})")
+                continue
+            keep.append(e)
+        self._held = deque(e for e in self._held if e.get("type") not in ("voice", "text"))
+        for e in keep:
+            self.events.put(e)
+
+    def ears_on(self, words: list[str] | None = None) -> None:
+        """D52: the big cloud ear + his lesson's words for Whisper. Called before ANY listening — the coach's opening
+        questions too (2026-11-20: his goal answer was heard as 'Ipul yoru, abstracti…' by the local ear alone)."""
         try:
             from ..voice import glossary, stt
-            glossary.set_session(self.lesson_words())  # D52: Whisper expects HIS lesson's words ("DFA", not "the FA")
-            stt.prefer_cloud(hasattr(self.audio, "vl"))   # voice lessons only: the big cloud ear for his sentences
+            glossary.set_session((words or []) + self.lesson_words())
+            stt.prefer_cloud(hasattr(self.audio, "vl"))   # voice lessons only
         except Exception:
             pass
+
+    def run(self) -> dict:
+        self._persist_start()
+        self.ears_on(getattr(self, "extra_words", None))
         try:
             while not self.ended:
                 flat = self._flat()
@@ -417,10 +440,13 @@ class Tutor:
             self._answer(text, resume_cue=mid_cue)
         elif kind == "steer":
             self._steer(text, mid_cue=mid_cue)
+        elif kind == "correct":
+            self._corrected(text, mid_cue)
 
     def listen(self, prompt: str | None = None, *, check_box: dict | None = None, timeout: float = 60.0) -> str | None:
         """Ask him something outside the lesson script and wait for his whole answer (D53 coach opening).
         -> his text, "" when he stayed silent, None when he ended the lesson."""
+        self._drop_stale_speech()                     # words from before this question are not its answer
         ev = self.say(prompt) if prompt else None
         if check_box:
             self.send({"type": "check", **check_box})
@@ -451,6 +477,26 @@ class Tutor:
             if check_box:
                 self.send({"type": "check_done"})
         return None
+
+    def _corrected(self, text: str, mid_cue: bool = True) -> None:
+        """'No, I said lexer': she heard him wrong. Drop what she was doing with the wrong words and take the right
+        ones — and teach the ear the word (vocab.learn), so the next time it hears 'lexer' (D53)."""
+        rest = commands.correction(text) or text
+        prev = self.questions[-1] if self.questions else None
+        self.log(f"   [heard wrong] now: {rest!r} (before: {prev!r})")
+        try:
+            from ..voice import vocab
+            vocab.learn(text, prev)
+        except Exception:
+            pass
+        self.audio.stop()
+        kind = commands.classify(rest)
+        if kind == "steer":
+            self._steer(rest, mid_cue=mid_cue)
+        else:
+            self.say("Ah, sorry. Got it.", interruptible=False)
+            self._answer(rest if kind == "question" or len(rest.split()) > 2 else f"What about {rest}?",
+                         resume_cue=mid_cue)
 
     # ------------------------------------------------------------ he changes the plan (D52)
     def _units(self) -> tuple[str, list[str]]:
@@ -707,6 +753,9 @@ class Tutor:
             kind, text = self._kind(ev, answering=answering)
             if kind == "question":
                 return text, False
+            if kind == "correct":                     # "no, I asked about X": answer X instead
+                self.log(f"   [heard wrong] now: {commands.correction(text)!r}")
+                return commands.correction(text) or text, False
             if kind == "confused":
                 return f"I still didn't get this: {question}", True
             if kind == "answer":
@@ -857,6 +906,10 @@ class Tutor:
             if kind in ("slower", "faster"):
                 self._handle({"type": "control", "cmd": kind})
                 continue
+            if kind == "correct":                     # "no, I said FIRST sets": grade what he really said
+                text = commands.correction(text) or text
+                self.log(f"   [heard wrong] his answer: {text!r}")
+                kind = "answer"
             if kind == "steer":                       # "I don't need the basics" is a request, not his guess (D52)
                 r = self._steer(text, mid_cue=False)
                 if r in ("moved", "switch"):
