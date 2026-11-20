@@ -46,6 +46,34 @@ for t, want in CASES.items():
     got = lang.classify(t)
     check(f"{want:9} ← {t[:46]}", got == want, got)
 
+print("English is the default: one stray Hindi word is not Hinglish (D50 — a misheard 'Yaar' for 'You're' did it)")
+STRAY = ["Yaar welcome.", "Yaar right, that makes sense", "Yaar I'm so tired of this bug honestly", "Haan okay let's do that",
+         "Accha, tell me about the weather", "accha so what's the plan for tomorrow", "Okay haan, set an alarm for six",
+         "Yaar", "haan", "Arre what happened to the build", "That was a good match na",
+         "Haan so yaar I was thinking about the project deadline and what to do next"]
+for t in STRAY:
+    check(f"english   ← {t[:46]}", lang.classify(t) == "english", lang.classify(t))
+MOSTLY = ["yaar thak gaya hoon", "Theek hai", "Haan bolo", "Kal mera interview hai, thoda nervous hoon", "aaj mood off hai",
+          "haan yaar I know", "kuch accha sa movie suggest karo", "itna lamba mat bolo yaar, short mein batao"]
+for t in MOSTLY:
+    check(f"hinglish  ← {t[:46]} (≥ 2 Hindi words and ≥ a third)", lang.classify(t) == "hinglish", lang.classify(t))
+prev, seq = None, []
+for t in ["What's the plan for today?", "Yaar welcome.", "haan", "Accha, and tomorrow?"]:
+    prev = lang.decide(t, prev=prev)
+    seq.append(prev)
+check("an English conversation with stray 'yaar / haan / accha' stays English", seq == ["english"] * 4, str(seq))
+prev, seq = None, []
+for t in ["yaar thak gaya hoon", "haan", "ok", "What's on my list?"]:
+    prev = lang.decide(t, prev=prev)
+    seq.append(prev)
+check("real Hinglish → Hinglish; a bare 'haan' / 'ok' keeps it; English → English",
+      seq == ["hinglish", "hinglish", "hinglish", "english"], str(seq))
+check("an explicit ask still switches: 'talk in Hinglish' holds on English sentences",
+      lang.command("talk in Hinglish") == ("switch", "hinglish") and lang.decide("What's the weather?", pref="hinglish") == "hinglish")
+check("…and a Hinglish lock holds even on 'Yaar welcome.'", lang.decide("Yaar welcome.", lock="hinglish") == "hinglish")
+check("the engine's strategy: 'Yaar welcome.' gets an English reply", strategy.choose("Yaar welcome.", domain="chat").lang == "english"
+      and strategy.choose("yaar thak gaya hoon", domain="chat").lang == "hinglish")
+
 print("his commands")
 CMDS = {"Just talk in English. Don't talk in any other language right now.": ("lock", "english"),
         "English only please": ("lock", "english"), "reply only in telugu": ("lock", "telugu"),

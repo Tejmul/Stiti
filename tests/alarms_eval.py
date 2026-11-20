@@ -43,8 +43,8 @@ r6 = alarms.create("har somvar 9 baje standup yaad dilana", EVE)
 check("'har somvar' → every Monday", "BYDAY=MO" in (row(idof(r6))["rrule"] or "")
       and row(idof(r6))["fire_at"].astimezone(CFG.tz).strftime("%a") == "Mon", r6)
 r7 = alarms.create("10 minute ka timer", EVE)
-check("timer reads back minutes", r7.startswith("Timer set for 10 minutes"), r7)
-check("ambiguous 'set alarm 6' asks morning/evening", "Morning or evening" in (alarms.create("set alarm 6", EVE) or ""))
+check("timer reads back minutes", "10 minutes" in r7 and "rings at" in r7 and row(idof(r7)) is not None, r7)
+check("ambiguous 'set alarm 6' asks morning/evening", "morning or evening" in (alarms.create("set alarm 6", EVE) or "").lower())
 check("not an alarm → None (falls through to other handlers)", alarms.handle("what's the weather like") is None)
 
 q("UPDATE intents SET fire_at = fire_at + interval '1 year'")          # make them all future for list/cancel
@@ -130,10 +130,10 @@ h0 = row(rid)["fire_at"].astimezone(alarms.CFG.tz).hour
 flip = alarms.handle("I'm telling you 9.30 PM, not AM.")
 h1 = row(rid)["fire_at"].astimezone(alarms.CFG.tz).hour
 check("'9:30 PM, not AM' fixes THAT reminder, no second one",
-      flip and flip.startswith("Fixed") and len(q("SELECT 1 FROM intents")) == 1 and h1 == 21, f"{flip} {h0}->{h1}")
+      flip and "9:30 PM" in flip and len(q("SELECT 1 FROM intents")) == 1 and h1 == 21, f"{flip} {h0}->{h1}")
 q("DELETE FROM intents")
 r = alarms.handle("Remind me at 10.")
-check("no 'what for' → she asks", r and "What's it for?" in r and alarms.awaiting_label(), r)
+check("no 'what for' → she asks", r and r.split(" (#")[0].endswith("?") and "10" in r and alarms.awaiting_label(), r)
 r2 = alarms.set_label("to check my to-do list")
 nid = one("SELECT max(id) m FROM intents")["m"]
 check("his answer becomes the note", row(nid)["payload"]["label"] == "check my to-do list" and not alarms.awaiting_label(), r2)
@@ -160,11 +160,13 @@ for t in ("Can you tell me about the reminders I have today?", "do I have any re
 night = datetime(2026, 11, 11, 23, 50, tzinfo=CFG.tz)
 r = _A.create("remind me today to call mom", ref=night)
 check("'remind me today …' at 11:50 PM asks the time (no reminder in the past)",
-      r is not None and r.startswith("What time") and not q("SELECT 1 FROM intents"), str(r))
+      r is not None and "?" in r and "7 pm" in r and not q("SELECT 1 FROM intents"), str(r))
 r = _A.create("remind me at 10 tonight", ref=night)
 check("'at 10 tonight' said at 11:50 PM → 'already passed', nothing set",
       r is not None and "already passed" in r and not q("SELECT 1 FROM intents"), str(r))
-check("'set an alarm for 6 am' still sets one", (_A.handle("set an alarm for 6 am") or "").startswith("Done — alarm"))
+r = _A.handle("set an alarm for 6 am") or ""
+check("'set an alarm for 6 am' still sets one", "alarm" in r.lower() and "6 AM" in r
+      and len(q("SELECT 1 FROM intents WHERE kind='alarm' AND state='pending'")) == 1, r)
 
 q("DELETE FROM intents")
 print(f"alarms: {ok}/{ok + fail} checks passed")

@@ -10,20 +10,14 @@ from __future__ import annotations
 
 import os
 import queue
-import random
 import threading
 import time
 
 import numpy as np
 
-ACKS = {
-    "calendar": "Checking your calendar.",
-    "mail": "Let me check your mail.",
-    "plan": "Okay, let me plan your day.",
-    "tools": "Let me look.",
-    "web": "Let me look that up.",
-}
-FILLERS = ["Hmm.", "Hmm, let me think.", "Let me see."]
+from .. import say
+from ..say import ACKS, FILLERS      # kind → a few wordings each (D50); the loop pre-makes the audio for all of them
+
 FILLER_AFTER_S = 1.5
 _END = object()
 
@@ -76,8 +70,13 @@ class Speaker:
                 self.audio.put(_END)
                 return
             if isinstance(item, tuple):
-                a, sr = self.loop.acks[item[1]]
-                self.audio.put((("ack", self.loop.ack_text[item[1]]), a, sr))
+                made, texts = self.loop.acks[item[1]], self.loop.ack_text[item[1]]
+                if isinstance(made, list):              # several wordings: the next one, never the one said last
+                    i = say.turn("ack:" + item[1], len(made))
+                    (a, sr), text = made[i], (texts[i] if isinstance(texts, (list, tuple)) and i < len(texts) else "")
+                else:
+                    (a, sr), text = made, texts
+                self.audio.put((("ack", text), a, sr))
                 continue
             try:
                 a, sr = self.loop.tts.synth_on_worker(item, self.mood)
@@ -130,7 +129,7 @@ class Speaker:
                 if (not self.spoke_something and not filler_played and self.loop.fillers
                         and time.perf_counter() - self._t0 > self.filler_after):
                     filler_played = True               # thinking out loud instead of dead air
-                    a, sr = random.choice(self.loop.fillers)
+                    a, sr = self.loop.fillers[say.turn("filler", len(self.loop.fillers))]
                     end_t = self._enqueue(None, a, sr, end_t, timeline)
                 continue
             if item is _END:

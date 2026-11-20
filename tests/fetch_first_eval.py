@@ -32,7 +32,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     print(f"  {'✓' if cond else '✗'} {name}" + (f" — {detail}" if detail and not cond else ""))
 
 
-from stiti import engine as engine_mod, router                           # noqa: E402
+from stiti import engine as engine_mod, router, say                      # noqa: E402
 from stiti.brain import psych, strategy                                  # noqa: E402
 from stiti.connectors import live                                        # noqa: E402
 from stiti.connectors.live import Item, LiveRequest, LiveResult, Page    # noqa: E402
@@ -607,7 +607,7 @@ try:
         script.append({"text": "", "tool_calls": [CALL]})
         turn(e, "put lunch with Sam on my calendar for friday 1 pm", None, domain="tool", stream=False)
         rep, _, _ = turn(e, "no, leave it", None, stream=False)
-        check("'no' → cancelled, nothing ran", rep == "Okay, cancelled." and ran == [], f"{rep} {ran}")
+        check("'no' → cancelled, nothing ran", rep in say.variants("tool_cancelled") and ran == [], f"{rep} {ran}")
 
         create.fn = lambda **kw: {"error": "calendar not available"}
         script.append({"text": "", "tool_calls": [CALL]})

@@ -31,7 +31,7 @@ def check(name: str, cond: bool, detail: str = "") -> None:
     print(f"  {'✓' if cond else '✗'} {name}" + (f" — {detail}" if detail and not cond else ""))
 
 
-from stiti import profile, router                                        # noqa: E402
+from stiti import profile, router, say                                   # noqa: E402
 from stiti.brain import factstore, lifeupdate, memory, psych, sleep, strategy   # noqa: E402
 from stiti.db import one, q                                              # noqa: E402
 
@@ -234,7 +234,8 @@ CHAT_REPLY.update(text="Noted. I will mark that down.", calls=0)
 r = eng.turn("Actually, I left Orbitly change it down. It's been around in September, my internship period is done "
              "and I left Orbitly.")
 lifeupdate.join()
-check("reply says what was really saved", r.startswith("Got it — updated: you left Orbitly"), r)
+check("reply says what was really saved", any(r.startswith(v.split("{notes}")[0] + "you left Orbitly")
+                                                 for v in say.LINES["update_ack"]), r)
 check("no LLM needed for it", CHAT_REPLY["calls"] == 0)
 orb = one("SELECT valid FROM facts WHERE fact_text='Ravi is an AI intern at Orbitly.'")
 check("the Orbitly internship fact is ended", orb["valid"].upper is not None)
@@ -246,7 +247,7 @@ check("the turn's episode is marked important", one("SELECT importance FROM epis
 n_les = one("SELECT count(*) n FROM lessons")["n"]
 r = eng.turn("I don't play hockey anymore")
 lifeupdate.join()
-check("'I don't play hockey anymore' → updated", "hockey" in r and r.startswith("Got it"), r)
+check("'I don't play hockey anymore' → updated", "hockey" in r and ("pdated" in r or "changed" in r), r)
 check("…the hockey fact is ended", not cur("f.fact_text ILIKE '%%hockey player%%'"))
 check("…and it's not mistaken for a lesson about how she talks", one("SELECT count(*) n FROM lessons")["n"] == n_les)
 r = eng.turn("Okay Pugal is my son. Do you know him?")
@@ -257,7 +258,7 @@ check("standing profile rebuilt right after the turn", "Pugal" in prof and "left
 check("USER.md re-rendered right after the turn", "Pugal" in (sleep.CFG.home / "USER.md").read_text())
 r = eng.turn("Remember that my locker code is 4412.")
 lifeupdate.join()
-check("'remember that…' is saved before she says so", r == "Noted — I'll remember that."
+check("'remember that…' is saved before she says so", r in say.variants("remember_ack")
       and bool(cur("f.fact_text ILIKE '%%locker code is 4412%%'")), r)
 r = eng.turn("actually it's Lakeview School of Technology, not Lakeview College")
 check("a correction with nothing to correct is not claimed", "updated" not in r.lower(), r)

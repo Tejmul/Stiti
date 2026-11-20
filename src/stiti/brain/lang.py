@@ -7,8 +7,11 @@ Five ways he talks: english · hinglish (Hindi + English in Roman letters) · hi
 English). Decided locally from the transcript in < 1 ms (scripts + two small Roman lexicons), never by the LLM:
 - Telugu script (the STT writes Telugu speech in Telugu script, voice/lid.py) → telugu, or tenglish with English words
 - Devanagari → hindi (hinglish if half of it is English words)
-- Roman: Telugu words ("nenu", "cheppu", "ledu"…) → tenglish; Hindi words (voice/hinglish.py lexicon) → hinglish
-  (Roman Hindi, even with no English words: a Devanagari reply to "yaar thak gaya hoon" came out stiff); else english
+- Roman: Telugu words ("nenu", "cheppu", "ledu"…) → tenglish; a sentence that is mostly Hindi words (voice/hinglish.py
+  lexicon: at least 2 of them AND at least a third of the words) → hinglish (Roman Hindi, even with no English
+  words: a Devanagari reply to "yaar thak gaya hoon" came out stiff); else english.
+  English is the default (D50): one stray "yaar / haan / accha" in an English sentence — or a misheard "Yaar" for
+  "You're" — stays English. It used to flip her into Hinglish.
 Reply = a lock if he set one ("only English") › his explicit "talk in Telugu" (until he speaks another non-English
 language) › the language of THIS message › for a tiny "ok / haan / bye", the previous reply language.
 """
@@ -39,6 +42,7 @@ inti illu intlo office lo kosam tho lekunda kuda kooda chala chaala konchem konc
 TE_AMBIGUOUS = {"lo", "ra", "tho", "ante", "mari", "anni", "kosam", "office", "sari", "sare"}
 
 SHORT_WORDS = 2          # "ok", "haan", "bye", "thanks" don't flip the language
+HI_MIN_WORDS, HI_MIN_SHARE_DEN = 2, 3     # Roman Hinglish = ≥ 2 clear Hindi words AND ≥ 1/3 of the words (D50)
 
 LOCK_PREFIX = "Language lock:"
 
@@ -69,9 +73,9 @@ def classify(text: str) -> str:
     if te >= 2 or (te >= 1 and n <= 3):
         if te >= hi:
             return "tenglish"
-    if hi >= 2 or (hi >= 1 and 3 * hi >= n):
+    if hi >= HI_MIN_WORDS and HI_MIN_SHARE_DEN * hi >= n:
         return "hinglish"        # Hindi in Roman letters (how the STT writes his Hindi): reply the same casual way
-    return "english"
+    return "english"             # the default: a stray Hindi word does not change the language (D50)
 
 
 def is_short(text: str) -> bool:
@@ -191,6 +195,11 @@ PHRASE = {
 
 def phrase(key: str, lang: str) -> str:
     d = PHRASE[key]
+    if key == "got_it" and lang not in d:
+        lang = "english"
+    if key == "got_it" and lang == "english":
+        from .. import say
+        return say.line("got_it")       # "Got it." / "Okay." / "Right." … never the same one twice running (D50)
     return d.get(lang) or d["english"]
 
 

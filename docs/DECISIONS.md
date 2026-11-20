@@ -1190,3 +1190,91 @@ half the time; nobody ships Hinglish date rules.
   (a cap per day exists only for the ones she starts herself). Lessons are not consulted for the spoken question
   beyond "stop asking". A moved date ("postponed to the 12th") is asked about as a new thing; the old booking stays
   until he says undo. No "important to him" learning yet: `noticed.status` is the label set for it.
+
+## D50: English first — public examples for understanding, varied wording, example replies (2026-11-18)
+**His words:** "People have built Jarvis-like assistants — what data do they use for behaviour and talking like a human?
+Find it so we can integrate it … don't think about languages; focus on English first." Research:
+`docs/research/behaviour_data.md` (on the research branch; steps 1–4 are built here). No LLM fine-tuning anywhere: the data becomes examples,
+word lists, a test, and a file he can edit.
+
+**1. A real yardstick (`tests/public_intent_eval.py`, `tests/fixtures/public_intent.jsonl`).** 557 held-out English
+lines from the TEST splits of MASSIVE en-US (272, CC BY 4.0), CLINC150 incl. out-of-scope (197, CC BY 3.0) and PRESTO
+en-US — plain, disfluent, "no wait, I mean …" (88, CC BY 4.0) — each given one of Stiti's domains; 80 drawn lines whose
+published label doesn't fit Stiti's meaning were skipped by hand (`BAD_GOLD`); plus 42 life-update sentences of our own
+that must never become a command. Licences re-read on each dataset's own page; all three allow redistribution with
+credit, so the fixture is committed and the eval runs offline (`docs/THIRD_PARTY_DATA.md`).
+Baseline on the old code: **386/529 right (73.0%)** — chat 52%, tool 65%, control 73%, todo 100%, time 97% —
+**24% of decisions under 0.7 confidence**, life updates 38/42 kept out of the command paths.
+
+**2. Public examples for the router (`scripts/build_exemplars.py`, `intent.py`).** The script downloads the three sets
+into `$STITI_HOME/data/` (≈ 70 MB transferred, 22 MB kept; PRESTO is read out of its 416 MB zip by byte range) and builds
+`public_exemplars.npz`: 3,324 lines from the TRAIN splits (83 source intents, ≈ 40 varied lines each, never a yardstick
+line) + 36 counterweight lines of our own, with their vectors (4.8 MB). `intent.classify` lets them vote next to the
+built-in and owner-confirmed examples. His examples win (+0.03 on similarity). Four guards, all local rules:
+- a plain **statement** ("My mom called me this morning") is judged as before, plus public small-talk lines — public
+  requests never vote on it (`intent.is_statement`); without this, life updates fell to 13/30 on the dev set and
+  `intent_eval` lost 2 lines ("My friend's birthday is on Saturday" → tool);
+- a **frame** beats the words inside it: "add …", "… to my list", "remind me …", "set an alarm …" keep public
+  `tool` rows out ("Also add call the placement cell" had gone to `tool`);
+- our own counterweights: questions about a fact of his life (memory, not the calendar) and statements that only
+  mention an alarm / list / mail;
+- a to-do / alarm / control decision needs examples that actually resemble the sentence (top-3 similarity ≥ 0.44):
+  "What's the difference between a list and a tuple in Python?" was `todo` at 0.37 — before this work too — and
+  she would have read out his to-do list.
+No file → exactly the old behaviour (`STITI_PUBLIC_EX=off` does the same).
+After: **511/529 (96.6%)** — chat 98%, tool 98%, control 81%, todo 98%, time 95% — **4% under 0.7**, life updates
+42/42; `tests/intent_eval.py` 34/34 (unchanged). On a separate dev set (700 MASSIVE-dev / CLINC-val lines, used to
+choose the bonus, the floor and the guards) 60.3% → 95.3%; the 64 owner-style lines (intent_eval + gold_turns) 58 → 61.
+Cost: file load 15 ms at start, +16 MB RAM, one decision 0.07 → 0.67 ms. Build: ≈ 100 s download once, ≈ 35 s embedding.
+Honest limits: the counterweight lines were written after seeing dev-set misses, and the same kinds of sentence are
+among the 42 life-update negatives, so that part of the comparison is not blind. todo lost two lines and time one
+(94 → 92, 83 → 82). The domain confidence is logged but still gates nothing.
+Found by the yardstick and NOT fixed: the rule floor treats any "don't" as a correction ("i don't want to forget to call
+mom" → feedback; 7/529 plain requests), and only 5/28 PRESTO "no, I meant …" follow-ups are noticed. One whole-task line
+got a worse label: "Check my GitHub and tell me which pull requests are open" is now `todo` at 0.46 (was `tool`);
+no to-do pattern matches it, so the reply is the same honest "I don't have access to your GitHub account".
+
+**3. Varied wording (`say.py`).** 34 fixed lines (to-do added / done / removed / not found / lists, alarm / reminder /
+timer set / cancelled / listed / moved, "For when?", "Which one?", "Sorry, say that again?", "Got it.", "updated: …")
+now have 4–6 wordings each: 141 in all, plus 4 acks per slow action (20, was 5) and 5 fillers (was 3). `say.line`
+rotates them — never the same wording twice in a row, never the same opening word as the line before when another
+variant exists, the same sequence after `say.reset()`; the first variant is the old sentence. The item / time is
+always said back. "Anything else?" is unchanged (the voice loop keys on it). All text is ours; Home Assistant's
+English responses (CC BY 4.0) were read for which situations to word. Evals that asserted one sentence now assert
+the meaning AND the row in the database (`honest_actions`, `alarms`, `card_motion`, `learn_from_chat`, `anticipate`,
+`fetch_first`, `turn`); new `tests/wording_eval.py` (58 checks). Before: six adds in a row = six times "Got it —
+added …"; after: six different sentences.
+
+**4. Example replies in the briefing (`brain/examples.py`, `~/.stiti/EXAMPLES.md`).** A file he can read and edit
+(written on first use, like SOUL.md): 49 original pairs, 8–9 per strategy (LISTEN, ACKNOWLEDGE, BANTER, SOLVE, ANSWER,
+REPAIR). On an English chat turn the compiler adds the two pairs of this turn's strategy nearest to his sentence under
+"[EXAMPLES — … Style only: never reuse these words]": 64–86 tokens, dropped first when over budget; never on fetch /
+tool / recap / "what else?" turns. A pair that IS his sentence is skipped; a reply sentence that says an example back
+word for word is dropped by `psych`. Vectors cached on disk (0.2 ms per pick). `STITI_EXAMPLES=off` switches it off.
+Measured live (Groq free tier, 24 made-up prompts across the six strategies, the same briefing with and without the
+block, one run each at temperature 0.6; qwen3.8-27b was rate-limited after prompt 16, so only gpt-oss-20b has all 24):
+| model | block | sentences `psych.enforce` dropped or rewrote | replies touched | words (raw → said) | banned phrases | questions where none is allowed | over the word cap | example said back |
+|---|---|---|---|---|---|---|---|---|
+| gpt-oss-20b (24) | without | 4/39 (10%) | 4 | 15.4 → 13.9 | 1 | 2 | 1 | – |
+| gpt-oss-20b (24) | with | 0/40 (0%) | 0 | 13.6 → 13.6 | 0 | 0 | 2 | 0 |
+| qwen3.8-27b (14 / 13) | without | 1/32 (3%) | 1 | 14.0 → 13.7 | 0 | 2 | 0 | – |
+| qwen3.8-27b (14 / 13) | with | 1/27 (4%) | 1 | 13.5 → 12.4 | 1 | 0 | 0 | 0 |
+With the block the weaker model stopped tacking on questions ("Nice choice! Any plans for a first tune?" → "Nice! Hope
+it's in good shape.") and closers ("Let me know if you need anything else"). A small sample: a direction, not a proof.
+
+**5. English is the default reply language (`brain/lang.py`).** Roman Hinglish now needs ≥ 2 clear Hindi words AND
+≥ a third of the words. From his log: a misheard "Yaar" (for "You're") made her answer in Hinglish. 12 English lines
+with a stray "yaar / haan / accha": 4 answered in Hinglish before, 0 after; real Hinglish ("yaar thak gaya hoon",
+"Theek hai") still mirrors; "talk in Hinglish", locks and the D34/D41/D47 switches are unchanged
+(`lang_switch_eval` 73 → 98 checks). Not changed: the Roman-Telugu rule, and the STT's own language hint.
+
+**Not done:** the optional `is_correction` head on PRESTO revisions (the train sample read here holds no cross-turn
+revisions; the full train file is another 75 MB). Hindi / Telugu / Hinglish public data (Hinglish-TOP, MASSIVE hi/te)
+— "English first". CANDOR backchannels, NC datasets.
+**NOT verified on the mic:** everything here ran on typed text. The rotating ack audio (20 short clips made at
+start-up instead of 5: the first of each kind first, as before) and the new confirmations were not heard.
+**Tests:** all 39 evals pass from a clean test home with the public file built, and again with it switched off
+(what a fresh clone runs); three are new in `tests/run_all.sh`: `public_intent_eval`, `wording_eval` (58 checks),
+`examples_eval` (35). The 12 whole tasks on the real free models: 8 answered from real sources, 4 honest "can't yet",
+as before. Note for whoever runs the suite twice in one home: `learning_eval` teaches "add todo buy eggs" = chat into
+`exemplars.jsonl`; after two runs that line flips and the eval fails — use a fresh home per run (`run_all.sh` does).

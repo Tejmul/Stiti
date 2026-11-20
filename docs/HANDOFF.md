@@ -93,6 +93,7 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 | Desktop overlay (D26, D30, D44, D46) | 🟢 Stiti's own orb: a woven white line with three travelling points on indigo (D46; the blue reactor of D44 stays behind `STITI_ORB=reactor`), solid cards in the same colours, wake greeting "Hey <name>, what's on your mind?"; no religious/ritual motifs (his rule) | DECISIONS D26/D30/D44/D46 |
 | Voices (D32) | 🟢 English af_jessica 1.05× (+ say-as "Tej"), Hinglish/Hindi/Telugu hf_alpha — owner picks in `~/.stiti/voice_samples/` | DECISIONS D32 |
 | Four languages (D34) + English first (D41) | 🟢 mirrors en/hinglish/hindi/telugu/tenglish, lock/unlock; Whisper-tiny LID; Telugu speech check is opt-in ("talk in Telugu" → 30 min) because it turned 1 in 5 of his English turns into Telugu script; NOT tested on his real voice | `docs/research/language_switching.md` |
+| English first: public examples, varied wording, example replies (D50) | 🟢 intent yardstick (557 public test lines, `tests/public_intent_eval.py`) 73.0% → 96.6% right, under-0.7 decisions 24% → 4% once `~/.stiti/data/public_exemplars.npz` is built (`scripts/build_exemplars.py`; no file = old behaviour); 34 fixed lines × 4–6 wordings, never twice in a row (`say.py`); `~/.stiti/EXAMPLES.md` (editable) → two style pairs per chat turn; English reply unless ≥ 2 Hindi words and ≥ ⅓ of the sentence. NOT heard on the mic; the public file is NOT built in his real home yet | DECISIONS D50, `docs/THIRD_PARTY_DATA.md`, `docs/research/behaviour_data.md` |
 
 ## 6. Whiteboard tutor (`src/stiti/tutor/`) — backend design
 - **Pattern: the brain decides, the LLM fills slots.** Code owns lesson shape (warm-up → hook → map → teach ×3 →
@@ -169,6 +170,10 @@ mid-sentence (echo thresholds in `tutor/ears.py` were tuned on logs, not his roo
 15. After merging D49: apply `db/migrations/011_noticed.sql` to `stiti` + `stiti_test`. For mail: add `MAIL_ADDRESS=you@gmail.com` and
 `MAIL_APP_PASSWORD=<16-letter Google app password>` to `.env` (Google account → Security → 2-Step Verification → App passwords), restart Stiti,
 then say "check my mail for anything important". Try on the mic: "my exams start from the 9th" → "yes" → "from the 1st"; check the calendar entry is really there.
+16. After merging D50: build the public examples for the real home, once — `cd ~/Desktop/Stiti && `.venv/bin/python scripts/build_exemplars.py` (not `uv run` from a worktree)
+` (downloads MASSIVE / CLINC150 / PRESTO into `~/.stiti/data/`: ≈ 70 MB transferred, 27 MB
+kept, ≈ 2 min download + ≈ 40 s embedding), then restart Stiti. Until then the router is exactly the old one. Read
+`~/.stiti/EXAMPLES.md` (written on the first chat turn) and change any reply that doesn't sound like her.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-12/14 — mic, whiteboard asks, Jarvis gaps (D36–D40, PRs: one per branch, stacked):** mic follows macOS
