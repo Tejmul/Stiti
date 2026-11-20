@@ -1418,3 +1418,24 @@ smallest thing that fits free + local + 8 GB — **Postgres only**, no Redis, no
 **Not yet:** notes / recap / transcription handlers (Wave 2 uses the same queue); the voice path starting a lesson
 doesn't enqueue yet (it builds the map in-process as before).
 **Tests:** `jobs_eval` (84, new).
+## D57: Review (spaced repetition) + the mastery map — features 3 and 4 (2026-11-20)
+*(plan: docs/FEATURE_PLAN.md §3–4; research: docs/research/teaching_apps.md,
+docs/research/apps/itutor.md "Techniques for Stiti" 5 + 6)*
+1. **One FSRS card per concept** (`srs.concept_card`, unique on mastery source key + concept id): created/updated after
+   each of the concept's checks in a coached lesson (`Coach._card`, via `Tutor.on_check`) and rated at once
+   (wrong → Again · hint or partly → Hard · right → Good). front = the check question, back = its expected points,
+   `check_spec` keeps the whole check so a review asks it the same way. Only when the lesson persists (`cards` flag).
+2. **Review session** (`tutor/review.py`): `stiti teach --review [<file>] [--key K] [--limit N]`, "review" / "what's
+   due" by voice (whole-line match: "review my PR" or "what's due today?" never start it), or Start review on the
+   Lessons page. Due cards weakest first, ≤ 10 (~5 min), one question each, one hint then the answer, graded locally
+   (no LLM needed), FSRS + mastery (origin `review`) updated per answer; nothing due → said, no board opened.
+3. **Mastery as an append-only history** (migration 013, `mastery_events`: concept, verdict, hints, p before/after,
+   origin probe|check|review|blurt, time), written by `Mastery.set/update`; the JSON stays the readable current value
+   (principle 7). A missing database never stops a lesson.
+4. **The map** (`tutor/mastery_map.py`, no LLM): Strong ≥ 0.8 · Focus = seen below 0.8 (strong-then-dropped flagged) ·
+   Not started = never answered; a concept × day heatmap of 30 local days (inferred probe bumps don't count); at risk
+   on exam day = (1 − FSRS recall at 9 am on the exam date) × weight, below 0.9 recall, a concept with no card counts
+   its mastery p. The exam date comes from an exam goal (`days` → date in the mastery JSON) or the page's date picker.
+   `GET /api/lessons/map?key=…[&exam=…]`; the Lessons page shows it per file, a topic chip → "Teach me this" starts
+   `--focus "<concept>"`; the board opens every coached lesson with a "Map" notes page before "Your plan".
+**Tests:** `review_map_eval` (81, new); `tutor_coach_eval`, `web_lessons_eval`, `course_eval`, `tutor_launch_eval` unchanged.

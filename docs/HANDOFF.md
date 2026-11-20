@@ -149,6 +149,9 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
   heartbeat, park on free-tier limits, requeue + resume on start). `POST /api/lessons/prepare` (concept map of a
   listed file, `tutor/prepare.py`), `GET /api/jobs`, `POST /api/jobs/{id}/retry|cancel`, `GET /api/events` (SSE fed by
   `NOTIFY stiti_jobs`). New long tasks = `@jobs.handler("kind")` + add the module to `jobs._HANDLER_MODULES`.
+- **Review + map (D57):** one FSRS card per concept after a coached check (`srs.concept_card`), `stiti teach --review`
+  (`tutor/review.py`, local grading), append-only `mastery_events` (013); `GET /api/lessons/map?key=…[&exam=…]`
+  (`tutor/mastery_map.py`), review start = `{"mode": "review", "key"?}` on `/api/lessons/start`.
 - Chat replies carry `used` = `Engine.last_used` (memory COUNT + facts/doc sections/lessons handed to the LLM) → receipts.
 - **Privacy (D24): no conversation text is ever sent to a page** (no history on open, no conversations API). Public
   site: `STITI_PUBLIC=1 pnpm build` (landing only; chat/memory code aliased out).
@@ -181,6 +184,8 @@ kept, ≈ 2 min download + ≈ 40 s embedding), then restart Stiti. Until then t
 17. After merging D56: apply `db/migrations/012_jobs.sql` to `stiti` + `stiti_test`, rebuild the frontend, restart
 Stiti (until then the worker logs "[jobs] off" and Prepare can't queue). Try Prepare on a big file, quit Stiti mid-way,
 start it again: the job should resume from the units it already read.
+18. After merging D57: apply `db/migrations/013_mastery_events.sql` to `stiti` + `stiti_test` (review cards + the map's
+history; until then lessons still run, the map shows no heatmap). Try `stiti teach --review` and a file's Map on the Lessons page.
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-12/14 — mic, whiteboard asks, Jarvis gaps (D36–D40, PRs: one per branch, stacked):** mic follows macOS

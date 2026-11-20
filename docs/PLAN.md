@@ -127,6 +127,8 @@ concept still wrong, notes export, real-voice test.
 wrong/partial; accuracy 73.6 % → 93.5 %, right-marked-wrong 12 → 1–2 on 72 labelled spoken answers. Next: hints that target `missing_text`.
 ✅ 2026-11-20 (D56): background jobs + live progress — Postgres queue (SKIP LOCKED, park on 429, resume after a
 restart) → NOTIFY → `/api/events`; "Prepare" a file on the Lessons page builds its concept map ahead of the lesson.
+✅ 2026-11-20 (D57): review cards + mastery map — one FSRS card per concept from the coach's checks, `stiti teach --review`,
+append-only `mastery_events`, Lessons page Review card + Map (Strong / Focus / Not started, 30-day heatmap, at risk on exam day).
 LLM lesson planner written (strict JSON) but unverified until a key exists. Next: FSRS review sessions, offline
 Excalidraw bundle, word-timed TTS, real-voice test on the big monitor.
 

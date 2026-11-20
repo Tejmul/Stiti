@@ -632,7 +632,8 @@ def concept_segments(c: Concept, idx, level: str, mode: str, sources: list[dict]
 class Coach:
     def __init__(self, source: str, *, audio, events, server=None, book_path: str | None = None,
                  unit: str | None = None, goal: dict | None = None, log=print, call=None, persist: bool = True,
-                 planner=None, concepts_future=None, focus: list[str] | None = None, **tutor_kw):
+                 planner=None, concepts_future=None, focus: list[str] | None = None, cards: bool | None = None,
+                 **tutor_kw):
         from .player import Tutor
         self.source, self.book_path, self.unit = source, book_path, unit
         self.goal, self.log, self.call = goal, log, call
@@ -669,15 +670,18 @@ class Coach:
         self.t0 = time.time()
         self.done_today: set[str] = set()            # day mode: concepts already done earlier today
         self.pool_n = 0                              # how many concepts the queue was chosen from
+        self.cards = persist if cards is None else cards   # feature 3: a review card per concept taught
+        self.cards_made: dict[str, int] = {}
 
     # ---- mastery after every answer; a concept he clearly knows is cut short
     def _on_check(self, seg: Segment, rec: dict) -> None:
         cid = self.seg_concept.get(seg.id)
         if not cid or rec.get("verdict") not in ("correct", "partial", "wrong", "idk"):
             return
-        p = self.mastery.update(cid, rec["verdict"])
+        p = self.mastery.update(cid, rec["verdict"], origin="check", hints=rec.get("hints", 0))
         self.checked.add(cid)
         self.log(f"   [mastery] {cid} {rec['verdict']} → {p:.2f}")
+        self._card(cid, seg, rec)
         if rec["verdict"] == "correct" and p >= KNOWN and rec.get("attempts", 1) <= 1:
             nxt = [s.id for s in self.L.segments]
             i = nxt.index(seg.id) if seg.id in nxt else -1
@@ -688,6 +692,22 @@ class Coach:
                 if k is not None:
                     self.t.say("You've got this one. Moving on.")
                     self.t.skip_to = k + len(rest[-1].cues)
+
+    def _card(self, cid: str, seg: Segment, rec: dict) -> None:
+        """Feature 3: the concept's review card (front = this check, back = its expected points), created or updated,
+        then rated by how this answer went (FSRS: wrong → Again, hint/partial → Hard, right → Good)."""
+        if not self.cards or seg.check is None:
+            return
+        c = next((x for x in self.concepts if x.id == cid), None)
+        try:
+            from . import srs
+            card_id = srs.concept_card(self.mastery.source, self.mastery.key, cid, c.name if c else seg.title,
+                                       asdict(seg.check))
+            due = srs.review(card_id, srs.rating_for(rec["verdict"], rec.get("hints", 0), rec.get("confidence")))
+            self.cards_made[cid] = card_id
+            self.log(f"   [review] card {card_id} for {cid} → due {due:%d %b %H:%M}")
+        except Exception as e:
+            self.log(f"   [review] no card for {cid}: {type(e).__name__}: {str(e)[:100]}")
 
     # ---- the end of the plan: come back to what's still wrong (spacing), then a recap + his notes saved
     def _before_end(self) -> bool:
@@ -876,6 +896,10 @@ class Coach:
             if self.goal.get("hours"):                  # "exam in 2 hours": never plan more than he has
                 mins = min(mins, self.goal["hours"] * 60 * 0.85)
         self.goal["minutes"] = mins
+        if self.goal["mode"] == "exam" and self.goal.get("days") is not None:   # the map's "at risk on exam day"
+            from datetime import date, timedelta
+            self.mastery.exam = (date.today() + timedelta(days=int(self.goal["days"]))).isoformat()
+            self.mastery.save()
         mapper.join(0.1)
         if mapper.is_alive():
             t.say(f"{'Got it.' if asked else 'Okay.'} Give me a few seconds, I'm reading your notes." if self.book_path
@@ -920,11 +944,11 @@ class Coach:
             v = grade(Check(kind="recall", prompt=pr["question"], expectations=pr.get("expected") or []), ans,
                       llm=True, call=self.call)["verdict"]     # mis-heard right answers get a free-LLM second opinion
             c = byid[pr["concept_id"]]
-            self.mastery.set(c.id, {"correct": 0.85, "partial": 0.55}.get(v, 0.15))
+            self.mastery.set(c.id, {"correct": 0.85, "partial": 0.55}.get(v, 0.15), verdict=v, origin="probe")
             if v == "correct":                       # what comes before it in the same unit is probably known too
                 for o in self.concepts:
                     if o.unit_idx == c.unit_idx and self.concepts.index(o) < self.concepts.index(c):
-                        self.mastery.set(o.id, max(self.mastery.get(o.id), 0.6))
+                        self.mastery.set(o.id, max(self.mastery.get(o.id), 0.6), verdict="inferred", origin="probe")
             t.say({"correct": "Nice, you know that.", "partial": "Partly there."}.get(v, "Okay, we'll cover that."),
                   interruptible=False)
         self.after_probes = dict(self.mastery.p)     # where he started (reports, tests)
@@ -951,10 +975,33 @@ class Coach:
                 if 0 <= now - self.mastery.seen.get(c.id, 0) < DAY_RESUME_H * 3600
                 and self.mastery.level(c.id) != "new"}
 
+    def _show_map(self) -> None:
+        """Feature 4: a "Map" notes page first — Strong / Focus / Not started for this file, said in one line."""
+        from .mastery_map import board_ops, groups
+        t = self.t
+        due = 0
+        if self.cards:
+            try:
+                from . import srs
+                due = srs.due_counts()["by_key"].get(self.mastery.key, 0)
+            except Exception:
+                due = 0
+        acts: list[dict] = []
+        for op in board_ops(self.concepts, self.mastery, due):
+            acts += t.board.apply(op)
+        t.send({"type": "actions", "actions": [{**a, "at_ms": i * 120} for i, a in enumerate(acts)]})
+        g = groups([{"id": c.id, "name": c.name} for c in self.concepts], self.mastery.p, self.mastery.seen)
+        t.say(f"Your map: {len(g['strong'])} strong, {len(g['focus'])} to focus on, {len(g['not_started'])} not "
+              "started.", interruptible=False)
+
     def _show_plan(self):
         t, q = self.t, self.queue
         if not q:
             return
+        try:
+            self._show_map()
+        except Exception as e:
+            self.log(f"   [coach] map page: {type(e).__name__}: {e}")
         exam = self.goal["mode"] == "exam"
         day = self.goal["mode"] == "day"
         title = "Your plan"

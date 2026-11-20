@@ -6,6 +6,11 @@ p(known) moves with every graded answer:
   partial → half a step;  wrong / idk → the "incorrect" posterior
 Stored per source (his file, or a topic) in ~/.stiti/tutor/mastery/<key>.json — plain JSON he can read; the lesson
 queue is ordered from it, so the next lesson starts where he really is.
+
+Every update with an origin is ALSO appended to Postgres `mastery_events` (feature 4; iTutor technique 5: beliefs are
+never overwritten): concept, verdict, hints, p before/after and where it came from (probe / check / review / blurt).
+The JSON stays the readable current value; the history gives the map's heatmap. A missing database never stops a
+lesson — the event is just not logged.
 """
 from __future__ import annotations
 
@@ -18,6 +23,7 @@ PRIOR = 0.25          # a concept nobody has checked yet
 SLIP, GUESS, TRANSIT = 0.10, 0.20, 0.15
 KNOWN = 0.80          # ≥ this: confirm with one quick question, don't teach it again
 SHAKY = 0.40          # between SHAKY and KNOWN: "nearly known" — first in line when time is short (Metcalfe & Kornell)
+ORIGINS = ("probe", "check", "review", "blurt")
 
 
 def bkt(p: float, verdict: str) -> float:
@@ -35,31 +41,56 @@ def key_for(source: str) -> str:
     return hashlib.sha1(source.strip().lower().encode()).hexdigest()[:16]
 
 
+def log_event(source_key: str, concept: str, verdict: str, p_before: float | None, p_after: float, origin: str,
+              hints: int = 0) -> bool:
+    """One row in mastery_events (append-only). False when it couldn't be written (never raises)."""
+    if origin not in ORIGINS:
+        return False
+    try:
+        from ..db import q
+        q("""INSERT INTO mastery_events(source_key, concept_id, verdict, hints, p_before, p_after, origin)
+             VALUES (%s,%s,%s,%s,%s,%s,%s)""",
+          (source_key, str(concept)[:64], str(verdict)[:16], max(0, min(int(hints or 0), 9)), p_before, p_after,
+           origin))
+        return True
+    except Exception:
+        return False
+
+
 class Mastery:
-    def __init__(self, source: str, home: Path | None = None):
+    def __init__(self, source: str, home: Path | None = None, events: bool = True):
         if home is None:
             from ..config import CFG
             home = CFG.home
-        self.path = home / "tutor" / "mastery" / f"{key_for(source)}.json"
+        self.key = key_for(source)
+        self.path = home / "tutor" / "mastery" / f"{self.key}.json"
         self.source = source
+        self.events = events                         # False: the JSON only, no history rows
         self.p: dict[str, float] = {}
         self.seen: dict[str, float] = {}
+        self.exam: str | None = None                 # ISO date of his exam, when a lesson's goal named one
         try:
             d = json.loads(self.path.read_text())
             self.p, self.seen = d.get("p", {}), d.get("seen", {})
+            self.exam = d.get("exam") if isinstance(d.get("exam"), str) else None
         except Exception:
             pass
 
     def get(self, concept: str) -> float:
         return float(self.p.get(concept, PRIOR))
 
-    def set(self, concept: str, p: float) -> None:
+    def set(self, concept: str, p: float, *, verdict: str | None = None, origin: str | None = None,
+            hints: int = 0) -> None:
+        """Set p(known). With an origin (probe / check / review / blurt) the change is also logged as an event."""
+        before = self.p.get(concept)
         self.p[concept] = round(min(0.99, max(0.01, p)), 3)
         self.seen[concept] = time.time()
         self.save()
+        if origin and self.events:
+            log_event(self.key, concept, verdict or "inferred", before, self.p[concept], origin, hints)
 
-    def update(self, concept: str, verdict: str) -> float:
-        self.set(concept, bkt(self.get(concept), verdict))
+    def update(self, concept: str, verdict: str, *, origin: str = "check", hints: int = 0) -> float:
+        self.set(concept, bkt(self.get(concept), verdict), verdict=verdict, origin=origin, hints=hints)
         return self.p[concept]
 
     def level(self, concept: str) -> str:
@@ -69,6 +100,9 @@ class Mastery:
     def save(self) -> None:
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self.path.write_text(json.dumps({"source": self.source, "p": self.p, "seen": self.seen}, indent=1))
+            d: dict = {"source": self.source, "p": self.p, "seen": self.seen}
+            if self.exam:
+                d["exam"] = self.exam
+            self.path.write_text(json.dumps(d, indent=1))
         except Exception:
             pass

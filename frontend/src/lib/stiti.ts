@@ -112,9 +112,12 @@ export type StudyFile = { path: string; name: string; ext: string; size: number;
 export type LessonNote = { name: string; title: string; path: string; modified: string; size: number };
 export type LessonProgress = {
   key: string; source: string; kind: "file" | "topic"; total: number; known: number; shaky: number; new: number;
-  revise: string[]; last_seen: string | null;
+  revise: string[]; last_seen: string | null; due?: number;
 };
-export type Lessons = { active: boolean; board_url: string; files: StudyFile[]; notes: LessonNote[]; progress: LessonProgress[] };
+export type Lessons = {
+  active: boolean; board_url: string; files: StudyFile[]; notes: LessonNote[]; progress: LessonProgress[];
+  review?: { total: number };
+};
 export type LessonStart = { target: string; mode: LessonMode; hours?: number; days?: number; focus?: string; ptt?: boolean };
 
 // ---- background jobs (src/stiti/jobs.py, D56): /api/jobs + live /api/events (server-sent events)
@@ -131,3 +134,18 @@ export async function jobEvents(): Promise<EventSource> {
   const key = await ensureToken();
   return new EventSource(`/api/events?t=${encodeURIComponent(key)}`);     // `pnpm dev` proxies /api too
 }
+/** Start a spoken review of the due concept cards: all of them, or one source's (its mastery key). */
+export type ReviewStart = { mode: "review"; key?: string; ptt?: boolean };
+// the map of one file / topic (GET /api/lessons/map?key=…)
+export type MapLevel = "strong" | "shaky" | "weak" | "new";
+export type MapConcept = {
+  id: string; name: string; unit: string; weight: number; p: number | null; level: MapLevel; dropped: boolean; focus: string;
+};
+export type MapRisk = { id: string; name: string; recall: number; weight: number; risk: number; card: boolean };
+export type LessonMap = {
+  key: string; label: string; kind: "file" | "topic"; target: string | null; total: number; due: number;
+  groups: { strong: MapConcept[]; focus: MapConcept[]; not_started: MapConcept[] };
+  counts: { strong: number; focus: number; not_started: number };
+  heatmap: { days: string[]; rows: { id: string; name: string; cells: ([number, number] | null)[] }[] };
+  exam: string | null; exam_days: number | null; at_risk: MapRisk[];
+};

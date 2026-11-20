@@ -193,6 +193,14 @@ def app():
             return JSONResponse({"error": "No such note."}, 404)
         return JSONResponse({"name": name, "markdown": text}, headers=nostore)
 
+    async def lesson_map(req):
+        if not guard(req):
+            return JSONResponse({"error": "not allowed"}, 403)
+        from . import lessons
+        out = await asyncio.to_thread(lessons.map_view, req.query_params.get("key"), req.query_params.get("exam"))
+        code = out.pop("status", 200)
+        return JSONResponse(out, status_code=code, headers=nostore)
+
     async def lesson_start(req):
         if not guard(req, write=True):
             return JSONResponse({"error": "not allowed"}, 403)
@@ -312,7 +320,8 @@ def app():
         Route("/api/fact", fact_add, methods=["POST"]),
         Route("/api/fact/{id:int}/forget", fact_forget, methods=["POST"]),
         Route("/lessons", page("lessons.html")), Route("/api/lessons", lessons_api),
-        Route("/api/lessons/notes", lesson_note), Route("/api/lessons/start", lesson_start, methods=["POST"]),
+        Route("/api/lessons/notes", lesson_note), Route("/api/lessons/map", lesson_map),
+        Route("/api/lessons/start", lesson_start, methods=["POST"]),
         Route("/api/lessons/prepare", lesson_prepare, methods=["POST"]),
         Route("/api/jobs", jobs_api), Route("/api/events", events),
         Route("/api/jobs/{id:int}/retry", job_action("retry"), methods=["POST"]),
