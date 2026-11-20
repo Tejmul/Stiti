@@ -163,7 +163,8 @@ def _sources_block(sources: list[dict] | None, limit_chars: int = 9000) -> str:
 
 
 def _call(system: str, user: str, schema: dict, name: str, max_tokens: int, *,
-          route: str = "tutor_plan", reasoning: str = "medium", patience_s: float = 0) -> dict:
+          route: str = "tutor_plan", reasoning: str = "medium", patience_s: float = 0,
+          temperature: float = 0.4) -> dict:
     """Structured LLM call. Personal tier first; then the same prompt WITHOUT his name on the public-only
     providers (bigger free quota). With patience_s, waits out per-minute free-tier limits instead of failing."""
     msgs = [{"role": "system", "content": system}, {"role": "user", "content": user}]
@@ -173,12 +174,12 @@ def _call(system: str, user: str, schema: dict, name: str, max_tokens: int, *,
     deadline = time.time() + patience_s
     while True:
         try:
-            r = router.complete(msgs, route=route, max_tokens=max_tokens, temperature=0.4, schema=schema,
+            r = router.complete(msgs, route=route, max_tokens=max_tokens, temperature=temperature, schema=schema,
                                 schema_name=name, reasoning=reasoning)
             break
         except router.NoProvider as e1:
             try:
-                r = router.complete(anon, route=route, privacy=0, max_tokens=max_tokens, temperature=0.4,
+                r = router.complete(anon, route=route, privacy=0, max_tokens=max_tokens, temperature=temperature,
                                     schema=schema, schema_name=name, reasoning=reasoning)
                 break
             except router.NoProvider as e2:
