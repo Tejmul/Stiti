@@ -16,7 +16,11 @@ fail=0
 run() {
   name="$1"; shift
   if [ "${FRESH:-1}" = "1" ]; then fresh_db; fi
-  if out=$(uv run python "$@" 2>&1); then echo "✅ $name — $(echo "$out" | tail -1)"; else echo "❌ $name"; echo "$out" | tail -20; fail=1; fi
+  if out=$(uv run python "$@" 2>&1); then echo "✅ $name — $(echo "$out" | tail -1)"; else
+    echo "❌ $name"
+    echo "$out" | grep -E "✗|❌|Traceback|Error:|assert" | head -20   # the failing checks themselves (not cut off)
+    echo "   … last lines:"; echo "$out" | tail -20; fail=1
+  fi
 }
 run "dates (Hinglish time parsing)"   tests/dates_eval.py
 run "recall (hybrid memory search)"   tests/recall_eval.py
