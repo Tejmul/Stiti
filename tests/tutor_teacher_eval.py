@@ -643,6 +643,27 @@ check("the same question (after normalising) is asked once, the repeat is skippe
       sum(1 for x in lg2 if x.startswith("Stiti:") and "lexer produce" in x) == 1
       and any("skipped a repeated question" in x for x in lg2) and r2["finished"], str(lg2[-6:]))
 
+les = LS.from_dict({"title": "Few", "topic": "few", "segments": [
+    {"id": f"t{i}", "type": "teach", "title": f"Part {i}", "cues": [{"say": f"This is teaching sentence {i}.", "ops": []}],
+     "check": {"kind": "recall", "prompt": f"Question number {i}?", "expectations": ["x"], "hints": [],
+               "reveal": "X."}} for i in range(2)]})
+ev4: queue.Queue = queue.Queue()
+lg4: list[str] = []
+
+
+def log4(line):
+    lg4.append(line)
+    if line.startswith("Stiti: This is teaching sentence 0") and not any("just teach" in x for x in lg4):
+        threading.Timer(0.05, lambda: ev4.put({"type": "text", "text": "just teach"})).start()
+
+
+r4 = Tutor(les, audio=SilentAudio(scale=0.01), events=ev4, server=FakeSrv(), planner=None, persist=False, log=log4,
+           pace=0.02, idle_resume_s=0.2).run()
+said4 = [x[len("Stiti: "):] for x in lg4 if x.startswith("Stiti: ")]
+check("a plain lesson too: 'just teach' → 'Okay, fewer questions.' once, and the quick checks are held back",
+      said4.count("Okay, fewer questions.") == 1 and not any(s.startswith("Question number") for s in said4)
+      and r4["finished"], str(said4))
+
 # speech he starts while she is still asking is his answer; speech from before the question is not
 print("\nlisten(): drop only speech that started before her question")
 fa = FakeAudio()

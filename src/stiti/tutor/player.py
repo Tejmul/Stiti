@@ -970,6 +970,9 @@ class Tutor:
         if self.pacing.repeat(c.prompt):
             self.log(f"   [pacing] skipped a repeated question: {c.prompt[:60]!r}")
             return False
+        if self.should_check is None and self.pacing.sparse and self.pacing.since < self.pacing.gap:
+            self.log(f"   [pacing] fewer questions: skipped {c.prompt[:50]!r}")   # a plain lesson, he asked for fewer
+            return False
         if self.should_check is not None and not self.should_check(seg, self.pacing):
             self.log(f"   [pacing] no check yet ({self.pacing.since} sentences since the last one, gap "
                      f"{self.pacing.gap}): {c.prompt[:50]!r}")
@@ -981,6 +984,8 @@ class Tutor:
         if self.pacing.go_sparse(why):
             self.log(f"   [pacing] fewer questions from now on ({why})")
             self.say("Okay, fewer questions.", interruptible=False)
+        elif why == "asked":
+            self.say("Okay.", interruptible=False)    # already sparser: no second announcement
 
     # ---- the hint ladder (iTutor; code-owned, LLM-free): nudge → hint → worked example → answer
     def _rung_available(self, rung: int, c: Check) -> bool:
