@@ -312,11 +312,17 @@ def concept_segments(c: Concept, idx: int, level: str, mode: str, sources: list[
                                 sources=P._sources_block(sources, 3500) if sources else ""),
              STEP_SCHEMA, "concept", 1600, route="tutor_plan", reasoning="low", patience_s=30)
     segs: list[Segment] = []
+    n_points = sum(1 for st in (d.get("steps") or [])[:steps] for it in st.get("board") or []
+                   if it.get("slot") == "point" and (it.get("text") or "").strip())
     for j, st in enumerate((d.get("steps") or [])[:steps]):
         says = [s.strip() for s in st.get("say") or [] if isinstance(s, str) and s.strip()][:2]
         if not says:
             continue
         ops = _board_ops(st.get("board"))
+        if j == 0 and n_points < 2:                  # too few key points from the model: the concept map has them
+            given = {(o.text or "").lower() for o in ops if o.region == "points"}
+            extra = [pt for pt in c.points if pt.lower() not in given][:3 - n_points]
+            ops = ops + [Op(type="text", text=pt[:80], region="points", at="start") for pt in extra]
         first = [page] if j == 0 else []
         pts = [o for o in ops if o.region == "points"]
         rest = [o for o in ops if o.region != "points"]
