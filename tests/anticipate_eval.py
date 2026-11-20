@@ -357,8 +357,10 @@ from stiti.app import StitiApp                                           # noqa:
 
 q("TRUNCATE intents, reminder_nags RESTART IDENTITY CASCADE")
 out: list = []
-fake = SimpleNamespace(_deliver=lambda text, kind, present: out.append((kind, text, present)) or ("voice" if present else None),
+fake = SimpleNamespace(_deliver=lambda text, kind, present, asked=False: out.append((kind, text, present))
+                       or ("voice" if present or asked else None),
                        _busy_speaking=lambda: False, _ring=lambda row: None, loop=None)
+fake._fire_one = lambda r, p: StitiApp._fire_one(fake, r, p)
 import json as _json                                                     # noqa: E402
 one("INSERT INTO intents(kind, fire_at, payload) VALUES ('reminder', now() - interval '10 seconds', %s) RETURNING id",
     (_json.dumps({"say": "check the oven", "label": "check the oven", "kind": "reminder"}),))
@@ -370,8 +372,8 @@ try:
     check("delivered reminder starts a nag", out and out[0][1] == "Reminder: check the oven" and nag and nag["sent"] == 1, str(out))
     q("UPDATE reminder_nags SET next_at = now() - interval '1 second'")
     out.clear()
-    StitiApp._nag(fake, False)
-    check("away → repeat waits, not counted", not out and one("SELECT sent FROM reminder_nags")["sent"] == 1)
+    StitiApp._nag(fake, False, True)
+    check("really away (screen locked) → repeat waits, not counted", not out and one("SELECT sent FROM reminder_nags")["sent"] == 1)
     q("UPDATE reminder_nags SET next_at = now() - interval '1 second'")
     fake._busy_speaking = lambda: True
     StitiApp._nag(fake, True)

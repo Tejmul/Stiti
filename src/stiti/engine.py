@@ -13,6 +13,7 @@ from datetime import date, datetime
 
 from . import embed, router, say
 from .brain import compiler, emotion, examples, gate, ingest, lessons, memory, norepeat, psych, strategy, turnmark
+from .brain import asked as asked_mod
 from .brain import lang as lang_mod
 from .config import CFG
 from . import db
@@ -67,6 +68,10 @@ def _names_his_person(words: str) -> bool:
 
 
 COMMAND_WORDS_RX = re.compile(r"\b(remind me|reminder|alarm|timer|to-?do|add .{1,40} to (my|the) list)\b", re.I)
+# a sentence BUILT like a reminder / alarm / timer request (not one that just mentions the word)
+REMIND_ASK_RX = re.compile(r"\b(remind me|wake me( up)?|yaad dila\w*|give me an? (reminder|alarm)|"
+                           r"(set|keep|put|create|make|start|laga\w*|rakh\w*)( up)? (an?|the|my|one|another)? ?"
+                           r"(alarm|reminder|timer)|(alarm|reminder|timer) (laga|rakh|set)\w*)\b", re.I)
 REMEMBER_RX = re.compile(r"\b(remember|ya+d ra\w*|note kar\w*|don'?t forget|mat bhool\w*)\b", re.I)
 LIFE_RX = re.compile(r"\b(birthday|shaadi|wedding|job|offer|moved|shift|breakup|died|born|exam|interview|"
                      r"promotion|salary|health|hospital)\b", re.I)
@@ -289,6 +294,15 @@ class Engine:
         again once he says "turn this off" (owner: she kept asking on every wake)."""
         from . import profile
         self._voice_active()
+        try:                                     # a reminder he never heard (Mac off, lesson, call): first thing
+            from .life import alarms
+            missed = alarms.missed_summary()
+        except Exception as e:
+            print(f"[alarms] missed: {type(e).__name__}: {e}")
+            missed = None
+        if missed:
+            name = profile.call() if profile.get("name") else None
+            return (f"Hey {name}. " if name else "Hey. ") + missed
         if self._should_offer_intro():
             profile.set("intro_offered_at", datetime.now(CFG.tz).date().isoformat(), "system")
             self.last_offer = ("intro", time.time())
@@ -557,6 +571,9 @@ class Engine:
             raise NotSpeculable("life update")          # the real turn writes it (a held write would be rolled back)
         upd = lifeupdate.Update() if (crisis or self._spec or in_ask or COMMAND_WORDS_RX.search(text)) \
             else lifeupdate.capture(text, user_ep, now=now, privacy=privacy)
+        if not (self._spec or crisis or in_ask or self.onboarding is not None) and not COMMAND_WORDS_RX.search(text) \
+                and (domain not in ("todo", "time", "control") or asked_mod.SKIP_RX.match(text)):
+            asked_mod.note_answer(text, episode_id=user_ep, private=privacy >= 2)   # his answer to her last question
         from .brain import learning
         from .voice.wake import is_stop
         after_offer = bool(re.search(r"anything else\?\s*$", self.last_reply_text or "", re.I)) and bool(NOTHING_RX.match(text))
@@ -607,6 +624,11 @@ class Engine:
         calm = not (emo.voice_label in ("angry", "stressed", "sad", "tired") and emo.voice_conf >= 0.5)
         imp_free = not (crisis or self._spec or in_ask or self.onboarding is not None or self.chunker is not None
                         or self.woop is not None or self.pending is not None)
+        label_answer = False                    # his answer to her "What's it for?" about a reminder he just set
+        if _awaiting_label():
+            label_answer = len(text.split()) <= 12 and not bye.is_bye(text) and alarms.is_label_answer(text)
+            if not label_answer and not self._spec:
+                alarms.drop_label_wait()        # a new reminder / a question: he moved on — never swallow it as a note
         if crisis:
             reply = strategy.crisis_reply(strat.lang)
             self.crisis_at = time.time()
@@ -656,8 +678,7 @@ class Engine:
             reply = f"Okay — no more {disabled_kind.replace('_', ' ')} reminders from me."
         elif switched := self._intro_switch(text):
             reply = switched
-        elif _awaiting_label() and len(text.split()) <= 12 and not bye.is_bye(text):
-            from .life import alarms           # she just asked "What's it for?" about a reminder
+        elif label_answer:                      # she just asked "What's it for?" about a reminder
             reply = alarms.set_label(text)
         elif imp_free and not taught and domain != "control" and _tutor_request(text) is None \
                 and (noticed := important.from_turn(text, now=now, privacy=privacy, calm=calm)) is not None:
@@ -692,6 +713,8 @@ class Engine:
         elif onboarding.START_RX.search(text):
             self.onboarding = onboarding.Onboarding()
             reply = self.onboarding.start()
+            if self.onboarding.step >= len(onboarding.QUESTIONS):
+                self.onboarding = None          # nothing left he hasn't answered: no interview to stay in
         elif self.pending is not None:
             tool, args = self.pending[0], self.pending[1]
             ctx, self.pending, self.pending_ctx = self.pending_ctx, None, None
@@ -777,6 +800,14 @@ class Engine:
                 reply = handlers.todo(text)
         elif domain == "time":
             reply = handlers.timeish(text)
+        if reply is None and live_job is None and live_res is None and not crisis and not flow_turn \
+                and domain not in ("time", "control") and not in_ask and REMIND_ASK_RX.search(text):
+            # built like a reminder / alarm request ("…, remind me at 9", "can you set an alarm for 6") but the classifier
+            # guessed chat / memory / tool: the alarm code still gets the first look — a request is never lost to a
+            # guess (it returns None when there is no time in it, and the turn goes on as before)
+            if (r2 := handlers.timeish(text)) is not None:
+                reply, domain = r2, "time"
+                strat = strategy.make("DO", strat.lang)
 
         if reply is None and strat.name == "DO":     # the classifier said todo/time but no fast path took it: talk
             strat = pick("chat")
@@ -875,7 +906,8 @@ class Engine:
                 open_loops=loops, talk_directives=talk, mvd=psych.minimum_viable_day(emo.label), docs=docs,
                 strategy=strat, rule_saved=rule_saved, wins=gate.wins(min(privacy, 1)) if strat.reframe else None,
                 markers=markers and not told, said=strat.said, more=more, told=told, examples=ex,
-                saved=[x if x != "__remember__" else "what he asked you to remember" for x in upd.saved] + learned)
+                saved=[x if x != "__remember__" else "what he asked you to remember" for x in upd.saved] + learned,
+                answered=asked_mod.for_briefing(qvec) if privacy < 2 else None)
             if live_job is not None:
                 try:
                     live_res = live_job.result(timeout=live.budget(lreq) + 1.5)
@@ -960,6 +992,10 @@ class Engine:
             reply = psych.HONEST_NO_BOARD.format(topic=hint or "the topic")   # "Opened the whiteboard app" — it didn't
         if route == "llm" and not info.get("confirm"):
             reply = psych.enforce(reply, strat, user_text=text)   # strategy shape, banned tics, machine-talk — in code
+            if not self.streamed and not self._spec:
+                reply, dropped = asked_mod.strip_repeats(reply)    # a question he already answered is never asked again
+                if dropped:
+                    print(f"[asked] dropped an already-answered question: {dropped[0][:60]!r}")
             if mems and not strategy.asks_about_past(text, domain):
                 gate.mark_volunteered(reply, mems)      # G4 clocks start only for memories she actually used
             if live_res is not None and (src := live.unnamed_source(live_res, reply)):
@@ -976,6 +1012,8 @@ class Engine:
         if route == "fast_path" and m and say.confirms(reply):
             reply += " Anything else?"                  # confirm-and-close: only after a completed action
         reply_ep = memory.add_episode(self.session, "stiti", reply, origin="agent", privacy=privacy)
+        if route in ("llm", "degraded") and not self._spec:
+            asked_mod.note_reply(reply, privacy=privacy)    # what she asked him, so his answer is kept with it
         if reply:
             self.said = self.said.add(reply, reply_ep)
             if route in ("llm", "degraded") or more:

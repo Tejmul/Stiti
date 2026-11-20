@@ -85,12 +85,34 @@ def _kind(text: str) -> str:
 def _label(text: str) -> str | None:
     m = re.search(r"\b(?:to|that|ki|ke liye|about|for)\s+(.+)$", text, re.I)
     if not m:
-        return None
+        return _label_before(text)
     s = re.sub(r"\b(yaad dila(na|do|dena)?|remind me|reminder|alarm|set|at \d.*|kal|aaj|parso|subah|shaam|raat|"
                r"every ?day|daily|roz|rozana|weekdays?|weekends?|every|har|\d{1,2}([:.]\d{2})?\s*(am|pm|baje)?|"
-               r"tomorrow|today|tonight|morning|evening)\b", " ", m.group(1), flags=re.I)
+               r"tomorrow|today|tonight|morning|evening|(?:at )?(?:noon|midnight|midday))\b", " ", m.group(1), flags=re.I)
     s = re.sub(r"\s+", " ", s).strip(" .,")
-    return s if len(s) >= 3 else None
+    s = re.sub(r"^(?:to|that|about|for)\s+", "", s, flags=re.I)     # "…for 7 pm to go to the gym" → "go to the gym"
+    return s if len(s) >= 3 else _label_before(text)
+
+
+_CMD_TAIL_RX = re.compile(r"[,;.]?\s*(?:\b(?:and|then|aur|also|so|toh)\s+)?(?:please\s+)?(?:remind me|yaad dila\w*|"
+                          r"set (?:an? |the )?(?:reminder|alarm))\b", re.I)
+_LEAD_FILLER_RX = re.compile(r"^\W*(?:(?:ok(?:ay)?|so|ya|yeah|yes|sure|haan|achha|hey|hi|stiti|just|also|and|baad|please|"
+                             r"pls|kindly|(?:can|could|would|will) you|i want you to|i need you to)[,!. ]+)*", re.I)
+
+
+def _label_before(text: str) -> str | None:
+    """"Just note it down in my list and remind me at 10" → "note it down in my list". The note can come BEFORE the
+    command (2026-11-11: two reminders rang as "You asked me to remind you now." — his words were all before
+    "remind me")."""
+    m = _CMD_TAIL_RX.search(text)
+    if not m or m.start() == 0:
+        return None
+    s = _LEAD_FILLER_RX.sub("", text[:m.start()]).strip(" .,;")
+    s = re.sub(r"\b(at \d.*|\d{1,2}([:.]\d{2})?\s*(am|pm|baje))", " ", s, flags=re.I)
+    s = re.sub(r"\s+", " ", s).strip(" .,")
+    if len(s.split()) < 2 or len(s.split()) > 14 or s.endswith("?") or _QUESTION_RX.match(s):
+        return None
+    return s
 
 
 def _rule_words(rule: str | None) -> str:
@@ -164,9 +186,13 @@ def create(text: str, ref: datetime | None = None) -> str | None:
             return f"{when.strftime('%I:%M %p').lstrip('0').replace(':00', '')} has already passed. Say “tomorrow at …” and I'll set it."
         return say.line("ask_when")
     label = _label(text) if kind == "reminder" else None
-    words = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind, NO_LABEL_SAY)
+    set_at = ref or now()
+    words = label or {"timer": "Timer done!", "alarm": "Wake up, it's time!"}.get(kind) or no_label_say(set_at)
     payload = {"say": words, "kind": kind, "label": label, "snoozes": 0, "heard": text[:120],
-               "important": bool(IMPORTANT_RX.search(text))}     # "zaroor" / "must": nags longer if not acked (D39)
+               "important": bool(IMPORTANT_RX.search(text)),      # "zaroor" / "must": nags longer if not acked (D39)
+               "set_at": now().isoformat()}
+    if kind == "reminder" and not label:
+        payload["await_label"] = True        # "What's it for?" — kept in the row, so a restart doesn't lose his answer
     row = one("""INSERT INTO intents(kind, fire_at, rrule, payload, user_set) VALUES (%s,%s,%s,%s,true) RETURNING id""",
               ("alarm" if kind in ("alarm", "timer") else "reminder", when, rule, json.dumps(payload)))
     cards.note("set", "intent", row["id"])
@@ -213,6 +239,14 @@ def create_at(when: datetime, label: str, *, important: bool = False, heard: str
 
 # ---------------------------------------------------------------- right after setting one
 NO_LABEL_SAY = "You asked me to remind you now."
+
+
+def no_label_say(set_at: datetime) -> str:
+    """A reminder with no note still says something he can place: when he set it."""
+    at = f"{set_at.astimezone(CFG.tz):%I:%M %p}".lstrip("0").replace(":00", "")
+    return f"the reminder you set at {at}"
+
+
 _last = {"id": None, "t": 0.0, "await_label": False}     # the reminder he just set (this process)
 JUST_SET_S, LABEL_WAIT_S = 600.0, 90.0
 _HALF = r"(a\.?\s?m\.?|p\.?\s?m\.?|morning|evening|night|subah|shaam|raat)"
@@ -248,17 +282,64 @@ def fix_ampm(text: str) -> str | None:
     return say.line("fixed", kind=r["payload"].get("kind") or "reminder", when=say_when(new)) + f" (#{r['id']})"
 
 
+def _waiting_id() -> int | None:
+    """The reminder whose "What's it for?" is still open: this process's, or — after a restart (the mic watchdog
+    restarts the app) — the row that is still flagged and was set under LABEL_WAIT_S ago."""
+    if _last["await_label"] and time.monotonic() - _last["t"] < LABEL_WAIT_S:
+        return _last["id"]
+    if _last["id"] is not None:
+        return None                                # this process set one and the wait is over / answered
+    try:
+        r = one("""SELECT id FROM intents WHERE state IN ('pending','armed') AND payload->>'await_label' = 'true'
+                   AND (payload->>'set_at')::timestamptz > now() - make_interval(secs => %s)
+                   ORDER BY id DESC LIMIT 1""", (LABEL_WAIT_S,))
+    except Exception:
+        return None
+    return r["id"] if r else None
+
+
 def awaiting_label() -> bool:
-    return bool(_last["await_label"]) and time.monotonic() - _last["t"] < LABEL_WAIT_S
+    return _waiting_id() is not None
+
+
+def drop_label_wait() -> None:
+    """He moved on (a new reminder, a question): her "What's it for?" is no longer open."""
+    rid = _waiting_id()
+    _last["await_label"] = False
+    if rid is not None:
+        q("UPDATE intents SET payload = payload - 'await_label' WHERE id=%s", (rid,))
+
+
+# A new request or a question is never the answer to "What's it for?" (2026-11-20 repro: "set a reminder for
+# tomorrow 9 am" → "What's it for?" → "remind me at 10 pm to take my medicine" became the FIRST reminder's note and
+# no second reminder was made; "do I have any alarms?" became a note too).
+_QUESTION_RX = re.compile(r"^\W*(?:(?:hey |hi |ok(?:ay)? |so |and )?stiti\W+)?(?:what|whats|what's|when|where|who|which|how|"
+                          r"why|do|does|did|is|are|can|could|will|would|should|any|kitne|kya|kaunse|kab)\b", re.I)
+
+
+def is_label_answer(text: str) -> bool:
+    t = (text or "").strip()
+    if not t:
+        return False
+    if re.search(r"\b(remind me|reminders?|alarms?|timers?|wake me|yaad dila\w*)\b", t, re.I):
+        return False                               # a new reminder / alarm, or a question about them
+    if MAKE_RX.search(t) and parse_when(t) is not None:
+        return False                               # "set one for 7 pm too"
+    if t.endswith("?") or _QUESTION_RX.match(t):
+        return bool(re.match(r"^\W*(?:it'?s |its |that'?s )?(?:for|about|to)\b", t, re.I))   # "for the bank?" ok
+    return True
 
 
 def set_label(text: str) -> str:
     """His answer to "What's it for?" becomes the reminder's note."""
+    rid = _waiting_id()
     _last["await_label"] = False
     label = re.sub(r"^(it'?s |its |that'?s )?(for |about |to )?", "", text.strip(" .!?"), flags=re.I).strip()
+    if rid is not None:
+        q("UPDATE intents SET payload = payload - 'await_label' WHERE id=%s", (rid,))
     if not label or re.match(r"^(nothing|no|nahi|skip|never ?mind|kuch nahi)$", label, re.I):
         return say.line("label_skip")
-    r = one("SELECT id, fire_at, payload FROM intents WHERE id=%s", (_last["id"],))
+    r = one("SELECT id, fire_at, payload FROM intents WHERE id=%s", (rid if rid is not None else _last["id"],))
     if not r:
         return "Okay."
     p = dict(r["payload"])
@@ -280,7 +361,7 @@ def _describe(r: dict) -> str:
     p = r["payload"]
     k = p.get("kind") or r["kind"]
     rep = f" ({_rule_words(r['rrule'])})" if r.get("rrule") else ""
-    about = f" — {p['label']}" if k == "reminder" and p.get("label") else ""
+    about = f" — {second_person(p['label'])}" if k == "reminder" and p.get("label") else ""
     return f"{k} {say_when(r['fire_at'].astimezone(CFG.tz))}{rep}{about} (#{r['id']})"   # spoken: "today at 9 PM"
 
 
@@ -402,7 +483,8 @@ def due(ref: datetime | None = None) -> tuple[list[dict], list[dict]]:
                 q("UPDATE intents SET state='pending', fire_at=%s, payload=%s WHERE id=%s", (nxt, json.dumps(p), r["id"]))
     for r in missed:
         q("UPDATE intents SET state = CASE WHEN rrule IS NULL THEN 'expired' ELSE state END, "
-          "payload = payload || '{\"missed\": true, \"told\": false}'::jsonb WHERE id=%s", (r["id"],))
+          "payload = payload || jsonb_build_object('missed', true, 'told', false, 'missed_at', %s::text) WHERE id=%s",
+          (r["fire_at"].isoformat(), r["id"]))
     return deliver, missed
 
 
@@ -418,16 +500,67 @@ def late_note(r: dict) -> str:
     return f"Late, sorry — I was off: your {when} {what}."
 
 
+MISSED_TELL_DAYS = 2
+
+
 def missed_summary(mark: bool = True) -> str | None:
-    rows = q("""SELECT id, kind, fire_at, payload FROM intents WHERE user_set AND payload->>'missed' = 'true'
-                AND payload->>'told' = 'false' AND fire_at > now() - interval '2 days' ORDER BY fire_at""")
+    """What he never heard — rung while the Mac was off, or said only as a banner (in a lesson, on a call, muted) —
+    told once at the next chance: "You missed: your 9 PM reminder (call mom)." mark=True claims them atomically, so
+    the wake greeting and the scheduler can't both say it."""
+    where = """user_set AND payload->>'missed' = 'true' AND payload->>'told' = 'false'
+               AND fire_at > now() - make_interval(days => %s)"""
+    if mark:
+        rows = q(f"""UPDATE intents SET payload = payload || '{{"told": true}}'::jsonb WHERE {where}
+                     RETURNING id, kind, fire_at, payload""", (MISSED_TELL_DAYS,))
+        rows.sort(key=lambda r: r["fire_at"])
+    else:
+        rows = q(f"SELECT id, kind, fire_at, payload FROM intents WHERE {where} ORDER BY fire_at", (MISSED_TELL_DAYS,))
     if not rows:
         return None
-    if mark:
-        q("UPDATE intents SET payload = payload || '{\"told\": true}'::jsonb WHERE id = ANY(%s)", ([r["id"] for r in rows],))
-    items = [f"your {r['fire_at'].astimezone(CFG.tz):%I:%M %p} {r['payload'].get('kind') or r['kind']}".replace(" 0", " ")
-             + (f" ({r['payload'].get('label')})" if r["payload"].get("label") else "") for r in rows[:4]]
-    return "While I was off, you missed " + ", ".join(items) + "."
+    items = []
+    for r in rows[:4]:
+        p = r["payload"]
+        k = p.get("kind") or r["kind"]
+        try:                                       # a repeating one is already re-armed: say when it was MISSED
+            t = datetime.fromisoformat(p["missed_at"]).astimezone(CFG.tz) if p.get("missed_at") else None
+        except (TypeError, ValueError):
+            t = None
+        t = t or r["fire_at"].astimezone(CFG.tz)
+        at = f"{t:%I:%M %p}".lstrip("0").replace(":00", "")
+        day = t.date()
+        when = at if day == now().date() else f"{at} {'yesterday' if (now().date() - day).days == 1 else day.strftime('%a')}"
+        what = p.get("label") or ("" if k == "alarm" else None)
+        items.append(f"your {when} {k}" + (f" ({second_person(what)})" if what else ""))
+    more = f", and {len(rows) - 4} more" if len(rows) > 4 else ""
+    return "You missed: " + ", ".join(items) + more + "."
+
+
+def mark_unheard(row: dict) -> None:
+    """Delivered, but only as a banner (he was in a lesson / on a call / she was muted or not up yet): tell it at the
+    next chance instead of letting it vanish."""
+    at = row.get("fire_at")
+    q("UPDATE intents SET payload = payload || jsonb_build_object('missed', true, 'told', false, 'missed_at', %s::text) "
+      "WHERE id=%s", (at.isoformat() if at else now().isoformat(), row["id"]))
+
+
+def recover_stuck(ref: datetime | None = None) -> tuple[int, int]:
+    """At start-up: a one-off alarm / reminder still 'fired' was cut off mid-delivery (the app restarted while it rang —
+    the mic watchdog restarts the process). Still inside its grace → it fires again; older → told as missed.
+    Returns (re-armed, missed)."""
+    ref = ref or now()
+    rows = q("""SELECT id, kind, fire_at, payload FROM intents WHERE state='fired' AND user_set AND rrule IS NULL
+                AND kind IN ('alarm','reminder') AND fire_at > %s - interval '2 days'""", (ref,))
+    again = gone = 0
+    for r in rows:
+        k = r["payload"].get("kind") or r["kind"]
+        if ref - r["fire_at"] <= GRACE.get(k, timedelta(hours=1)):
+            q("UPDATE intents SET state='pending' WHERE id=%s AND state='fired'", (r["id"],))
+            again += 1
+        else:
+            q("""UPDATE intents SET state='expired', payload = payload || '{"missed": true, "told": false}'::jsonb
+                 WHERE id=%s AND state='fired'""", (r["id"],))
+            gone += 1
+    return again, gone
 
 
 def _ring_line(r: dict, round_no: int) -> str:
@@ -539,6 +672,9 @@ def nag_sent(nag_id: int, channel: str | None, ref: datetime | None = None) -> N
     gap = nag_gap(r["sent"] + 1, r["important"])
     q("""UPDATE reminder_nags SET sent = sent + 1, last_at=%s, next_at=%s, channels = channels || %s::text
          WHERE id=%s""", (ref, ref + gap if gap else None, channel or "none", nag_id))
+    if channel == "voice":                         # he heard it after all: no "You missed: …" for this one later
+        q("""UPDATE intents SET payload = payload - 'missed' - 'missed_at' WHERE id = (SELECT intent_id FROM reminder_nags
+             WHERE id=%s) AND payload->>'told' = 'false'""", (nag_id,))
 
 
 def nag_defer(nag_id: int, ref: datetime | None = None, minutes: float = 1) -> None:
@@ -633,8 +769,7 @@ class Ringer:
             self.loop.duplex.stop_playback()
         if not self.done.is_set():
             self.outcome = "missed"
-            q("UPDATE intents SET payload = payload || '{\"missed\": true, \"told\": false}'::jsonb WHERE id=%s",
-              (self.row["id"],))
+            mark_unheard(self.row)                    # rang out unanswered: "You missed: …" the next time he talks
         if self.outcome in ("dismissed", "missed") and not self.row.get("rrule"):
             q("UPDATE intents SET state='done' WHERE id=%s AND state='fired'", (self.row["id"],))
         via = "voice" if self.loop is not None and getattr(self.loop, "duplex", None) is not None else "mac-say"

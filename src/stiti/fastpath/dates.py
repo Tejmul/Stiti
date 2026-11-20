@@ -175,7 +175,7 @@ def find_days(text: str, ref: datetime | None = None, loose: bool = False) -> li
 
 
 _CLOCKISH = re.compile(r"\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.|baje|bajkar|o'?clock)\b|\b\d{1,2}:\d{2}\b|"
-                       r"\b(?:at|@)\s+\d{1,2}\b|\b(?:saade|sadhe|sawa|paune|dedh|dhai)\b|"
+                       r"\b(?:at|@)\s+\d{1,2}\b|\b(?:saade|sadhe|sawa|paune|dedh|dhai)\b|\b(?:noon|midday|midnight)\b|"
                        r"\b(?:" + "|".join(HI_HOURS) + r")\s+baje\b", re.I)
 
 
@@ -274,6 +274,12 @@ def parse_when(text: str, ref: datetime | None = None) -> datetime | None:
         elif re.search(r"\b(dopahar|afternoon)\b", t) and hour < 12:
             hour = hour + 12 if hour < 6 or hour == 12 else hour
 
+    if hour is None and re.search(r"\b(noon|midday|mid-day)\b", t):
+        hour, minute = 12, 0                         # "tomorrow at noon" was set for the 9 AM default
+    elif hour is None and re.search(r"\bmidnight\b", t):
+        hour, minute = 0, 0
+        if not explicit_day:
+            day += timedelta(days=1)                 # "at midnight" = the coming one
     if hour is None and not explicit_day:
         return None
     if hour is None:

@@ -139,7 +139,7 @@ nid = one("SELECT max(id) m FROM intents")["m"]
 check("his answer becomes the note", row(nid)["payload"]["label"] == "check my to-do list" and not alarms.awaiting_label(), r2)
 check("the list never says 'Here's your reminder'", "Here's your reminder" not in alarms.list_all())
 alarms.handle("Remind me at 11.")
-check("'nothing' → no fake note", alarms.set_label("nothing").startswith("Okay") and
+check("'nothing' → no fake note", alarms.set_label("nothing") in alarms.say.variants("label_skip") and
       not row(one("SELECT max(id) m FROM intents")["m"])["payload"].get("label"))
 from stiti.engine import Engine  # noqa: E402
 q("DELETE FROM intents")
