@@ -155,7 +155,10 @@ function growPoints(pts, k) {     // reveal a polyline progressively along its l
   return out.length >= 2 ? out : [pts[0], pts[0]];
 }
 
-const top = () => (document.body.classList.contains("presenting") ? 12 : 64);   // clear of the toolbar
+const top = () => {             // keep drawings clear of Excalidraw's toolbar, only when it is showing
+  const cls = document.body.classList;
+  return cls.contains("presenting") || cls.contains("clean") ? 16 : 64;
+};
 function viewport() { const b = $("board"); return [b.clientWidth, b.clientHeight]; }
 function camState(rect) {
   const [vw, vh] = viewport(), [x, y, w, h] = rect;
@@ -194,9 +197,29 @@ function finishAll() { [...anims].forEach((f) => f()); }
 
 // ---------------------------------------------------------------- UI
 function setStatus(mode, text) {
-  const s = $("status"); s.className = "pill " + (mode || ""); s.textContent = text || mode || "";
-  $("pp").textContent = mode === "paused" ? "▶" : "⏸";
-  $("pp").dataset.cmd = mode === "paused" ? "play" : "pause";
+  $("status").className = "pill " + (mode || "");
+  $("status-text").textContent = text || mode || "";
+  const paused = mode === "paused";
+  $("pp").dataset.cmd = paused ? "play" : "pause";
+  $("pp").setAttribute("aria-label", paused ? "Play" : "Pause");
+  $("pp").querySelector("use").setAttribute("href", paused ? "#i-play" : "#i-pause");
+}
+// "Lexer basics · part 3 of 9" → header title + progress bar
+function setProgress(p, lesson) {
+  if (lesson) $("lesson").textContent = lesson;
+  const m = /^(.*?)\s*·\s*part\s+(\d+)\s+of\s+(\d+)\s*$/i.exec(p || "");
+  if (!m) { if (p) $("segment").textContent = p; return; }
+  const [, seg, n, of] = m;
+  $("segment").textContent = seg;
+  $("part").textContent = `part ${n} of ${of}`;
+  $("fill").style.width = `${Math.round((100 * +n) / Math.max(1, +of))}%`;
+  document.title = `${seg} · Stiti`;
+}
+function toggleDraw() {
+  const on = document.body.classList.toggle("clean") === false;
+  $("draw").setAttribute("aria-pressed", String(on));
+  $("draw").title = on ? "Hide drawing tools (D)" : "Show drawing tools (D)";
+  setTimeout(() => lastRect && applyCam(camState(lastRect)), 50);
 }
 function showCheck(m) {
   $("check").hidden = false;
@@ -224,10 +247,11 @@ function onSelection(st) {
   const el = id && scene().find((e) => e.id === id);
   const label = el && (el.text || scene().find((t) => t.containerId === id)?.text);
   chip.hidden = !label;
-  if (label) chip.textContent = `✋ Explain “${label.replace(/\s+/g, " ").slice(0, 28)}”`;
+  if (label) chip.textContent = `Explain “${label.replace(/\s+/g, " ").slice(0, 28)}”`;
 }
 $("ask-chip").onclick = () => selectedId && send({ type: "click", id: selectedId });
-document.querySelectorAll("#controls > button").forEach((b) => b.onclick = () => send({ type: "control", cmd: b.dataset.cmd }));
+document.querySelectorAll("#controls [data-cmd]").forEach((b) => b.onclick = () => send({ type: "control", cmd: b.dataset.cmd }));
+$("draw").onclick = toggleDraw;
 $("ask").onsubmit = (e) => {
   e.preventDefault();
   const t = $("q").value.trim();
@@ -242,6 +266,7 @@ addEventListener("keydown", (e) => {
   if (map[e.key]) { e.preventDefault(); send({ type: "control", cmd: map[e.key] }); }
   if (e.key === "h" || e.key === "H") { e.preventDefault(); $("q").focus(); }
   if (e.key === "f" || e.key === "F") { e.preventDefault(); present(); }
+  if ((e.key === "d" || e.key === "D") && !e.metaKey && !e.ctrlKey) { e.preventDefault(); toggleDraw(); }
 });
 // Presenter mode for a big monitor: full screen, drawing toolbars hidden, large captions.
 function present() {
@@ -261,7 +286,7 @@ async function handle(m) {
   if (m.type === "cue") {
     clearPending(); finishAll();
     $("caption").textContent = m.say || "";
-    if (m.progress) $("progress").textContent = m.progress;
+    if (m.progress || m.lesson) setProgress(m.progress, m.lesson);
     for (const a of m.actions || []) pending.push(setTimeout(() => run(a), a.at_ms || 0));
   } else if (m.type === "reset") {
     clearPending(); finishAll(); put([]);

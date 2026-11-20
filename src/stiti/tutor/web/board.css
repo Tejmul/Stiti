@@ -1,45 +1,121 @@
+/* Stiti whiteboard: a quiet paper canvas, a slim lesson header, and an indigo subtitle dock
+   that matches the overlay cards (indigo #121032, blue #4656d6, sky #7fb2f0). */
 :root {
-  --paper: #fffdf7; --ink: #1e1e1e; --muted: #6b6b6b; --bar: #ffffff; --line: #e6e1d6;
-  --accent: #e03131; --violet: #6741d9; --ok: #2f9e44; --chip: #f3f0ff;
+  --paper: #fffdf7; --ink: #1d1b33; --muted: #6e6b85; --line: #ebe6da;
+  --dock: #121032; --dock-2: #1c1a48; --dock-line: rgba(255, 255, 255, .09);
+  --on-dock: #f4f3ff; --on-dock-muted: #a9a6cf;
+  --blue: #4656d6; --sky: #7fb2f0; --ok: #5fd39a; --warn: #f5c35b; --think: #7fb2f0; --bad: #ff7a7a;
+  --violet: #6741d9;
+  --r: 12px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--paper); color: var(--ink);
-  font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased; }
 #shell { display: flex; flex-direction: column; height: 100%; }
 #board { flex: 1; position: relative; min-height: 0; }
 #loading { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); font-size: 18px; }
-#bar { border-top: 1px solid var(--line); background: var(--bar); padding: 10px 16px 12px; }
-#top-row { display: flex; gap: 10px; align-items: center; font-size: 13px; color: var(--muted); min-height: 22px; }
-.pill { padding: 2px 10px; border-radius: 999px; background: #f1f3f5; font-weight: 600; text-transform: lowercase; }
-.pill.playing { background: #d3f9d8; color: #2b8a3e; }
-.pill.paused { background: #fff3bf; color: #e67700; }
-.pill.waiting { background: #e5dbff; color: var(--violet); }
-.pill.thinking { background: #d0ebff; color: #1971c2; }
-.pill.offline { background: #ffe3e3; color: var(--accent); }
-#ask-chip { margin-left: auto; cursor: pointer; background: var(--chip); color: var(--violet); padding: 2px 10px;
-  border-radius: 999px; font-weight: 600; }
-#caption { font-size: 20px; min-height: 30px; margin: 6px 0 8px; }
-#controls { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-#controls > button, #ask button { border: 1px solid var(--line); background: #fff; border-radius: 10px; height: 36px;
-  min-width: 40px; font-size: 16px; cursor: pointer; }
-#controls > button:hover, #ask button:hover { background: #f8f9fa; }
-#ask { flex: 1; display: flex; gap: 6px; min-width: 220px; }
-#ask input { flex: 1; height: 36px; border: 1px solid var(--line); border-radius: 10px; padding: 0 12px; font-size: 15px; }
-#ask button { padding: 0 14px; font-size: 14px; font-weight: 600; }
-#check { position: absolute; right: 16px; bottom: 150px; width: min(420px, calc(100% - 32px)); background: #fff;
-  border: 2px solid var(--violet); border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 30px rgba(0,0,0,.12); z-index: 5; }
-#check-kind { font-size: 12px; font-weight: 700; color: var(--violet); text-transform: uppercase; letter-spacing: .05em; }
-#check-prompt { font-size: 17px; margin: 6px 0 10px; }
-#check-options { display: flex; flex-direction: column; gap: 6px; }
-#check-options button { text-align: left; border: 1px solid var(--line); background: #faf9ff; border-radius: 10px;
-  padding: 8px 12px; font-size: 15px; cursor: pointer; }
-#check-options button:hover { border-color: var(--violet); }
-@media (max-width: 640px) { #caption { font-size: 17px; } #check { bottom: 190px; } }
+button { font: inherit; color: inherit; }
+svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------------------------------------------------------------- header */
+#head { display: flex; align-items: center; gap: 18px; padding: 12px 20px; border-bottom: 1px solid var(--line);
+  background: var(--paper); min-height: 60px; }
+#brand { display: flex; align-items: center; gap: 9px; font-weight: 700; letter-spacing: .01em; font-size: 15px; flex: none; }
+#mark { width: 22px; height: 22px; border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, var(--dock) 0 38%, transparent 39%),
+              conic-gradient(from 200deg, var(--blue), var(--sky), #c9b8ff, var(--blue)); }
+#where { min-width: 0; flex: 1; border-left: 1px solid var(--line); padding-left: 18px; }
+#lesson { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#segment { font-size: 16px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#lesson:empty { display: none; }
+#meter { display: flex; align-items: center; gap: 10px; flex: none; font-size: 12px; color: var(--muted);
+  font-variant-numeric: tabular-nums; }
+#meter[hidden] { display: none; }
+#track { width: 160px; height: 6px; border-radius: 99px; background: #eee9dc; overflow: hidden; }
+#fill { height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--blue), var(--sky));
+  transition: width .5s cubic-bezier(.2, .8, .2, 1); }
+
+/* Excalidraw's own drawing UI stays hidden while she teaches; D (or the pen) brings it back. */
+/* (children too: Excalidraw sets visibility on its zoom / footer stacks, which beats an inherited "hidden") */
+.clean .excalidraw .layer-ui__wrapper, .clean .excalidraw .layer-ui__wrapper *,
+.presenting .excalidraw .layer-ui__wrapper, .presenting .excalidraw .layer-ui__wrapper * { visibility: hidden !important; }
+
+/* ---------------------------------------------------------------- dock */
+#dock { background: var(--dock); color: var(--on-dock); padding: 14px 20px 14px;
+  border-top: 1px solid rgba(0, 0, 0, .25); }
+#say { display: flex; align-items: flex-start; gap: 14px; max-width: 1100px; margin: 0 auto 12px; }
+#caption { flex: 1; font-size: 21px; line-height: 1.4; min-height: 30px; font-weight: 450; text-wrap: pretty; }
+.pill { flex: none; display: inline-flex; align-items: center; gap: 7px; margin-top: 4px; padding: 3px 10px 3px 8px;
+  border-radius: 999px; background: var(--dock-2); color: var(--on-dock-muted); font-size: 12px; font-weight: 600;
+  text-transform: lowercase; border: 1px solid var(--dock-line); white-space: nowrap; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--on-dock-muted); }
+.pill.playing { color: #d9f7e8; } .pill.playing .dot { background: var(--ok); animation: pulse 1.4s ease-in-out infinite; }
+.pill.paused { color: #fbe9bf; } .pill.paused .dot { background: var(--warn); }
+.pill.waiting { color: #e3dcff; } .pill.waiting .dot { background: #b9a6ff; animation: pulse 2s ease-in-out infinite; }
+.pill.thinking { color: #dcebff; } .pill.thinking .dot { background: var(--think); animation: pulse .9s ease-in-out infinite; }
+.pill.offline { color: #ffd6d6; } .pill.offline .dot { background: var(--bad); }
+.pill.done .dot { background: var(--sky); }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+
+#controls { display: flex; gap: 10px; align-items: center; max-width: 1100px; margin: 0 auto; }
+.group { display: flex; align-items: center; gap: 2px; padding: 3px; border-radius: var(--r);
+  background: var(--dock-2); border: 1px solid var(--dock-line); flex: none; }
+.group button, #ask button { display: grid; place-items: center; width: 38px; height: 36px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--on-dock); cursor: pointer; transition: background .15s, transform .1s; }
+.group button:hover, #ask button:hover { background: rgba(255, 255, 255, .1); }
+.group button:active, #ask button:active { transform: scale(.94); }
+.group button.main { background: var(--blue); }
+.group button.main:hover { background: #5867e6; }
+.group button[aria-pressed="true"] { background: rgba(127, 178, 240, .22); color: var(--sky); }
+.speed .lbl { font-size: 11px; color: var(--on-dock-muted); padding: 0 4px; text-transform: uppercase; letter-spacing: .08em; }
+#ask { flex: 1; display: flex; align-items: center; gap: 4px; min-width: 200px; padding: 3px 3px 3px 14px;
+  border-radius: var(--r); background: var(--dock-2); border: 1px solid var(--dock-line); transition: border-color .15s; }
+#ask:focus-within { border-color: var(--sky); }
+#ask input { flex: 1; min-width: 0; height: 36px; border: 0; outline: 0; background: transparent; color: var(--on-dock);
+  font-size: 15px; }
+#ask input::placeholder { color: var(--on-dock-muted); }
+#ask button { background: var(--blue); }
+#ask button:hover { background: #5867e6; }
+button:focus-visible { outline: 2px solid var(--sky); outline-offset: 2px; }
+#ask input:focus-visible { outline: none; }   /* the whole #ask frame lights up instead */
+
+/* ---------------------------------------------------------------- floating cards on the paper */
+#ask-chip { position: absolute; left: 50%; transform: translateX(-50%); bottom: 168px; z-index: 6; cursor: pointer;
+  border: 0; background: var(--dock); color: var(--on-dock); padding: 8px 16px; border-radius: 999px; font-weight: 600;
+  font-size: 14px; box-shadow: 0 8px 24px rgba(18, 16, 50, .25); }
+#ask-chip:hover { background: var(--dock-2); }
+#check { position: absolute; right: 20px; bottom: 168px; width: min(440px, calc(100% - 40px)); background: #fff;
+  border: 1px solid var(--line); border-radius: 16px; padding: 16px 18px; z-index: 5;
+  box-shadow: 0 18px 50px rgba(18, 16, 50, .16), 0 2px 6px rgba(18, 16, 50, .06);
+  animation: rise .25s cubic-bezier(.2, .8, .2, 1); }
+#check::before { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0;
+  background: var(--blue); }
+#check-kind { font-size: 11px; font-weight: 700; color: var(--blue); text-transform: uppercase; letter-spacing: .1em; }
+#check-prompt { font-size: 17px; font-weight: 550; margin: 6px 0 12px; }
+#check-options { display: flex; flex-direction: column; gap: 7px; }
+#check-options button { text-align: left; border: 1px solid var(--line); background: #faf9f5; border-radius: 10px;
+  padding: 9px 12px; font-size: 15px; cursor: pointer; transition: border-color .15s, background .15s; }
+#check-options button:hover { border-color: var(--blue); background: #f3f4ff; }
+@keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 760px) {
+  #head { padding: 10px 14px; gap: 12px; } #track { width: 80px; } #brand { display: none; }
+  #where { border: 0; padding: 0; }
+  #dock { padding: 12px 14px; } #caption { font-size: 17px; }
+  #controls { flex-wrap: wrap; } #ask { order: -1; flex-basis: 100%; }
+  #check, #ask-chip { bottom: 200px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .dot { animation: none !important; } #check { animation: none; } #fill { transition: none; }
+}
 
 /* presenter mode (F): for a monitor across the room */
-.presenting .excalidraw .layer-ui__wrapper { visibility: hidden; }
-.presenting #caption { font-size: 30px; min-height: 42px; }
+.presenting #caption { font-size: 32px; }
 .presenting #controls { display: none; }
+.presenting #say { margin-bottom: 0; }
+.presenting #segment { font-size: 22px; }
 .presenting #check-prompt { font-size: 24px; }
 .presenting #check-options button { font-size: 21px; padding: 10px 14px; }
-.presenting #check { width: min(560px, calc(100% - 32px)); bottom: 120px; }
+.presenting #check { width: min(560px, calc(100% - 40px)); bottom: 130px; }
+.presenting #ask-chip { bottom: 130px; }
