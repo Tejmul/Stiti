@@ -154,6 +154,9 @@ restore <file> [--into db] · app · install-app · uninstall-app · mcp [approv
 - **Review + map (D57):** one FSRS card per concept after a coached check (`srs.concept_card`), `stiti teach --review`
   (`tutor/review.py`, local grading), append-only `mastery_events` (013); `GET /api/lessons/map?key=…[&exam=…]`
   (`tutor/mastery_map.py`), review start = `{"mode": "review", "key"?}` on `/api/lessons/start`.
+- **Cited doubts (D60, `tutor/cite.py`):** a lesson's file → page-tagged chunks (`doc_sources` / `doc_chunks` /
+  `doc_answers`, migration 015), one hybrid SQL per doubt, a score gate before any LLM call ("your notes don't cover
+  that" → general answer only on a yes), quotes verified in code, answer bank; source card `{do:"source"}` on the board.
 - Chat replies carry `used` = `Engine.last_used` (memory COUNT + facts/doc sections/lessons handed to the LLM) → receipts.
 - **Privacy (D24): no conversation text is ever sent to a page** (no history on open, no conversations API). Public
   site: `STITI_PUBLIC=1 pnpm build` (landing only; chat/memory code aliased out).
@@ -194,6 +197,9 @@ wait — she should say it out loud.
 20. After merging D59 (fork-safe): `uv run stiti migrate-local --wake "<your old wake phrase>"` once (moves the login
 item to `com.stiti.app`, keeps the app's mic/Calendar/Reminders grants, saves the phrase locally), then restart Stiti.app.
 Optional: `python scripts/privacy_check.py --install-hook`.
+21. After merging D60 (cited answers): apply `db/migrations/015_doc_chunks.sql` to `stiti` + `stiti_test`, restart Stiti
+(until then doubts work as before, without quotes). Try a lesson from a file, ask a doubt it covers ("Page N says: …" + a
+source card; click it → the whole passage) and one it doesn't ("Your notes don't cover that. Want a general answer?").
 
 ## 8. Session log (newest first, keep each entry ≤10 lines; prune entries older than ~5 sessions into BUILD_LOG)
 - **2026-11-12/14 — mic, whiteboard asks, Jarvis gaps (D36–D40, PRs: one per branch, stacked):** mic follows macOS

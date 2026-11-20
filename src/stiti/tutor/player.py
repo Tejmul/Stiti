@@ -61,6 +61,12 @@ CHECKINS = ["Any doubt so far? Just ask, or I'll carry on.", "All clear till her
 OFFLINE_FIRST = "I can't reach my thinking brain right now, so here's the short version from this lesson."
 OFFLINE_PARK_FIRST = "I can't reach my thinking brain right now, so I've parked that, and we'll come back to it."
 OFFLINE_AGAIN = "Parked that one too. We'll come back to it."
+# feature 2: cited answers. Below the retrieval gate she says so BEFORE any LLM call and answers generally only on a yes.
+NOT_COVERED = "Your notes don't cover that. Want a general answer?"
+NOT_COVERED_OFFLINE = "Your notes don't cover that one."
+UNCITED = "Your notes don't spell this out, so this part is general knowledge."
+_YES_RX = re.compile(r"^(yes|yeah|yep|ya|yup|sure|ok|okay|haan|han|ha|ji|haan ji|please|go ahead|go on|tell me|do it|"
+                     r"general|of course|why not|fine|alright|all right)\b", re.I)
 _ACK_RX = re.compile(r"^(good|great|nice|achha|accha)( question| doubt| one)?[.!,—-]*\s*", re.I)
 
 
@@ -77,6 +83,9 @@ class Tutor:
         self._pick_i: dict[str, int] = {}
         self._offline_said = False                   # the honest "can't reach the cloud" line: once per lesson
         self.last_doubt: dict | None = None          # {"q", "a": [lines], "t"} for follow-ups
+        self.cite = self._start_cite(lesson)         # feature 2: his file indexed for cited answers (None: no file)
+        self.doubt_cites: list[dict] = []            # verified quotes shown during the current doubt
+        self._look = None                            # this doubt's retrieval (cite.Lookup)
         self.last_checkin = time.time()
         self.checkins = 0
         self.cue_open = False
@@ -675,16 +684,24 @@ class Tutor:
         self.status("thinking", "thinking…")
         self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.begin_aside(title or question)]})
         first = True
+        self.doubt_cites = []
         while not self.ended:
             self.questions.append(question)
             lead = self._pick("simpler", SIMPLER) if simpler else (self._pick("ack", ACKS) if first else None)
             if simpler and not first:
                 self.send({"type": "actions", "actions": self._apply([Op(type="text", text="Simpler:", style="violet")],
                                                                      self.k)})
-            ans = self._fetch_answer(question, lead, simpler)
+            # "explain this box again" / "simpler" re-explain the lesson itself: never "your notes don't cover that"
+            ans = self._fetch_answer(question, lead, simpler, soft=simpler or title is not None)
             if self.ended:
                 break
-            lines = self._play_answer(ans) if ans and ans.get("say") else self._offline_answer(question)
+            lines = None
+            if ans is not None and ans.get("not_covered"):
+                ans, lines = self._offer_general(question, simpler)
+            if lines is None:
+                lines = self._play_answer(ans) if ans and ans.get("say") else self._offline_answer(question)
+            if ans and first and not simpler and self.cite is not None and self._look is not None:
+                self.cite.save(question, ans, self._look)    # the per-file answer bank (verified quotes only)
             self.last_doubt = {"q": question, "a": lines, "t": time.time()}
             if ans and ans.get("stuck_at"):
                 self.log(f"   [doubt] stuck at: {ans['stuck_at']} ({ans.get('error_type')})")
@@ -695,8 +712,12 @@ class Tutor:
             if nxt is None:
                 break
             question, simpler = nxt
-        self.send({"type": "actions", "actions": [{**a, "at_ms": 0} for a in self.board.end_aside()]
-                   + [{**a, "at_ms": 300} for a in self.board.note_doubt(title or question)]})
+        strip = ([{**a, "at_ms": 0} for a in self.board.end_aside()]
+                 + [{**a, "at_ms": 300} for a in self.board.note_doubt(title or question)])
+        for c in self.doubt_cites[:1]:                # where the answer came from stays in his notes, next to the Q
+            strip += [{**a, "at_ms": 450} for a in self.board.source_card(c, "doubts")]
+        self.doubt_cites = []
+        self.send({"type": "actions", "actions": strip})
         if resume_cue:
             self.snaps[self.k] = self.board.snapshot()   # replay restores THIS (lesson board + doubt board below)
         if not self.ended:
@@ -704,18 +725,31 @@ class Tutor:
             if ev is not None:
                 self.events.put(ev)
 
-    def _fetch_answer(self, question: str, lead: str | None, simpler: bool) -> dict | None:
+    def _fetch_answer(self, question: str, lead: str | None, simpler: bool, *, soft: bool = False,
+                      general: bool = False) -> dict | None:
         """Ask the cloud in the background while she acknowledges; a filler only if it's slow; "ruko"/"bas karo"
-        still work while she waits. -> the answer dict, or None (no LLM / down / too slow)."""
-        fut = None
-        if self.planner is not None:
+        still work while she waits. -> the answer dict, or None (no LLM / down / too slow).
+        Feature 2, when the lesson has his file: the answer bank first (a repeated doubt: no LLM call), then one
+        hybrid retrieval (< 100 ms); below the gate → {"not_covered": True} before any LLM call (unless `soft`);
+        above it the top passages go to the LLM as SOURCES and only its verified quotes come back ("cited")."""
+        fut, early = None, None
+        look = self._look = (self.cite.lookup(question) if self.cite is not None and not general else None)
+        if look is not None and look.status == "bank" and not simpler:
+            early = look.answer
+            self.log(f"   [cite] answer bank hit ({look.answer.get('bank_sim', 0):.2f}): no LLM call")
+        elif look is not None and look.status == "not_covered" and not soft:
+            early = {"not_covered": True}
+        elif self.planner is not None:
             ctx = self._context()
             if self.last_doubt and time.time() - self.last_doubt["t"] < FOLLOWUP_S:
                 ctx["previous"] = {"q": self.last_doubt["q"], "a": self.last_doubt["a"]}
             ctx["simpler"] = simpler
+            if look is not None and look.status == "covered":
+                ctx["passages"] = look.passages
+            ctx["general"] = general
             fut = self.answer_pool.submit(self.planner.answer, question, ctx)
         t0 = time.time()
-        if lead:
+        if lead and not (early and early.get("not_covered")):     # not in his notes: she says so plainly, no "good q"
             a, ms = self.audio.synth(lead, self.speed)
             self.log(f"Stiti: {lead}")
             self.send({"type": "status", "mode": "playing", "text": "thinking", "caption": lead})
@@ -723,7 +757,7 @@ class Tutor:
         if fut is None:
             while self.audio.playing:
                 time.sleep(0.02)
-            return None
+            return early
         filler, stash = False, []
         while not fut.done() and time.time() - t0 < ANSWER_TIMEOUT_S:
             ev = self._next_event(0.03)
@@ -754,10 +788,40 @@ class Tutor:
         for ev in stash:
             self.events.put(ev)
         try:
-            return fut.result(timeout=0) if fut.done() else None
+            ans = fut.result(timeout=0) if fut.done() else None
         except Exception as e:                        # NoProvider / rate limit / bad JSON → honest local answer
             self.log(f"   [planner] {type(e).__name__}: {str(e)[:120]}")
             return None
+        if ans and look is not None and self.cite is not None:
+            ans = self.cite.attach(ans, look)         # fabricated quotes never reach his ears or the board
+        return ans
+
+    def _start_cite(self, lesson):
+        """Feature 2: index the lesson's file in the background (classic book lesson or the coach over a file)."""
+        try:
+            from . import cite
+            return cite.for_lesson(getattr(lesson, "source", None), log=self.log)
+        except Exception as e:
+            self.log(f"   [cite] off: {type(e).__name__}: {str(e)[:100]}")
+            return None
+
+    def _offer_general(self, question: str, simpler: bool) -> tuple[dict | None, list[str] | None]:
+        """His file doesn't cover the doubt: say so plainly (one short line) and answer from general knowledge only
+        if he says yes. -> (answer to play, None) or (None, the lines said)."""
+        self.send({"type": "actions", "actions": self._apply([Op(type="text", text="Not in your notes",
+                                                                 region="side", style="muted")], self.k)})
+        if self.planner is None:
+            self.say(NOT_COVERED_OFFLINE)
+            return None, [NOT_COVERED_OFFLINE]
+        reply = self.listen(NOT_COVERED, timeout=12)
+        if not reply:
+            return None, [NOT_COVERED]
+        if _YES_RX.match(reply.strip()):
+            self.status("thinking", "thinking…")
+            return self._fetch_answer(question, None, simpler, general=True), None
+        if commands.classify(reply) in ("question", "steer", "confused", "correct"):
+            self.events.put({"type": "text", "text": reply, "_seen": True})   # another doubt: the follow-up takes it
+        return None, [NOT_COVERED]
 
     def _offline_answer(self, question: str) -> list[str]:
         """No cloud answer: be honest ONCE, give what the lesson itself said about it, park the doubt."""
@@ -841,10 +905,20 @@ class Tutor:
         for op in ops:
             i = next((j for j, s in enumerate(lines) if op.at and op.at.lower() in s.lower()), 0)
             buckets[i].append(op)
+        # feature 2: "Page 42 says: …" first — only a quote verified word for word in his file; its source card is
+        # drawn on the doubt board while she says it. Relevant file, nothing quotable → she says it's general knowledge.
+        cited, cards = ans.get("cited") or [], {}
+        if cited:
+            from .cite import spoken
+            lines, buckets = [spoken(cited[0])] + lines, [[]] + buckets
+            cards[0] = [a for c in cited[:2] for a in self.board.source_card(c, "side")]
+            self.doubt_cites += cited[:1]
+        elif ans.get("uncited"):
+            lines, buckets = [UNCITED] + lines, [[]] + buckets
         said = []
-        for line, b in zip(lines, buckets):
+        for li, (line, b) in enumerate(zip(lines, buckets)):
             audio, ms = self.audio.synth(line, self.speed)
-            acts = self._apply(b, self.k, line, ms)
+            acts = self._apply(b, self.k, line, ms) + [{**a, "at_ms": 0} for a in cards.get(li, [])]
             self.log(f"Stiti: {line}")
             self.send({"type": "actions", "actions": acts})
             self.send({"type": "status", "mode": "playing", "text": "answering", "caption": line})

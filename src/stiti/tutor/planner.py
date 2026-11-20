@@ -98,7 +98,26 @@ check = one short question (≤15 words) he can answer out loud to show the gap 
 words of a right answer; null for chit-chat. Do NOT start with "Good question" (you already
 said it). Don't say "shall we continue". ops: 2–4 board ops that DRAW the answer on a fresh doubt board (box /
 arrow / small graph / table / formula / text), each with "at" = a word copied from the sentence it belongs to, ids
-d1, d2, … Labels ≤4 words. Unused op fields = null. Facts about a book only from SOURCES; otherwise general knowledge."""
+d1, d2, … Labels ≤4 words. Unused op fields = null. Facts about a book only from SOURCES; otherwise general knowledge.
+{quote_rule}"""
+QUOTE_RULE = """quotes: for each claim you take from the numbered SOURCES, copy 6–25 words EXACTLY as they are written in
+ONE passage (same words, same order, no paraphrase) with that passage's page label; [] if the passages don't answer
+the question. Never write page numbers in say (the board shows them)."""
+NO_QUOTES = "quotes: null."
+GENERAL_SOURCES = ("SOURCES: none. The learner's own file does not cover this, and he asked for a general answer: "
+                   "answer from general knowledge.")
+
+
+def _passages_block(passages: list, limit_chars: int = 3600) -> str:
+    """The few retrieved passages of his file for one doubt (tutor/cite.py), numbered, each with its page."""
+    out, n = [], 0
+    for i, p in enumerate(passages):
+        line = f"[S{i + 1} · page {p.page}{' · ' + p.unit if p.unit else ''}] {p.text}"
+        if n + len(line) > limit_chars and out:
+            break
+        out.append(line)
+        n += len(line)
+    return "SOURCES (passages from the learner's own file; quote only these):\n" + "\n".join(out)
 
 ANSWER_NO_OPS = {"new_page", "focus", "erase", "strike", "title"}
 
@@ -260,12 +279,19 @@ class Planner:
                          "everyday example (not the same one as before).\n" if ctx.get("simpler") else ""))
         elif ctx.get("simpler"):
             followup = "The learner didn't get this part: explain it more simply, with an everyday example.\n"
+        # feature 2: a doubt about his file gets ITS retrieved passages (cite.py) and must quote them; a doubt the file
+        # doesn't cover, that he wants answered anyway, gets none (general knowledge)
+        passages = ctx.get("passages")
+        sources = (_passages_block(passages) if passages else GENERAL_SOURCES if ctx.get("general")
+                   else _sources_block(self.sources, 4000))
         d = _call(STYLE.format(name=_name()),
                   ANSWER_PROMPT.format(lesson=ctx["lesson"], segment=ctx["segment"],
                                        said=" ".join(ctx["last_said"])[-600:], board=ctx["board"] or "(empty)",
-                                       sources=_sources_block(self.sources, 4000), followup=followup,
-                                       question=question),
+                                       sources=sources, followup=followup, question=question,
+                                       quote_rule=QUOTE_RULE if passages else NO_QUOTES),
                   ANSWER_SCHEMA, "answer", 1200, route="tutor_answer", reasoning="low")
+        d["quotes"] = [{"quote": str(x.get("quote") or ""), "page": str(x.get("page") or "")}
+                       for x in d.get("quotes") or [] if isinstance(x, dict)][:4] if passages else []
         d["ops"] = [o for o in (sanitize_op(x) for x in d.get("ops") or [] if isinstance(x, dict))
                     if o and o.type not in ANSWER_NO_OPS][:4]    # the doubt board never flips/erases the lesson
         d["say"] = [s.strip() for s in d.get("say") or [] if isinstance(s, str) and s.strip()][:4]

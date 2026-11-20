@@ -56,6 +56,7 @@ run "tutor teaches like a teacher (D40)" tests/tutor_teacher_eval.py
 run "the coach: goal, probes, day mode, any subject (D53, D55)" tests/tutor_coach_eval.py
 run "real pictures on the notes page" tests/tutor_pictures_eval.py
 run "tutor grades spoken answers fairly (D54)" tests/tutor_grade_eval.py
+run "cited answers + 'your notes don't cover that' (D60)" tests/cite_eval.py
 run "two voices + speed + say-as" tests/voice_pick_eval.py
 run "talks like a person (no machine-talk)" tests/human_talk_eval.py
 run "card motion (added / done / cancelled)" tests/card_motion_eval.py
