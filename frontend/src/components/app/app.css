@@ -1,4 +1,4 @@
-/* In-app navbar (Chat, Memory). The glass itself comes from .nav in globals.css; this only lays out the app tabs.
+/* In-app navbar (Chat, Memory, Lessons). The glass itself comes from .nav in globals.css; this only lays out the app tabs.
    Shipped only with the private pages (imported by AppNav.tsx), never in the public build. */
 
 .appnav { gap: 4px; }
@@ -22,6 +22,11 @@
   .appnav__tabs { margin: 0 2px; }
   .appnav__tab { padding: 0 13px 0 11px; font-size: 15px; gap: 7px; }
   .appnav__local { display: none; }
+}
+/* a phone with an extra control after the tabs (chat's "Today"): the other tabs show their icon only */
+@media (max-width: 520px) {
+  .appnav--end .appnav__tab:not([aria-current="page"]) { padding: 0 12px; }
+  .appnav--end .appnav__tab:not([aria-current="page"]) span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 }
 @media (max-width: 360px) {
   .appnav__tab span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

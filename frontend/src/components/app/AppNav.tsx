@@ -1,14 +1,14 @@
 "use client";
-// The in-app navbar for Stiti's own pages on this Mac (Chat, Memory). Same white liquid-glass pill as the site
+// The in-app navbar for Stiti's own pages on this Mac (Chat, Memory, Lessons). Same white liquid-glass pill as the site
 // nav (owner rule: clear white glass, never grey/dark) — but app tabs instead of the landing's Features/FAQ links.
 // Always visible (an app bar, not a marketing bar); pointer sheen follows the cursor. Never in the public build:
-// only ChatApp / MemoryPage import it, and those are swapped out by private-pages.public.tsx.
+// only ChatApp / MemoryPage / LessonsPage import it, and those are swapped out by private-pages.public.tsx.
 import Link from "next/link";
 import { useRef, type ReactNode } from "react";
 import { Logo } from "@/components/Nav";
 import "./app.css";
 
-type Tab = "chat" | "memory";
+type Tab = "chat" | "memory" | "lessons";
 
 function ChatIcon() {
   return (
@@ -31,9 +31,20 @@ function MemoryIcon() {
   );
 }
 
+function LessonsIcon() {
+  return (
+    <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <rect x="3" y="3.5" width="14" height="9.5" rx="1.5" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6 10l2.3-2.4 2 1.6L14 6M7.5 13l-1.5 3.5M12.5 13l1.5 3.5" stroke="currentColor" strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 const TABS: { id: Tab; href: string; label: string; icon: ReactNode }[] = [
   { id: "chat", href: "/chat", label: "Chat", icon: <ChatIcon /> },
   { id: "memory", href: "/memory", label: "Memory", icon: <MemoryIcon /> },
+  { id: "lessons", href: "/lessons", label: "Lessons", icon: <LessonsIcon /> },
 ];
 
 /** `end` goes after the "On this Mac" chip (e.g. the chat page's "Today" toggle on small screens). */
@@ -48,7 +59,7 @@ export default function AppNav({ current, end }: { current: Tab; end?: ReactNode
   return (
     <>
       <a className="skip" href="#main">Skip to content</a>
-      <nav ref={nav} className="nav appnav" aria-label="Stiti" onPointerMove={sheen}>
+      <nav ref={nav} className={`nav appnav${end ? " appnav--end" : ""}`} aria-label="Stiti" onPointerMove={sheen}>
         <Link className="nav__logo" href="/" aria-label="Stiti home"><Logo /></Link>
         <div className="appnav__tabs">
           {TABS.map((t) => (
