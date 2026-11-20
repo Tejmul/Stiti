@@ -1316,3 +1316,29 @@ that [HTML]" answered as a doubt about HTML; typed "I want to study a different 
 **Not yet:** measured WER on his voice (needs the recorder), the teaching-structure rebuild from the research
 (diagnose first, concept map with mastery, ≤ 2 sentences before his turn, board as notes) — see the plan in
 `tutor_agent.md`.
+
+## D53: The coach — goal first, quick probes, mastery per concept, ≤ 2 sentences then his turn, notes pages (2026-11-20)
+His verdict on the old lesson: "no proper structure… keeps on saying… doesn't understand where I'm stuck… draws
+wherever it wants." Research and plan: `docs/research/tutor_agent.md` (15 sources). `stiti teach <file|topic>` and
+"teach me <his file>" by voice now run `tutor/coach.py`; `--classic` keeps the old lesson.
+1. **Goal first, file mapped meanwhile.** "What do you need? Is this for an exam, and when?" while the concept map of
+   his file is built (one free-LLM call per unit, two at a time, cached in `~/.stiti/tutor/concepts/`). It starts as
+   soon as the board is open, in parallel with her voice loading (D42). "The Compiler Notebook": 28 concepts in 27 s.
+2. **Three quick probes** spread over the units (0.6 s to write), graded locally → per-concept mastery
+   (`tutor/mastery.py`, BKT-lite from OATutor; `~/.stiti/tutor/mastery/<file>.json`). A right answer also marks the
+   earlier concepts of that unit as probably known (0.6).
+3. **The queue** (`coach.order`): learn mode skips what he knows; exam mode (Metcalfe & Kornell) keeps nearly-known
+   first, then new ones by exam weight, known ones as one quick check — inside a time budget (100 min for an exam
+   tomorrow, 40 otherwise), then in book order. Said out loud and drawn as "Your plan".
+4. **Each concept is short steps** (VanLehn): 1–2 spoken sentences, then HIS answer (a check), graded locally;
+   mastery updates after every answer (`Tutor.on_check`); a concept he gets right first time is cut short
+   (`skip_to`). Step 1 always draws one figure; the worked example is one board item per step; a Remember line ends it.
+   Concepts are written one at a time while he works (1–2 s each on the free tier).
+5. **The board is his notes** (`skills.py` slots): numbered key points left, one figure right, example band, his
+   doubts as stickies, a boxed Remember. The LLM names a slot, never a position; type sized for a room.
+6. **Doubts like an expert tutor** (Bridge): the answer first decides `stuck_at` and `error_type`, fixes exactly
+   that, then asks ONE check question ("So what tells the lexer a token ended?"), graded locally; the doubt is pinned
+   to the page.
+**Not yet:** heard on his real voice; a mastery-gated re-teach (a concept still wrong after its steps comes back
+later in the session); notes export ("save my notes"); Smart Turn tuned for the tutor; confirm-when-unsure hearing.
+**Tests:** `tutor_coach_eval` (22, new), `tutor_teacher_eval` 112, `tutor_eval` 27, `tutor_launch_eval` 63.
