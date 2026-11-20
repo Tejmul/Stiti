@@ -18,7 +18,9 @@ because like kind sort thing things one two three first second third hai hota ho
 aur ya toh to bhi nahi kya woh yeh ye""".split())
 ORD = {0: r"\b(first|pehla|pehle wala|option a|option 1)\b", 1: r"\b(second|doosra|dusra|option b|option 2)\b",
        2: r"\b(third|teesra|tisra|option c|option 3)\b", 3: r"\b(fourth|chautha|option d|option 4)\b"}
-ORD_NUM = {0: r"\b(1|one|ek)\b", 1: r"\b(2|two|do)\b", 2: r"\b(3|three|teen)\b", 3: r"\b(4|four|char|chaar)\b"}
+# "the one that builds the tree" describes an option, it doesn't pick option 1 (2026-11-20 grading eval)
+ORD_NUM = {0: r"\b(1|one(?!\s+(?:that|which|who|where|with|about|for)\b)|ek)\b", 1: r"\b(2|two|do)\b",
+           2: r"\b(3|three|teen)\b", 3: r"\b(4|four|char|chaar)\b"}
 NUM_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "ek": 1, "do": 2, "teen": 3, "char": 4,
              "chaar": 4, "paanch": 5, "panch": 5}
 
